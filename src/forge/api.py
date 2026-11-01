@@ -29,15 +29,17 @@ class NewJob(ApplicationRequest):
 
 
 class Action(Boundary):
-    action: Literal['answer','approve','reject','continue','preview_start','preview_stop','preview_status','report','security','retry_plan','retry_build','browser_check']
+    action: Literal['answer','approve','reject','continue','preview_start','preview_stop','preview_status','report','security','retry_plan','retry_build','browser_check','prepare_release','publish_release','deploy_release','release_status']
     request_id: str = Field(pattern=r'^[a-f0-9-]{32,36}$')
     expected_sequence: int = Field(ge=1)
     fingerprint: str | None = Field(default=None,pattern=r'^[a-f0-9]{64}$')
     answers: list[str] | None = Field(default=None,min_length=1,max_length=3)
     approved: StrictBool = False
+    repository: str | None = Field(default=None,max_length=140)
 
 
 ALLOWED={
+    **{action:{'SECURITY_PASSED','PREVIEW_RUNNING','PREVIEW_STOPPED','PREVIEW_FAILED'} for action in ['prepare_release','publish_release','deploy_release','release_status']},
     'browser_check':{'FUNCTIONALLY_VERIFIED','SECURITY_PASSED','PREVIEW_RUNNING','PREVIEW_STOPPED','PREVIEW_FAILED'},
     'retry_build':{'FAILED'},
     'retry_plan':{'FAILED'},
@@ -195,6 +197,16 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
         if body.action=='retry_build' and not build_retryable(current):raise HTTPException(409,'Only an interrupted approved generation can be resumed once')
         if body.action=='browser_check' and not profile_for(current):raise HTTPException(409,'This app has no trusted automated browser profile')
         payload={}
+        if body.action=='prepare_release':
+            from forge.releases import validate_repository
+            try:payload['repository']=validate_repository(body.repository or '')
+            except ValueError as exc:raise HTTPException(422,str(exc))
+        if body.action in {'publish_release','deploy_release','release_status'}:
+            if not body.fingerprint:raise HTTPException(422,'Review the current release first')
+            payload['fingerprint']=body.fingerprint
+            if body.action!='release_status':
+                if not body.approved:raise HTTPException(422,'Publishing and deployment each need explicit approval')
+                payload['approved']=True
         if body.action in {'approve','reject'}:
             review=next(e['payload'] for e in reversed(current['events']) if e['status']=='PLAN_REVIEW')
             if not body.fingerprint or body.fingerprint!=review.get('fingerprint'):

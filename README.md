@@ -2,6 +2,10 @@
 
 Local-first agentic full-stack development POC using LangGraph, LangChain and Ollama.
 
+Generated applications have their own CI/deployment agents and separate review,
+publish and deploy controls. See [generated-app CI/CD](docs/generated-app-cicd.md).
+The badge below checks Forge itself; it is not evidence of a generated app's CI.
+
 [![ForgeFSD checks](https://github.com/Shahid0324-GIT/forge-fsd/actions/workflows/ci.yml/badge.svg)](https://github.com/Shahid0324-GIT/forge-fsd/actions/workflows/ci.yml)
 
 The repository is private. Hosted CI checks Windows/Ubuntu controller tests and
@@ -22,7 +26,8 @@ Starting the generated app preview requires a separate checkbox approval.
 
 The dashboard includes a live event stream, agent activity, requirements/plan review,
 test/security reports, source ZIP download, preview start/stop and a workspace-close
-control. It is local-only; no cloud deployment or account integration is enabled.
+control. The control plane is local-only. Generated-app publishing uses GitHub CLI;
+stateless Vercel deployment needs separate approval and project secrets.
 The top bar offers **System theme**, **Light mode**, and **Dark mode**; the browser
 remembers your choice. New version-2 plans support different single-user app domains,
 up to five static pages, three data entities and twelve generated source files.

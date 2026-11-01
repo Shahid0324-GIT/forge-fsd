@@ -35,6 +35,12 @@ def pipeline(job_id,agents,store):
 
 
 def execute(job_id,action,payload,store,agents):
+    if action in {'prepare_release','publish_release','deploy_release','release_status'}:
+        from forge.releases import prepare_release,publish_release,deploy_release,refresh_release
+        if action=='prepare_release':return prepare_release(job_id,agents,store,payload['repository'])
+        if action=='release_status':return refresh_release(job_id,store,payload['fingerprint'])
+        operation=publish_release if action=='publish_release' else deploy_release
+        return operation(job_id,store,payload['fingerprint'],approved=payload.get('approved') is True)
     if action=='browser_check':
         from forge.browser_testing import browser_job
         return browser_job(job_id,store)

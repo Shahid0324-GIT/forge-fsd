@@ -40,6 +40,21 @@ def test_session_required_for_api(client):
     assert browser.get('/api/jobs').status_code==200
 
 
+def test_app_release_actions_require_review_and_separate_consent(client,monkeypatch):
+    browser,app=client;headers=session(browser);calls=fake_submit(app,monkeypatch)
+    job=app.state.store.create();app.state.store.event(job,'SECURITY_PASSED',{})
+    sequence=app.state.store.read(job)['events'][-1]['sequence']
+    def send(action,**extra):
+        return browser.post(f'/api/jobs/{job}/actions',headers=headers,json={
+            'action':action,'request_id':str(uuid4()),'expected_sequence':sequence,**extra})
+    assert send('prepare_release',repository='https://github.com/a/b').status_code==422
+    assert send('prepare_release',repository='person/new-app').status_code==202
+    assert send('publish_release',fingerprint='a'*64).status_code==422
+    assert send('deploy_release',fingerprint='a'*64).status_code==422
+    assert send('publish_release',fingerprint='a'*64,approved=True).status_code==202
+    assert calls[-1][2]=={'fingerprint':'a'*64,'approved':True}
+
+
 def test_browser_action_rejects_apps_without_a_trusted_profile(client,monkeypatch):
     browser,app=client;headers=session(browser);calls=fake_submit(app,monkeypatch)
     job=app.state.store.create();app.state.store.event(job,'FUNCTIONALLY_VERIFIED',{})

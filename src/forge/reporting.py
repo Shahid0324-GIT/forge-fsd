@@ -74,7 +74,7 @@ def write_report(job_id,agents,store):
                 'Static scanning uses four custom rules, not a complete security assessment.',
                 'Selected manual browser/API cases passed; automated cross-domain browser coverage is incomplete.' if browser else 'Browser UI validation has not yet been checked against API constraints.',
                 'Preview data is disposable and expires with its container.',
-                'Remote PostgreSQL, CI publishing and Vercel deployment remain unimplemented.']}
+                'Remote PostgreSQL is unimplemented. App CI/CD preparation, publishing and deployment are separate reviewed actions; this readiness report does not attest cloud deployment.']}
     directory=PROJECT/'artifacts/reports'/job_id;directory.mkdir(parents=True,exist_ok=True)
     path=directory/(uuid4().hex+'.json');path.write_text(json.dumps(report,indent=2),encoding='utf-8')
     store.event(job_id,'REPORT_CREATED',{'report':str(path),'source_fingerprint':fingerprint,'assessment':report['assessment']},update_status=False)
