@@ -75,6 +75,7 @@ def main():
     try:
         agents=OllamaAgents(job_model(store.read(data['job_id'])))
         agents.trace_directory=args.payload.parent/'model-calls'
+        agents.activity=lambda status,payload:store.event(data['job_id'],status,payload,update_status=False)
         record=execute(data['job_id'],data['action'],data['payload'],store,agents)
     except ValueError as exc:
         store.event(data['job_id'],'ACTION_REJECTED',{'reason':str(exc)[:1500]},update_status=False)

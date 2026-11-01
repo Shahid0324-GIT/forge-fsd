@@ -8,6 +8,21 @@ from forge.schemas import ImplementationPlan, RequirementsDocument,AppRequiremen
 from forge.models import DEFAULT_MODEL
 
 
+def validation_summary(error):
+    """Keep the actionable validation error, rather than echoing an entire completion."""
+    current=error
+    seen=set()
+    while isinstance(current,BaseException) and id(current) not in seen:
+        seen.add(id(current))
+        if callable(getattr(current,'errors',None)):
+            return '; '.join(f"{'.'.join(map(str,item['loc'])) or 'proposal'}: {item['msg']}"
+                             for item in current.errors(include_url=False,include_input=False))[:2400]
+        current=current.__cause__ or current.__context__
+    message=str(error)
+    if '}. Got: ' in message:message=message.rsplit('}. Got: ',1)[1]
+    return message.split('For further information visit:')[0].split('For troubleshooting, visit:')[0][:2400]
+
+
 class OllamaAgents:
     def __init__(self, model=DEFAULT_MODEL):
         self.model_name=model
@@ -29,6 +44,8 @@ class OllamaAgents:
         # Never inherit an enabled cloud tracing session for user requirements.
         attempts=2 if schema in {AppRequirements,AppImplementationPlan,AppBrief,AppAcceptancePlan,NativeAcceptancePlan} else 1
         for attempt in range(attempts):
+            activity=getattr(self,'activity',None)
+            if activity:activity('AGENT_CALL_STARTED',{'schema':schema.__name__,'attempt':attempt+1,'model':self.model_name})
             with tracing_context(enabled=False):
                 result = runnable.invoke(messages)
             directory=getattr(self,'trace_directory',None)
@@ -41,19 +58,34 @@ class OllamaAgents:
                     'output':str(getattr(raw,'content',''))[:40000],
                     'validation_error':str(result.get('parsing_error') or '')[-8000:]},indent=2),encoding='utf-8')
             if result.get('parsing_error'):
-                error=f"Invalid {schema.__name__} output: {result['parsing_error']}"
+                summary=validation_summary(result['parsing_error'])
+                error=f"Invalid {schema.__name__} output: {summary}"
+                if activity:activity('AGENT_VALIDATION_FAILED',{'schema':schema.__name__,'attempt':attempt+1,'summary':summary,'retrying':attempt+1<attempts})
                 if attempt+1==attempts:raise ValueError(error)
-                messages.append(('human','Regenerate the complete proposal from the original inputs. The previous proposal failed validation: '+error[-1800:]+'. Preserve the requested scope and return only fields in this schema. Pages are HTML routes only. API routes include HTTP methods. JSON placeholders must be quoted and captured before use.'))
+                raw=str(getattr(result.get('raw'),'content',''))
+                if raw:messages.append(('assistant',raw[:16000]))
+                messages.append(('human','Correct your previous proposal using the original requirements and API contract. '
+                    'Return the COMPLETE corrected JSON, not a patch. Validation error: '+summary+'. '
+                    'Preserve requested behavior and valid tests. Do not remove assertions to pass validation. '
+                    'For persistence, create a separate record during the functional phase, leave it undeleted, '
+                    'then assert its actual fields in a nonempty restart GET response. '
+                    'Never expect an empty list as proof of persistence. Pages are static HTML routes. '
+                    'Runtime path captures use {{capture_name}} after saving that capture.'))
                 continue
             if result['raw'].response_metadata.get('done_reason')!='stop':
                 raise ValueError('Model response did not complete normally')
-            return schema.model_validate(result['parsed'])
+            parsed=schema.model_validate(result['parsed'])
+            if activity:activity('AGENT_CALL_COMPLETED',{'schema':schema.__name__,'attempt':attempt+1})
+            return parsed
 
     def requirements(self, description):
         return self.generate(AppBrief,
             "You are the Requirements Agent for varied small single-user web apps. Return a "
             "business brief with spec_version=2, NOT tests or code. Preserve the requested domain, "
             "API field names, behavior and relationships; never convert it to task management. "
+            "Honor the requested page count: a single-page app has pages=[\"/\"] with all "
+            "forms and actions on that page. Pages must be static HTML paths, with no dynamic "
+            "parameters such as :id, {id}, or [id]. API endpoints are separate from pages. "
             "Use up to five HTML pages including / (never /api in pages), three entities with "
             "eight fields each, SQLite for persistence or database=none for stateless apps. "
             "Entity field names use snake_case; explain API camelCase mapping in criteria when "
@@ -77,16 +109,25 @@ class OllamaAgents:
             "status and expected (native JSON object/array subset, not an encoded string). Use "
             "null for an unused body or expected assertion. Positive mutations need concrete "
             "input objects. Preserve exact API field names, fixture values, overdraw and other "
-            "explicit negative cases. Capture a created scalar id using save_as=product_id, "
-            "save_pointer=/id. For later requests, body may contain productId=0 with "
-            "body_bindings=[{\"pointer\":\"/productId\",\"capture\":\"product_id\"}]; "
-            "the harness replaces that value with the captured number. expect_bindings works "
+            "explicit negative cases. Capture a created scalar id using save_as=item_id, "
+            "save_pointer=/id (choose a capture name matching this app's entity). Later item "
+            "request paths must substitute the saved capture with DOUBLE braces: for example "
+            "/api/items/{{item_id}} after saving item_id. A single {id} is an architecture "
+            "placeholder, not a runnable test path. Use only fields from the actual API contract; "
+            "never invent a foreign-key field to pass an ID already carried in the URL. "
+            "body_bindings is only for replacing an EXISTING JSON body value at its pointer "
+            "with a saved capture. Leave it empty for a null body, including DELETE. "
+            "expect_bindings works "
             "likewise with JSON pointers, e.g. /0/id for an array item. Captures must be saved "
             "BEFORE they are used; never assert an uncaptured generated id on its creation "
             "response. Assertions can omit generated IDs and compare meaningful fields instead. "
             "Leave unused strings and bindings empty. Every scenario has phase=functional or "
             "restart. Functional scenarios run first, restart scenarios after an actual server "
-            "restart. At most forty steps. GET HTML pages use contains, not JSON expected. "
+            "restart. Leave at least one created record in the database for the restart GET "
+            "to assert meaningful stored fields; test deletion on a separate record if needed. "
+            "An empty list does not prove persistence. Use JSON arrays for list responses, not "
+            "objects with numeric keys. Include checks for requested calculations and totals. "
+            "At most forty steps. GET HTML pages use contains, not JSON expected. "
             "JSON POST handlers must reject malformed and null input; the shared harness also "
             "checks these cases independently. Do not claim any test has been run.",
             {'requirements':requirements.model_dump(),'plan':plan.model_dump(),'original_request':description},coding=True)

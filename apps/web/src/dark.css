@@ -1,4 +1,4 @@
-.theme-control select{border:1px solid #dedee8;background:#fafafe;color:#746c81;padding:6px 8px;border-radius:6px;font-size:10px;cursor:pointer;max-width:125px}
+.theme-control select{border:1px solid #dedee8;background:#fafafe;color:#746c81;padding:6px 8px;border-radius:6px;font-size:14px;cursor:pointer;max-width:125px}
 :root[data-theme=dark]{background:#101722;color:#e0e7f2;color-scheme:dark}
 [data-theme=dark] .sidebar{background:#121923;border-right:1px solid #2a3444}
 [data-theme=dark] .topbar{background:#161f2c;border-color:#2b3648;color:#a6b5ca}
@@ -58,5 +58,5 @@
 [data-theme=dark] .delete-control{color:#edb5bf;border-color:#70505a}
 [data-theme=dark] .delete-control:hover,[data-theme=dark] .close-control:hover{background:#3d2934}
 [data-theme=dark] .closed-workspace p{color:#b5a8c7}
-@media(max-width:650px){.theme-control select{font-size:9px;padding:5px;max-width:95px}.topbar-right{gap:8px}}
+@media(max-width:650px){.theme-control select{font-size:13px;padding:5px;max-width:95px}.topbar-right{gap:8px}}
 [data-theme=dark] .handoff-list li{border-color:#334055}[data-theme=dark] .handoff-list time,[data-theme=dark] .handoff-list small{color:#aebbd0}

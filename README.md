@@ -33,6 +33,13 @@ The dashboard includes a live event stream, agent activity, requirements/plan re
 test/security reports, source ZIP download, preview start/stop and a workspace-close
 control. The control plane is local-only. Generated-app publishing uses GitHub CLI;
 stateless Vercel deployment needs separate approval and project secrets.
+The main workspace shows recent agent actions, validation corrections and expandable
+handoffs inline, with larger text and separate tabs for detailed history and evidence.
+These are recorded activity summaries, not private model reasoning. New dashboard runs
+default to the installed 7B option; CLI/API defaults and existing jobs are unchanged.
+Planning retries send the rejected proposal and a concise validation error back to the
+model for one bounded correction. Invalid proposals still stop before human approval;
+this recovery path does not guarantee that a local model will produce a valid plan.
 The top bar offers **System theme**, **Light mode**, and **Dark mode**; the browser
 remembers your choice. New version-2 plans support different single-user app domains,
 up to five static pages, three data entities and twelve generated source files.

@@ -1,0 +1,65 @@
+.agent-flow{overflow:hidden;padding:26px}
+.agent-flow .panel-title{align-items:flex-start;flex-wrap:wrap}
+.agent-flow .panel-title h2{font-size:23px;margin:8px 0 0}
+.flow-intro{font-size:15px;color:#6b7181;margin:10px 0 22px}
+.flow-state{display:inline-flex;gap:8px;align-items:center;border:1px solid #ded8e9;background:#f6f3fc;color:#6a508b;border-radius:24px;padding:8px 12px;font-size:13px;white-space:nowrap}
+.flow-state>span{width:7px;height:7px;background:currentColor;border-radius:50%}
+.flow-state.is-live>span{animation:flow-pulse 1.8s ease-in-out infinite}
+.agent-route{display:flex;gap:8px;list-style:none;padding:0 0 18px;margin:0 0 20px;overflow-x:auto;border-bottom:1px solid #ece8f2}
+.agent-route li{position:relative;display:flex;align-items:center;gap:7px;flex-shrink:0;padding:9px 11px;border:1px solid #e4e4ee;border-radius:8px;font-size:13px;color:#76798a;background:#fafafe}
+.agent-route li>span{width:6px;height:6px;border-radius:50%;background:#b9bac8}
+.agent-route .route-visited{color:#596b60;background:#f0f5f0;border-color:#dbe5dc}
+.agent-route .route-active,.agent-route .route-current{background:#f0e9fc;border-color:#c6b1e8;color:#69439e}
+.agent-route .route-active>span{background:#8255c4;animation:flow-pulse 1.8s ease-in-out infinite}
+.agent-route .route-attention{background:#fff0e9;border-color:#e6b5a2;color:#9c573e}
+.agent-route small{font-size:11px;color:inherit}
+.flow-updates{max-height:510px;overflow-y:auto;scrollbar-width:thin;scrollbar-gutter:stable;padding-right:8px}
+.flow-update{display:flex;gap:14px;position:relative;padding:0 0 22px}
+.flow-update:last-child{padding-bottom:8px}
+.flow-update:not(:last-child):before{content:'';position:absolute;left:15px;top:33px;bottom:2px;width:1px;background:#e5deef}
+.flow-marker{width:32px;height:32px;display:grid;place-items:center;flex-shrink:0;background:#f2eef8;color:#80629d;border:1px solid #e4daef;border-radius:10px;font-size:23px}
+.flow-handoff .flow-marker{background:#eaf4ed;color:#4d8061;border-color:#d5e6da}
+.flow-warning .flow-marker{background:#fff0e9;color:#a15f46;border-color:#eed4c5;font-size:17px}
+.flow-body{min-width:0;flex:1;padding-top:3px}
+.flow-update-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.flow-update-heading h3{font-size:16px;line-height:1.5;color:#454052}
+.flow-update time{font-size:12px;color:#858294;white-space:nowrap}
+.flow-update p{font-size:15px;line-height:1.65;color:#6c677b;margin:5px 0 0;overflow-wrap:anywhere}
+.flow-update small{display:block;margin-top:7px;font-size:13px;color:#8b6a50}
+.flow-update details{margin-top:8px}
+.flow-update summary{font-size:14px}
+.flow-footnote{margin-top:20px;padding-top:16px;border-top:1px solid #ece8f2;color:#7f788c;font-size:13px}
+.tabs [role=tablist]{gap:6px;background:#ececf3;padding:5px;border-radius:12px;flex-wrap:wrap}
+.tabs{border:0;gap:12px;flex-wrap:wrap}
+.tabs button{padding:10px 14px;border-radius:8px;font-size:14px;transition:background .15s ease,color .15s ease}
+.tabs button.active{background:white;box-shadow:0 2px 7px #2920390d}
+.tabs button.active:after{display:none}
+.tabs button:hover{background:#ffffff99}
+.tabs .connection{margin:0}
+.primary,.secondary{min-height:44px}
+.workspace-grid{grid-template-columns:minmax(0,1fr) 285px}
+.sidebar{width:270px}.main-shell{margin-left:270px}
+.project-heading{flex-wrap:wrap}.project-heading>div:first-child{min-width:0}
+.error-banner{align-items:flex-start}.error-banner>span{overflow-wrap:anywhere}
+.idea-bottom{flex-wrap:wrap;gap:14px}.theme-control select{min-height:38px}
+.agent-row{align-items:flex-start}.agent-avatar{width:34px;height:34px}
+@keyframes flow-pulse{50%{opacity:.45;box-shadow:0 0 0 5px #9a7fc01a}}
+[data-theme=dark] .flow-state{background:#30273f;border-color:#54426c;color:#dac3ef}
+[data-theme=dark] .flow-intro,[data-theme=dark] .flow-update p{color:#c5bbd2}
+[data-theme=dark] .flow-update-heading h3{color:#e0d5ec}
+[data-theme=dark] .flow-update time,[data-theme=dark] .flow-footnote{color:#b0a5c0}
+[data-theme=dark] .agent-route,[data-theme=dark] .flow-footnote{border-color:#3b344a}
+[data-theme=dark] .agent-route li{background:#212b3b;border-color:#39455a;color:#acb8ca}
+[data-theme=dark] .agent-route .route-visited{background:#26392f;border-color:#3a5143;color:#b3c9b7}
+[data-theme=dark] .agent-route .route-active,[data-theme=dark] .agent-route .route-current{background:#3e2f55;border-color:#7f5da7;color:#e1c7fa}
+[data-theme=dark] .agent-route .route-attention{background:#442f2b;border-color:#80564a;color:#efc5af}
+[data-theme=dark] .flow-marker{background:#352b46;border-color:#574369;color:#d6bbed}
+[data-theme=dark] .flow-handoff .flow-marker{background:#263e31;border-color:#45644e;color:#b2d5b6}
+[data-theme=dark] .flow-warning .flow-marker{background:#453029;border-color:#765447;color:#e7b698}
+[data-theme=dark] .flow-update:before{background:#493b5c}
+[data-theme=dark] .flow-update small{color:#d3ac8f}
+[data-theme=dark] .tabs [role=tablist]{background:#151d2b}
+[data-theme=dark] .tabs button.active,[data-theme=dark] .tabs button:hover{background:#342b48}
+@media(max-width:1150px){.workspace-grid{grid-template-columns:minmax(0,1fr)}.team-panel{display:grid;grid-template-columns:1fr 1fr;gap:18px}.team-panel>.panel{margin:0}.team-panel>.panel:first-child{grid-row:span 2}main{padding-left:25px;padding-right:25px}.stage-strip{overflow-x:auto}}
+@media(max-width:650px){.sidebar{position:relative;width:100%}.main-shell{margin-left:0}.agent-flow{padding:20px}.agent-flow .panel-title h2{font-size:21px}.team-panel{grid-template-columns:1fr}.flow-update-heading{flex-wrap:wrap;gap:2px}.flow-update-heading h3{font-size:15px}.tabs button{font-size:13px;padding:10px}.flow-state{font-size:12px}.stage-strip{gap:12px}.stage-strip>div{flex:none}.stage-strip i{display:none}.decision-actions{flex-wrap:wrap}.topbar{height:auto;min-height:62px;gap:12px;flex-wrap:wrap;padding-block:10px}.topbar-right{gap:10px}}
+@media(prefers-reduced-motion:reduce){.flow-state.is-live>span,.agent-route .route-active>span{animation:none}.tabs button{transition:none}}
