@@ -1,6 +1,7 @@
 """Controller-owned browser profiles, executed separately from generated app code."""
 import hashlib
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -102,7 +103,7 @@ def run_browser_checks(root,directory,job_id,*,on_start=None,app_image=None):
         docker('network','create','--internal',*labels,resources['network'])
         app=['docker','run','--detach','--rm','--name',resources['app'],'--pull=never',*labels,
              '--network',resources['network'],'--read-only','--cap-drop=ALL','--security-opt=no-new-privileges',
-             '--user=1000:1000','--memory=6g','--cpus=4','--pids-limit=256',
+             '--user=1000:1000','--memory=6g','--cpus=2','--pids-limit=256',
              '--log-driver','local','--log-opt','max-size=2m','--log-opt','max-file=2',
              '--tmpfs','/tmp:rw,noexec,nosuid,size=256m,uid=1000,gid=1000',
              '--tmpfs','/work:rw,nosuid,size=2g,uid=1000,gid=1000',
@@ -112,9 +113,12 @@ def run_browser_checks(root,directory,job_id,*,on_start=None,app_image=None):
              '/bin/sh','-c','cp -R /source/. /work/ && ln -s /opt/forge-deps/node_modules /work/node_modules && node /trusted/app-server.mjs']
         startup=bounded_command(app,timeout=40,output_limit=40000)
         if startup['exit_code']!=0 or startup['stopped']:raise RuntimeError(startup['output'])
+        # Native Linux bind mounts retain host ownership; match the non-root
+        # operator so browser evidence is writable without world-write permissions.
+        browser_user=f'{os.getuid()}:{os.getgid()}' if hasattr(os,'getuid') and os.getuid()!=0 else '1000:1000'
         command=['docker','run','--rm','--name',resources['browser'],'--pull=never',*labels,
                  '--network',resources['network'],'--read-only','--cap-drop=ALL','--security-opt=no-new-privileges',
-                 '--user=1000:1000','--memory=2g','--cpus=2','--pids-limit=256',
+                 '--user='+browser_user,'--memory=2g','--cpus=2','--pids-limit=256',
                  '--tmpfs','/tmp:rw,nosuid,size=512m,uid=1000,gid=1000',
                  '--env',f'FORGE_BROWSER_BASE=http://{resources["app"]}:3000',
                  '--mount',f'type=bind,source={PROJECT / "tests/browser"},target=/trusted,readonly',
