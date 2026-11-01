@@ -2,6 +2,14 @@
 
 Local-first agentic full-stack development POC using LangGraph, LangChain and Ollama.
 
+[![ForgeFSD checks](https://github.com/Shahid0324-GIT/forge-fsd/actions/workflows/ci.yml/badge.svg)](https://github.com/Shahid0324-GIT/forge-fsd/actions/workflows/ci.yml)
+
+The repository is private. Hosted CI checks Windows/Ubuntu controller tests and
+dashboard builds, plus the fixed converter browser calibration on Linux. See
+[CI runs](https://github.com/Shahid0324-GIT/forge-fsd/actions) for current results.
+Saved local jobs, model weights and runtime evidence are excluded from Git; a fresh
+clone starts without the historical demonstration runs described in the milestone notes.
+
 ## Current milestone: general small-app workflow (experimental)
 
 **Normal use no longer needs terminal commands.** Double-click `Start-ForgeFSD.cmd`
@@ -64,8 +72,8 @@ See [automated browser checks and prepared CI](docs/browser-ci-milestone.md).
 For the temperature-converter demo, **Test app in browser** runs a fixed Chromium
 profile and saves per-case evidence. Provision its separate test image once using
 the browser/CI guide above. Other app domains still need their own reviewed browser
-profiles. The GitHub Actions workflow is prepared locally; it has not yet run in a
-remote repository.
+profiles. The GitHub Actions workflow runs in the private repository linked above;
+it does not run live model generation or deploy generated applications.
 
 ### Local model comparison
 

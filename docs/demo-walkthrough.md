@@ -10,6 +10,11 @@ carry concrete work between roles. The goal is a small, inspectable agent workfl
 
 ## Suggested walkthrough
 
+These steps use the existing local workspace. Historical jobs and their runtime
+evidence are deliberately excluded from Git. A fresh clone can reproduce the
+model-free converter browser calibration, or create a new run with local Ollama;
+it will not contain the saved Temperature Converter run automatically.
+
 1. Open Forge with `Start-ForgeFSD.cmd`. Select **Temperature Converter**.
    Show the original request and the reviewed two-file plan: one frontend page,
    one backend route, no database. Planning corrections remain visible.
@@ -58,6 +63,7 @@ bug in a fixed fixture, not proof of arbitrary application generation.
 - **What if it cannot finish?** It stops with the failure and evidence after its
   budget is exhausted. Review can identify the next action; it does not loop forever.
 - **What is still missing?** Browser profiles and evaluation across more app domains,
-  the first hosted run of the prepared GitHub CI workflow, remote database support
-  and cloud deployment.
+  remote database support and cloud deployment. Hosted controller/dashboard CI and
+  converter browser calibration are available in the private repository's
+  [Actions history](https://github.com/Shahid0324-GIT/forge-fsd/actions).
   Current security/prompt probes are bounded checks, not a complete security audit.

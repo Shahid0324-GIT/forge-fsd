@@ -81,9 +81,24 @@ credentials are not persisted.
 
 CI requires no Ollama service, model weights, GPU, cloud keys or saved local runs.
 It does not execute live model generation, broad security audits or deployment.
-The workflow YAML and its action references were checked locally; no GitHub run
-has occurred. A chosen remote repository and a push are still needed to demonstrate
-hosted CI. This phase does not create a repository or publish source.
+The project is now published to the private
+[Shahid0324-GIT/forge-fsd repository](https://github.com/Shahid0324-GIT/forge-fsd).
+The [Actions history](https://github.com/Shahid0324-GIT/forge-fsd/actions) records
+hosted executions and their results. A fresh-checkout run exposed two setup
+assumptions: the artifacts parent directory must be created before pytest, and the
+launcher unit test needs its own dashboard-build fixture. Both were corrected.
+Browser containers now support the two-CPU hosted runner; on native Linux the
+browser uses the non-root operator's UID/GID to write its evidence bind mount.
+The application container retains UID/GID 1000. No generated app source changed.
+Historical local jobs and reports remain excluded from Git; CI creates its own
+fixture evidence and uploads it with seven-day retention.
+
+The [first complete passing hosted run](https://github.com/Shahid0324-GIT/forge-fsd/actions/runs/41295832149)
+verified commit `3fd9232` on 1 November 2026. Both OS jobs passed controller tests
+and dashboard builds; the Linux browser job accepted the correct fixture and
+rejected the stale-unit fixture. Its downloadable artifacts retain the individual
+results. Locally, the full pre-publication suite passed 133 tests; focused browser
+and launcher checks also passed after the portability changes.
 
 ## References
 
