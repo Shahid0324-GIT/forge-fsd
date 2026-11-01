@@ -325,6 +325,12 @@ def deploy_release(job_id,store,fingerprint,approved=False):
 def refresh_release(job_id,store,fingerprint):
     _,published=published_release(job_id,store,fingerprint)
     app_ci(job_id,store,fingerprint)
+    removed=next((e['payload'] for e in reversed(store.read(job_id)['events']) if e['status']=='APP_DEPLOYMENT_REMOVED' and e['payload']['release_fingerprint']==fingerprint),None)
+    if removed:
+        # Keep historical deployment evidence without reviving its URL after cleanup.
+        store.event(job_id,'APP_DEPLOYMENT_STATUS',{'release_fingerprint':fingerprint,
+                    'cloud_deployed':False,'removed':True,'cleanup':removed},update_status=False)
+        return store.read(job_id)
     dispatch=next((e for e in reversed(store.read(job_id)['events']) if e['status']=='DEPLOYMENT_DISPATCHED' and e['payload']['release_fingerprint']==fingerprint),None)
     if dispatch:
         runs=json.loads(gh('run','list','--repo',published['repository'],'--workflow','deploy.yml','--commit',published['sha'],

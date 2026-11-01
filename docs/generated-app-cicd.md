@@ -92,8 +92,40 @@ created the private
 [converter repository](https://github.com/Shahid0324-GIT/forge-temperature-converter)
 at commit `ead072f5c34f37f5050f38a2268c890b0382222b`. Its
 [application CI history](https://github.com/Shahid0324-GIT/forge-temperature-converter/actions)
-is separate from Forge's own checks. Vercel configuration and deployment approval
-remain pending; no public deployment is claimed.
+is separate from Forge's own checks.
+
+## One-time live deployment and cleanup: 1 November 2026
+
+The user approved a temporary Vercel test and cleanup. A dedicated Hobby project,
+`forge-converter-test-4b3fd81e`, used Next.js on Node 24 without a Git integration
+that could independently trigger deployments. The CLI device login could create
+the project but could not create a personal token. The account dashboard's team
+submenu provided a restriction to this specific project; a one-hour token was
+created with explicit approval. Non-secret metadata confirmed the project ID.
+The credential was encrypted for local transfer and passed directly into the app
+repository's GitHub Actions secrets. Its plaintext value was not placed in model
+context, source, logs or saved evidence; temporary transfer files were removed.
+
+Forge dispatched the [successful deployment workflow](https://github.com/Shahid0324-GIT/forge-temperature-converter/actions/runs/41300588953)
+at approved commit `ead072f5c34f37f5050f38a2268c890b0382222b`. App CI passed again
+before production deployment. The live service passed 15 direct HTTPS API checks
+and four operator-observed browser checks: decimal conversion, negative conversion,
+unit-change clearing and input-change clearing. These were bounded checks, not a
+complete production/security audit.
+
+After saving evidence, cleanup removed the exact deployment and dedicated project,
+revoked the project-only token, removed all three temporary GitHub secrets, and
+logged out the CLI session used for the trial. Both the unique deployment URL and
+production alias returned HTTP 404 afterward. Project absence and token absence
+were independently checked through Vercel; GitHub listed none of the three secrets.
+The application repository and historical Actions results remain available.
+
+Local evidence is retained in `artifacts/vercel-one-time/summary.json`, individual
+API/browser reports, cleanup checks and screenshots. These ignored local artifacts
+are not distributed by a fresh clone. Forge records both the successful historical
+deployment and its verified removal; refreshing status does not revive the old URL.
+Cleanup was performed through trusted operator tooling for this trial, not an
+autonomous cleanup agent or a new dashboard delete-deployment button.
 
 The first model notes contained imprecise wording about HTTP checks authorizing
 requests and offline dependency provisioning. Original responses are retained;

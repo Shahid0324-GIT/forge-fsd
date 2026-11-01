@@ -37,6 +37,13 @@ it will not contain the saved Temperature Converter run automatically.
 6. Review and approve local preview through Forge's separate human gate. Exercise
    the conversion form and show a negative temperature. Preview data/runtime is
    disposable; this is not cloud deployment.
+7. Show the generated application's separate repository and hosted app CI. The
+   **App CI** and **Deployment** roles have saved handoffs and reviewable workflow
+   files. Explain the separate publishing and production-deployment approvals.
+   The converter's one-time Vercel deployment passed CI, 15 live API checks and
+   four observed browser checks, then was deleted with its temporary credentials.
+   Show the retained deployment run and cleanup report; its public URLs now return
+   404. This demonstrates a completed test cycle, not a currently hosted service.
 
 ## Evidence for the repair example
 
@@ -63,7 +70,8 @@ bug in a fixed fixture, not proof of arbitrary application generation.
 - **What if it cannot finish?** It stops with the failure and evidence after its
   budget is exhausted. Review can identify the next action; it does not loop forever.
 - **What is still missing?** Browser profiles and evaluation across more app domains,
-  remote database support and cloud deployment. Hosted controller/dashboard CI and
+  remote database support and deployment for database-backed apps. Stateless
+  Vercel deployment has been tested and the one-time deployment removed. Hosted controller/dashboard CI and
   converter browser calibration are available in the private repository's
   [Actions history](https://github.com/Shahid0324-GIT/forge-fsd/actions).
   Current security/prompt probes are bounded checks, not a complete security audit.

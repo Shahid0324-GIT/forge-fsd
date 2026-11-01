@@ -6,6 +6,11 @@ Generated applications have their own CI/deployment agents and separate review,
 publish and deploy controls. See [generated-app CI/CD](docs/generated-app-cicd.md).
 The badge below checks Forge itself; it is not evidence of a generated app's CI.
 
+The converter completed a separate app CI and one-time Vercel deployment test.
+Its live API/browser checks passed, then the deployment, test project and temporary
+credentials were removed. The generated-app CI/CD guide retains the workflow links
+and describes the local evidence and remaining database-deployment limitations.
+
 [![ForgeFSD checks](https://github.com/Shahid0324-GIT/forge-fsd/actions/workflows/ci.yml/badge.svg)](https://github.com/Shahid0324-GIT/forge-fsd/actions/workflows/ci.yml)
 
 The repository is private. Hosted CI checks Windows/Ubuntu controller tests and

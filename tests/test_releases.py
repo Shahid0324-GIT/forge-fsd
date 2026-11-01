@@ -201,3 +201,14 @@ def test_successful_deploy_workflow_requires_matching_url_artifact(prepared,monk
     result=project/'artifacts/releases'/job/'deployments/5/deployment.json'
     result.write_text(json.dumps({'sha':'b'*40,'url':'https://demo.vercel.app'}))
     with pytest.raises(ValueError,match='approved commit'):release.refresh_release(job,store,report['release_fingerprint'])
+
+
+def test_cleanup_does_not_revive_a_historical_deployment(prepared,monkeypatch):
+    _,store,job,_,_=prepared;report,_,calls=published(prepared,monkeypatch)
+    store.event(job,'APP_DEPLOYMENT_REMOVED',{'release_fingerprint':report['release_fingerprint'],
+                'project_id':'prj_test','evidence':'cleanup.json'},update_status=False)
+    release.refresh_release(job,store,report['release_fingerprint'])
+    result=store.read(job)['events'][-1]
+    assert result['status']=='APP_DEPLOYMENT_STATUS'
+    assert result['payload']['removed'] and not result['payload']['cloud_deployed']
+    assert not any('--workflow' in args and args[args.index('--workflow')+1]=='deploy.yml' for args in calls)
