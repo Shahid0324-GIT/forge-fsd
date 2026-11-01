@@ -40,6 +40,9 @@ default to the installed 7B option; CLI/API defaults and existing jobs are uncha
 Planning retries send the rejected proposal and a concise validation error back to the
 model for one bounded correction. Invalid proposals still stop before human approval;
 this recovery path does not guarantee that a local model will produce a valid plan.
+Builder corrections likewise receive the rejected source and concrete import/boundary
+errors. Client-side SQLite imports remain rejected, including files that already declare
+`"use client"`; correcting an import path does not make a database module browser-safe.
 The top bar offers **System theme**, **Light mode**, and **Dark mode**; the browser
 remembers your choice. New version-2 plans support different single-user app domains,
 up to five static pages, three data entities and twelve generated source files.

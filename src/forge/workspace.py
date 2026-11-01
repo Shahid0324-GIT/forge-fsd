@@ -118,11 +118,13 @@ def normalize_app_source(relative,content):
         return content
     content=re.sub(r'\A(\s*)use client\s*;',r'\1"use client";',content,count=1)
     hooks=r'\b(?:useState|useEffect|useReducer|useRef|useContext|useMemo|useCallback|useTransition|useSyncExternalStore|useRouter|usePathname|useSearchParams)\b'
-    if not re.search(hooks,content) or not re.search(r'from\s+[\'\"](?:react|next/navigation)[\'\"]',content):return content
-    if re.match(r'\s*[\'\"]use client[\'\"]\s*;',content):return content
+    explicit_client=bool(re.match(r'\s*[\'\"]use client[\'\"]\s*;',content))
+    interactive=bool(re.search(hooks,content) and re.search(r'from\s+[\'\"](?:react|next/navigation)[\'\"]',content))
+    if not explicit_client and not interactive:return content
     runtime_source=re.sub(r'import\s+type\s+[^;]+;','',content)
     if re.search(r'[\'\"]use server[\'\"]|process\.env|from\s+[\'\"](?:node:|fs[\'\"]|path[\'\"]|@/lib/|\.{1,2}/.*lib/)',runtime_source):
         raise ValueError('Mixed server/client module requires explicit review; refusing to change its execution boundary')
+    if explicit_client:return content
     return '"use client";\n'+content
 
 

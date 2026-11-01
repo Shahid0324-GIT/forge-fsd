@@ -255,6 +255,7 @@ def test_builder_retries_unsupported_imports_without_accepting_them(tmp_path):
     result=agents.build_app_file('frontend','app/page.tsx',ImplementationPlan.model_validate(calculator_plan()).model_dump(),RequirementsDocument.model_validate(calculator_spec()).model_dump(),tmp_path)
     assert 'sqlite' not in result.content
     assert calls[1]['generation_feedback']['rejected_imports']==['sqlite']
+    assert calls[1]['generation_feedback']['previous_proposal']=="import {open} from 'sqlite';"
     assert not (tmp_path/'app/page.tsx').exists()
 
 
@@ -270,6 +271,32 @@ def test_framework_normalization_adds_only_missing_client_directive():
         normalize_app_source('app/page.tsx',code+"\nconst secret=process.env.SECRET;")
     assert normalize_app_source('lib/example.ts','```typescript\nexport const value=1;\n```')=='export const value=1;\n'
     assert normalize_app_source('app/page.tsx',code+"\nimport type {Item} from '@/lib/types';").startswith('"use client";')
+
+
+def test_explicit_client_directive_does_not_bypass_server_import_check():
+    from forge.workspace import normalize_app_source
+    for module in ['../../../lib/expense','@/lib/expense','node:sqlite']:
+        with pytest.raises(ValueError,match='server/client'):
+            normalize_app_source('app/components/ExpenseList.tsx',f'"use client";\nimport {{getExpenses}} from "{module}";')
+    code='"use client";\nimport type {Expense} from "@/lib/types";\nexport default function List(){return null;}'
+    assert normalize_app_source('app/components/List.tsx',code)==code
+
+
+def test_builder_correction_receives_client_boundary_error_and_rejected_source(tmp_path):
+    from forge.agents import OllamaAgents
+    from forge.workspace import FileOperation
+    agent=OllamaAgents.__new__(OllamaAgents);calls=[]
+    bad='"use client";\nimport {getExpenses} from "../../../lib/expense";'
+    def generate(*args,**kwargs):
+        calls.append(args[2].copy())
+        return FileOperation(content=bad if len(calls)==1 else '"use client";\nexport default function List(){return null;}')
+    agent.generate=generate
+    agent.build_app_file('frontend','app/components/List.tsx',calculator_plan(),calculator_spec(),tmp_path)
+    feedback=calls[1]['generation_feedback']
+    assert feedback['previous_proposal']==bad
+    assert any('server/client' in issue for issue in feedback['issues'])
+    assert 'fetch' in feedback['instruction']
+    assert not (tmp_path/'app/components/List.tsx').exists()
 
 
 def test_preview_cleanup_tolerates_only_already_removed_owned_resource(monkeypatch):

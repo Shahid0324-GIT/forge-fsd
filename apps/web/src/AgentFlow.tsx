@@ -62,7 +62,7 @@ export default function AgentFlow({events,busy,status,onContext}:Props){
           <span className="flow-marker" aria-hidden="true">{handoff?'↗':warning?'!':'·'}</span>
           <div className="flow-body"><div className="flow-update-heading"><h3>{title}</h3><time dateTime={event.timestamp}>{new Date(event.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</time></div><p>{summary}</p>
             {handoff&&<details><summary>What was shared</summary><p>{(event.payload.context_fields??[]).map((field:string)=>field.replaceAll('_',' ')).join(' · ')}</p><button className="text-button" onClick={()=>onContext(event)}>Open saved context →</button></details>}
-            {event.status==='AGENT_VALIDATION_FAILED'&&<small>{event.payload.retrying?'A bounded correction is being requested automatically.':'Correction attempts ended. The run remains unapproved.'}</small>}
+            {event.status==='AGENT_VALIDATION_FAILED'&&<small>{event.payload.retrying?'A bounded correction is being requested automatically.':event.payload.schema==='FileOperation'?'Correction attempts ended. This generated file was not accepted.':'Correction attempts ended. The run remains unapproved.'}</small>}
           </div>
         </article>;
       })}

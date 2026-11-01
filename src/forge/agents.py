@@ -172,7 +172,7 @@ class OllamaAgents:
             requirements.model_dump())
 
     def build_app_file(self,owner,relative,plan,requirements,root):
-        from forge.workspace import FileOperation,app_coding_context,unsupported_imports
+        from forge.workspace import FileOperation,app_coding_context,unsupported_imports,normalize_app_source
         instruction=(
             f'You are the {owner} builder subagent. Implement ONLY {relative}, returning complete '
             'TypeScript in content. Follow the approved app-specific interfaces and acceptance '
@@ -185,7 +185,10 @@ class OllamaAgents:
             'with 400 or 422, never 500. Honor integer constraints with Number.isInteger. '
             'Every input needs a visible associated label and appropriate min/step constraints. '
             'Client interactive components need use client; do not import server database modules '
-            'into them. If this TSX file uses hooks, its FIRST line must be exactly "use client";. '
+            'into them. Client components use fetch against the approved /api endpoints, never '
+            'call SQLite helpers directly, even with a corrected relative import. Local imports '
+            'must resolve inside this workspace; @/ is the workspace root alias. '
+            'If this TSX file uses hooks, its FIRST line must be exactly "use client";. '
             'Never import next/router in App Router code; use next/navigation only when needed. '
             'Next route params must be awaited. Keep code concise. Use inline styles '
             'or existing global CSS. Preserve app-specific contracts across files.')
@@ -193,9 +196,20 @@ class OllamaAgents:
         for attempt in range(2):
             result=self.generate(FileOperation,instruction,data,coding=True)
             rejected=unsupported_imports(root,relative,result.content)
-            if not rejected:return result
-            data['generation_feedback']={'rejected_imports':rejected,'instruction':'Regenerate this complete file using the supplied platform reference and fixed dependencies only.'}
-        raise ValueError('Generated file still imports unsupported dependencies after one correction: '+', '.join(rejected))
+            issues=['Unsupported dependency or workspace-escaping import: '+module for module in rejected]
+            try:normalize_app_source(relative,result.content)
+            except ValueError as exc:issues.append(str(exc))
+            if not issues:return result
+            activity=getattr(self,'activity',None)
+            if activity:activity('AGENT_VALIDATION_FAILED',{'schema':'FileOperation','file':relative,
+                'attempt':attempt+1,'summary':'; '.join(issues),'retrying':attempt==0})
+            data['generation_feedback']={'rejected_imports':rejected,'issues':issues,
+                'previous_proposal':result.content,
+                'instruction':'Correct this rejected file and return its complete source. Preserve its approved behavior. '
+                    'Use fetch with the approved API routes in client components, not server database imports. '
+                    'Use workspace-root @/ aliases for appropriate local imports. Follow the supplied platform reference; '
+                    'do not add packages or edit tests.'}
+        raise ValueError('Generated file still has unsupported dependencies or invalid source after one correction: '+'; '.join(issues))
 
     def build_file(self, owner, relative, baseline, requirements):
         from forge.workspace import FileOperation
