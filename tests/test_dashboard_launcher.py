@@ -3,7 +3,11 @@ from types import SimpleNamespace
 import forge.dashboard as launcher
 
 
-def test_reopening_launcher_reuses_service_without_creating_manager(monkeypatch):
+def test_reopening_launcher_reuses_service_without_creating_manager(monkeypatch, tmp_path):
+    build = tmp_path / 'apps/web/dist'
+    build.mkdir(parents=True)
+    (build / 'index.html').write_text('<html></html>')
+    monkeypatch.setattr(launcher, 'PROJECT', tmp_path)
     class Response:
         headers={'X-ForgeFSD-Control-Plane':'1'}
         def __enter__(self):return self
