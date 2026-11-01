@@ -10,6 +10,14 @@ class Boundary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ArchitectureReview(Boundary):
+    issues: list[Annotated[str,Field(min_length=1,max_length=600)]] = Field(max_length=6)
+
+
+class AcceptanceReview(Boundary):
+    issues: list[Annotated[str,Field(min_length=1,max_length=600)]] = Field(max_length=6)
+
+
 class ApplicationRequest(Boundary):
     description: str = Field(min_length=10, max_length=4000)
     model: LocalModel = DEFAULT_MODEL
@@ -133,6 +141,29 @@ def validate_scenarios(scenarios,database):
                 for binding in [*step.body_bindings,*step.expect_bindings]:
                     if binding.capture not in captures:raise ValueError(f'Acceptance capture {binding.capture} is used before it is saved')
                 if step.save_as:captures.add(step.save_as)
+    # Recognize an explicit captured CRUD lifecycle, not arbitrary application logic.
+    # An uncaptured create makes the collection's final contents unknown to this check.
+    records={};unknown=set()
+    for scenario in functional:
+        for step in scenario.steps:
+            if step.status>=300:continue
+            if step.method=='POST':
+                if step.save_as and step.save_pointer=='/id':
+                    if step.save_as in records:unknown.add(records[step.save_as][0])
+                    records[step.save_as]=[step.path,True]
+                else:unknown.add(step.path)
+            match=re.fullmatch(r'(.+)/\{\{([a-z][a-z0-9_]*)\}\}',step.path)
+            if match and match[2] in records and records[match[2]][0]==match[1]:
+                if step.method=='DELETE':records[match[2]][1]=False
+                elif step.method in {'PUT','PATCH'} and step.status==201:records[match[2]][1]=True
+    if database=='sqlite':
+        for scenario in scenarios:
+            if scenario.phase!='restart':continue
+            for step in scenario.steps:
+                known=[alive for collection,alive in records.values() if collection==step.path]
+                if (step.method=='GET' and step.status==200 and step.expect_json and json.loads(step.expect_json)
+                        and known and not any(known) and step.path not in unknown):
+                    raise ValueError(f'Restart fixture for {step.path} expects stored records after all its captured records were deleted; create and retain a separate fixture')
 
 
 class AppBrief(Boundary):
@@ -294,3 +325,11 @@ class BackendTask(ImplementationTask):
 class AppImplementationPlan(ImplementationPlan):
     spec_version: Literal[2] = Field(...)
     tasks: tuple[FrontendTask,BackendTask]
+
+    @model_validator(mode='after')
+    def concrete_api_contract(self):
+        contract=self.tasks[1].contract
+        missing=[route.split(' ',1)[1] for route in self.routes if route.split(' ',1)[1] not in contract]
+        if missing:
+            raise ValueError('Backend contract must specify the request/response interface for each API path: '+', '.join(dict.fromkeys(missing)))
+        return self

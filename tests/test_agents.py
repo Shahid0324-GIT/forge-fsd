@@ -93,3 +93,70 @@ def test_qa_correction_stays_bounded_and_reports_concise_error():
     assert len(str(failure.value))<400
     assert sum(status=='AGENT_CALL_STARTED' for status,_ in events)==2
     assert events[-1][1]['retrying'] is False
+
+
+def test_design_review_sends_findings_back_before_returning_plan():
+    from copy import deepcopy
+    from forge.schemas import AppImplementationPlan,ArchitectureReview
+    from test_general_apps import calculator_plan
+    original={'original_request':'Build a tip calculator','requirements':{'title':'Calculator'}}
+    untouched=deepcopy(original);calls=[];handoffs=[]
+    agent=OllamaAgents.__new__(OllamaAgents)
+    def generate(schema,instruction,data,**kwargs):
+        calls.append((schema,deepcopy(data)))
+        if schema is ArchitectureReview:
+            return ArchitectureReview(issues=['Specify the API response shape.'] if len(calls)==2 else [])
+        return AppImplementationPlan.model_validate(calculator_plan())
+    agent.generate=generate;agent.handoff=lambda *args:handoffs.append(args)
+    result=agent.reviewed_generate(AppImplementationPlan,'Architect',original,ArchitectureReview,'Review')
+    assert result.database=='none'
+    assert [schema for schema,_ in calls]==[AppImplementationPlan,ArchitectureReview,AppImplementationPlan,ArchitectureReview]
+    assert calls[2][1]['review_findings']==['Specify the API response shape.']
+    assert calls[2][1]['previous_proposal']==calls[1][1]['proposal']
+    assert original==untouched
+    assert [(h[0],h[1]) for h in handoffs]==[('architect_agent','architecture_reviewer'),('architecture_reviewer','architect_agent'),('architect_agent','architecture_reviewer')]
+
+
+def test_unresolved_model_critique_remains_visible_and_does_not_override_valid_contract():
+    from forge.schemas import NativeAcceptancePlan,AcceptanceReview
+    bad=persistence_proposal();bad['scenarios'][-1]['steps'][0]['expected']=[{'title':'Keep me'}]
+    agent=OllamaAgents.__new__(OllamaAgents);calls=[];events=[]
+    agent.activity=lambda status,payload:events.append((status,payload))
+    def generate(schema,instruction,data,**kwargs):
+        calls.append(schema)
+        if schema is AcceptanceReview:return AcceptanceReview(issues=['The restart fixture was deleted before restart.'])
+        return NativeAcceptancePlan.model_validate(bad)
+    agent.generate=generate
+    result=agent.reviewed_generate(NativeAcceptancePlan,'QA',{},AcceptanceReview,'Review')
+    assert result.database=='sqlite'
+    assert events[-1][1]['advisory'] is True
+    assert events[-1][1]['issues']==['The restart fixture was deleted before restart.']
+    assert calls==[NativeAcceptancePlan,AcceptanceReview,NativeAcceptancePlan,AcceptanceReview]
+
+
+def test_captured_crud_restart_fixture_must_survive_deletion():
+    from pydantic import ValidationError
+    from forge.schemas import NativeAcceptancePlan
+    data=persistence_proposal()
+    create=data['scenarios'][0]['steps'][0]
+    create.update(save_as='item_id',save_pointer='/id')
+    data['scenarios'][0]['steps'].append({'method':'DELETE','path':'/api/items/{{item_id}}','body':None,'status':204,'expected':None})
+    data['scenarios'][-1]['steps'][0]['expected']=[{'title':'Keep me'}]
+    with pytest.raises(ValidationError,match='all its captured records were deleted'):
+        NativeAcceptancePlan.model_validate(data)
+    from copy import deepcopy
+    reused=deepcopy(data)
+    reused['scenarios'][0]['steps'].insert(1,dict(reused['scenarios'][0]['steps'][0]))
+    # Reusing a capture leaves the previous record untracked; do not assume it was deleted.
+    assert NativeAcceptancePlan.model_validate(reused).database=='sqlite'
+    data['scenarios'][0]['steps'].append({'method':'POST','path':'/api/items','body':{'title':'Keep me'},'status':201,'expected':{'title':'Keep me'},'save_as':'retained_id','save_pointer':'/id'})
+    assert NativeAcceptancePlan.model_validate(data).database=='sqlite'
+
+
+def test_vague_architecture_cannot_replace_a_concrete_api_contract():
+    from pydantic import ValidationError
+    from forge.schemas import AppImplementationPlan
+    from test_general_apps import calculator_plan
+    data=calculator_plan();data['tasks'][1]['contract']='Implement calculations and validation.'
+    with pytest.raises(ValidationError,match='Backend contract must specify'):
+        AppImplementationPlan.model_validate(data)

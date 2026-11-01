@@ -1,7 +1,7 @@
 type WorkflowEvent={sequence:number;timestamp:string;status:string;payload:Record<string,any>};
 type Props={events:WorkflowEvent[];busy:boolean;status:string;onContext:(event:WorkflowEvent)=>void};
 
-const roles:Record<string,string>={FileOperation:'Builder',RequirementsDocument:'Requirements',AppBrief:'Requirements',AppRequirements:'Requirements',AppImplementationPlan:'Architect',ImplementationPlan:'Architect',NativeAcceptancePlan:'QA',AppAcceptancePlan:'QA',requirements_agent:'Requirements',architect_agent:'Architect',qa:'QA & repair',backend_builder:'Backend',frontend_builder:'Frontend',implementation_coordinator:'Build coordinator',verification:'Test runner',ci_agent:'App CI',deployment_agent:'Deployment'};
+const roles:Record<string,string>={FileOperation:'Builder',RequirementsDocument:'Requirements',AppBrief:'Requirements',AppRequirements:'Requirements',AppImplementationPlan:'Architect',ImplementationPlan:'Architect',NativeAcceptancePlan:'Acceptance planner',ArchitectureReview:'Architecture reviewer',AcceptanceReview:'Acceptance reviewer',AppAcceptancePlan:'QA',architecture_reviewer:'Architecture reviewer',acceptance_reviewer:'Acceptance reviewer',requirements_agent:'Requirements',architect_agent:'Architect',qa:'Test planning & repair',backend_builder:'Backend',frontend_builder:'Frontend',implementation_coordinator:'Build coordinator',verification:'Test runner',ci_agent:'App CI',deployment_agent:'Deployment'};
 const name=(value:string)=>roles[value]??value?.replaceAll('_',' ')??'Agent';
 export function conciseIssue(message:string):string{
   if(message.includes('Failed to parse')){
@@ -10,12 +10,12 @@ export function conciseIssue(message:string):string{
   }
   return message.length>500?message.slice(0,500)+'… Full details are saved in Activity.':message;
 }
-const steps=[['Requirements',['REQUIREMENTS','REQUIREMENTS_READY']],['Architect',['PLANNING']],['QA',['TEST_PLANNING']],['Builders',['BUILDING','REPAIRING']],['Verification',['VERIFYING','FUNCTIONALLY_VERIFIED']],['Security',['SECURITY_CHECK','SECURITY_PASSED']],['Release',['CI_PLANNING','DEPLOYMENT_PLANNING']]] as const;
+const steps=[['Requirements',['REQUIREMENTS','REQUIREMENTS_READY']],['Architect',['PLANNING']],['Test planning',['TEST_PLANNING']],['Builders',['BUILDING','REPAIRING']],['Verification',['VERIFYING','FUNCTIONALLY_VERIFIED']],['Security',['SECURITY_CHECK','SECURITY_PASSED']],['Release',['CI_PLANNING','DEPLOYMENT_PLANNING']]] as const;
 const summaries:Record<string,[string,string]>={
   REQUIREMENTS:['Requirements agent','Turning your idea into a business brief.'],
   REQUIREMENTS_READY:['Requirements saved','The shared brief is available below.'],
   PLANNING:['Architect agent','Designing interfaces, data storage and file ownership.'],
-  TEST_PLANNING:['QA agent','Designing concrete acceptance checks against the brief and API contract.'],
+  TEST_PLANNING:['Acceptance planning agent','Defining what the finished app must do. No application tests are running yet.'],
   PLAN_REVIEW:['Your review','The plan and proposed checks are ready for your approval.'],
   APPROVED:['Plan approved','Builders can now work from the reviewed contract.'],
   BUILDING:['Builders','Generating the approved application files.'],
@@ -31,17 +31,18 @@ const summaries:Record<string,[string,string]>={
 
 function describe(event:WorkflowEvent):[string,string]{
   const p=event.payload;
+  if(event.status==='PLANNING_QUALITY_REVIEW')return [name(p.reviewer),p.issues?.length?p.issues.join(' '):p.summary];
   if(event.status==='AGENT_HANDOFF')return [`${name(p.sender)} → ${name(p.recipient)}`,String(p.summary??'Saved context supplied to the next role.')];
   if(event.status==='AGENT_CALL_STARTED')return [`${name(p.schema)} · model call`, `Generating a structured proposal${p.attempt>1?` · correction attempt ${p.attempt}`:''}.`];
   if(event.status==='AGENT_CALL_COMPLETED')return [`${name(p.schema)} · response validated`,'The response passed its schema checks. Application tests have not been implied.'];
   if(event.status==='AGENT_VALIDATION_FAILED')return [`${name(p.schema)} · ${p.retrying?'correcting proposal':'needs attention'}`,String(p.summary??'Proposal validation failed.')];
   if(event.payload.reason)return ['Step needs attention',conciseIssue(String(event.payload.reason))];
   const fallback=summaries[event.status]??[event.status.toLowerCase().replaceAll('_',' '),'Recorded workflow update.'];
-  return [p.delegated_to?`${name(p.delegated_to)} agent`:fallback[0],p.file?`Working on ${p.file}`:p.summary??fallback[1]];
+  return [p.delegated_to&&event.status!=='TEST_PLANNING'?`${name(p.delegated_to)} agent`:fallback[0],p.file?`Working on ${p.file}`:p.summary??fallback[1]];
 }
 
 export default function AgentFlow({events,busy,status,onContext}:Props){
-  const visible=events.filter(e=>e.status in summaries||['AGENT_HANDOFF','AGENT_CALL_STARTED','AGENT_CALL_COMPLETED','AGENT_VALIDATION_FAILED','FAILED','VERIFICATION_FAILED','SECURITY_BLOCKED','INTERRUPTED','CANCELLED'].includes(e.status));
+  const visible=events.filter(e=>e.status in summaries||['PLANNING_QUALITY_REVIEW','AGENT_HANDOFF','AGENT_CALL_STARTED','AGENT_CALL_COMPLETED','AGENT_VALIDATION_FAILED','FAILED','VERIFICATION_FAILED','SECURITY_BLOCKED','INTERRUPTED','CANCELLED'].includes(e.status));
   const recent=visible.slice(-8).reverse();
   const active=events.filter(e=>steps.some(([,statuses])=>(statuses as readonly string[]).includes(e.status))).at(-1);
   const failed=['FAILED','VERIFICATION_FAILED','SECURITY_BLOCKED','INTERRUPTED'].includes(status);
@@ -57,7 +58,7 @@ export default function AgentFlow({events,busy,status,onContext}:Props){
       {recent.length===0?<p className="muted">Agent activity will appear when planning starts.</p>:recent.map(event=>{
         const [title,summary]=describe(event);
         const handoff=event.status==='AGENT_HANDOFF';
-        const warning=event.status==='AGENT_VALIDATION_FAILED'||event.status==='FAILED';
+        const warning=event.status==='AGENT_VALIDATION_FAILED'||event.status==='FAILED'||(event.status==='PLANNING_QUALITY_REVIEW'&&event.payload.issues?.length>0);
         return <article key={event.sequence} className={`flow-update ${handoff?'flow-handoff':''} ${warning?'flow-warning':''}`}>
           <span className="flow-marker" aria-hidden="true">{handoff?'↗':warning?'!':'·'}</span>
           <div className="flow-body"><div className="flow-update-heading"><h3>{title}</h3><time dateTime={event.timestamp}>{new Date(event.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</time></div><p>{summary}</p>

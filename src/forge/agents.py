@@ -6,6 +6,7 @@ from langsmith import tracing_context
 
 from forge.schemas import ImplementationPlan, RequirementsDocument,AppRequirements,AppImplementationPlan,AppBrief,AppAcceptancePlan,NativeAcceptancePlan
 from forge.models import DEFAULT_MODEL
+from forge.schemas import ArchitectureReview,AcceptanceReview
 
 
 def validation_summary(error):
@@ -42,7 +43,7 @@ class OllamaAgents:
             ("human", json.dumps(data,separators=(',',':'))),
         ]
         # Never inherit an enabled cloud tracing session for user requirements.
-        attempts=2 if schema in {AppRequirements,AppImplementationPlan,AppBrief,AppAcceptancePlan,NativeAcceptancePlan} else 1
+        attempts=2 if schema in {AppRequirements,AppImplementationPlan,AppBrief,AppAcceptancePlan,NativeAcceptancePlan,ArchitectureReview,AcceptanceReview} else 1
         for attempt in range(attempts):
             activity=getattr(self,'activity',None)
             if activity:activity('AGENT_CALL_STARTED',{'schema':schema.__name__,'attempt':attempt+1,'model':self.model_name})
@@ -78,11 +79,42 @@ class OllamaAgents:
             if activity:activity('AGENT_CALL_COMPLETED',{'schema':schema.__name__,'attempt':attempt+1})
             return parsed
 
+    def reviewed_generate(self,schema,instruction,data,review_schema,review_instruction):
+        """One advisory critique/revision; schema and fixture validation remain authoritative."""
+        original=dict(data)
+        request=dict(original)
+        actor='architect_agent' if review_schema is ArchitectureReview else 'qa'
+        reviewer='architecture_reviewer' if review_schema is ArchitectureReview else 'acceptance_reviewer'
+        for round_index in range(2):
+            proposal=self.generate(schema,instruction,request,coding=True)
+            proposal_data=proposal.model_dump()
+            context={**original,'proposal':proposal_data}
+            handoff=getattr(self,'handoff',None)
+            if handoff:handoff(actor,reviewer,'Review the proposed contract against the original request before approval.',context)
+            critique=self.generate(review_schema,review_instruction,context,coding=True)
+            activity=getattr(self,'activity',None)
+            if activity:activity('PLANNING_QUALITY_REVIEW',{'reviewer':reviewer,'round':round_index+1,
+                'issues':critique.issues,'advisory':True,'summary':
+                ('Review suggested changes; one revision will be requested.' if round_index==0 else 'Review still has advisory findings for human review; application tests have not run.')
+                if critique.issues else 'Review found no further issues; application tests have not run.'})
+            if not critique.issues:return proposal
+            if round_index==1:
+                # A second call to the same small model is not a correctness oracle.
+                # Keep its unresolved advice visible for human review, without letting
+                # unsupported critique override the independently validated contract.
+                return proposal
+            request={**original,'previous_proposal':proposal_data,'review_findings':critique.issues,
+                'revision_instruction':'Return the complete corrected proposal. Preserve every requested feature and valid assertion. Resolve the review findings without adding unsupported scope.'}
+            if handoff:handoff(reviewer,actor,'Revise the proposal using the saved review findings.',request)
+
     def requirements(self, description):
         return self.generate(AppBrief,
             "You are the Requirements Agent for varied small single-user web apps. Return a "
-            "business brief with spec_version=2, NOT tests or code. Preserve the requested domain, "
-            "API field names, behavior and relationships; never convert it to task management. "
+            "business brief with spec_version=2, NOT tests or code. "
+            "The user describes WHAT the app should do, not its engineering structure. Infer "
+            "reasonable data entities and pages from that functionality. Do not ask the user "
+            "to specify files, API designs, schema syntax or implementation details. "
+            "Preserve the requested domain, API field names, behavior and relationships; never convert it to task management. "
             "Honor the requested page count: a single-page app has pages=[\"/\"] with all "
             "forms and actions on that page. Pages must be static HTML paths, with no dynamic "
             "parameters such as :id, {id}, or [id]. API endpoints are separate from pages. "
@@ -99,7 +131,7 @@ class OllamaAgents:
             {"application_request":description},coding=True)
 
     def acceptance(self,requirements,plan,description):
-        result=self.generate(NativeAcceptancePlan,
+        result=self.reviewed_generate(NativeAcceptancePlan,
             "You are the independent QA planning agent. Propose concrete tests against the "
             "business brief, architecture and original request. Never implement the app or weaken "
             "requirements. Return database matching the brief and at least two functional "
@@ -130,14 +162,34 @@ class OllamaAgents:
             "At most forty steps. GET HTML pages use contains, not JSON expected. "
             "JSON POST handlers must reject malformed and null input; the shared harness also "
             "checks these cases independently. Do not claim any test has been run.",
-            {'requirements':requirements.model_dump(),'plan':plan.model_dump(),'original_request':description},coding=True)
+            {'requirements':requirements.model_dump(),'plan':plan.model_dump(),'original_request':description},
+            AcceptanceReview,
+            'You are the Acceptance Reviewer. This is test DESIGN, not test execution. Review '
+            'the proposal independently against the original request and API contract, without '
+            'looking at generated source. Return issues=[] only if there are no blocking problems. '
+            'Read the supplied proposal.scenarios step by step BEFORE reporting anything missing. '
+            'POST/PUT/DELETE scenarios count as add/edit/delete coverage; status=400 assertions '
+            'with concrete invalid inputs count as validation coverage even when expected=null. '
+            'Do not demand browser/UI tests from this API acceptance plan. Do not claim existing '
+            'scenarios are absent. Every issue must name the specific scenario or API path and '
+            'the observed contradiction or absent assertion. No generic requirements checklist. '
+            'Check that requested behaviors and calculations have meaningful assertions, paths, '
+            'methods, field names and response shapes match the contract, and fixtures form a '
+            'consistent sequence. Track creates, updates and deletes in execution order. Restart '
+            'assertions must describe data LEFT in storage: a deleted record cannot reappear. '
+            'JSON arrays are not objects with numeric keys. Check capture use and expected totals '
+            'after mutations. List at most six concrete corrections. Never execute tests, claim '
+            'they passed, invent implementation facts, reduce requested scope or remove assertions.')
         return result.to_plan()
 
     def plan(self, requirements, *, original_request=None):
         if requirements.spec_version==2:
-            return self.generate(AppImplementationPlan,
+            return self.reviewed_generate(AppImplementationPlan,
                 "You are the Architect Agent for a small Next.js App Router TypeScript app. "
                 "Set spec_version=2 and preserve the approved database and domain. Plan only. "
+                "The user specifies functionality; YOU choose the app's files, components, API, "
+                "data schema and interactions. Do not ask the user to design them. Choose the "
+                "smallest coherent structure; extract components only when they help. "
                 "Declare unique API routes as METHOD /api/path with {id} placeholders. Every "
                 "acceptance request must be supported. Include file manifests for frontend and "
                 "backend tasks with non-overlapping ownership, at most twelve files total. "
@@ -149,6 +201,11 @@ class OllamaAgents:
                 "and app/api/**/route.ts. Each route needs its corresponding route.ts; {id} maps "
                 "to [id]. Each task needs contract: exact exports, function signatures, request "
                 "and response JSON shapes/statuses, database schema and imports shared across files. "
+                "Write concrete per-file interfaces, not feature summaries: name exports with "
+                "parameter/return types, UI component props and callbacks, collection/item JSON "
+                "shapes, nullable fields, error statuses and missing-record behavior. Explain "
+                "how UI state and requested totals refresh after every mutation. Client UI uses "
+                "fetch to the declared API; server SQLite helpers stay on the server. "
                 "Prefer a few self-contained files to avoid integration errors. List backend files in dependency order (database and data helpers before API routes), and UI helpers before pages. Fixed scaffold "
                 "owns package files, configuration, app/layout.tsx, app/globals.css and "
                 "app/api/health/route.ts; never put these in the manifest. SQLite uses Node 24 "
@@ -156,7 +213,19 @@ class OllamaAgents:
                 "never hardcode a database path. No dependencies beyond Next/React/TypeScript. "
                 "App Router route params are Promise<{id:string}> and must be awaited. Include "
                 "build, app acceptance, invalid-input and applicable persistence verification.",
-                {'requirements':requirements.model_dump(),'original_request':original_request},coding=True)
+                {'requirements':requirements.model_dump(),'original_request':original_request},
+                ArchitectureReview,
+                'You are the Architecture Reviewer. Independently check this proposed design '
+                'against the business brief and original request before builders receive it. '
+                'Return issues=[] only when the plan is implementable without guessing shared '
+                'interfaces. Verify all requested features have an implementation path; each '
+                'file has concrete exports/types and shared component props; API methods, JSON '
+                'request/response shapes, error statuses and database schema are specified. '
+                'Check client/server boundaries, UI refresh after mutations, missing records '
+                'and requested aggregates. Flag contracts that merely restate the features. '
+                'Do not demand cosmetic changes, extra components, new frameworks or dependencies. '
+                'List at most six concrete blocking corrections. This is a design review, '
+                'not evidence that code exists or tests passed.')
         return self.generate(ImplementationPlan,
             "You are the Architect Agent. Plan only, never claim execution. "
             "framework=nextjs-app-router, database=sqlite. Include exactly these routes: "

@@ -76,6 +76,8 @@ def main():
         agents=OllamaAgents(job_model(store.read(data['job_id'])))
         agents.trace_directory=args.payload.parent/'model-calls'
         agents.activity=lambda status,payload:store.event(data['job_id'],status,payload,update_status=False)
+        from forge.handoffs import record_handoff
+        agents.handoff=lambda sender,recipient,summary,context:record_handoff(store,data['job_id'],sender,recipient,summary,context)
         record=execute(data['job_id'],data['action'],data['payload'],store,agents)
     except ValueError as exc:
         store.event(data['job_id'],'ACTION_REJECTED',{'reason':str(exc)[:1500]},update_status=False)

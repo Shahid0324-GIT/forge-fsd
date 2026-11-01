@@ -43,6 +43,23 @@ this recovery path does not guarantee that a local model will produce a valid pl
 Builder corrections likewise receive the rejected source and concrete import/boundary
 errors. Client-side SQLite imports remain rejected, including files that already declare
 `"use client"`; correcting an import path does not make a database module browser-safe.
+Users supply the app idea and functionality; the architect chooses app-specific files,
+components, routes, data layout and interfaces within the supported platform. Version-2
+architecture proposals and acceptance plans now receive a separate review role before
+human approval. Each stage permits one revision in response to saved review findings;
+unresolved suggestions remain visible for human review. Reviewer handoffs appear in the live
+workspace.
+These additional local model calls increase planning time. Reviewers use the same chosen
+model and can miss defects or raise incorrect findings; their advice is not application
+verification evidence. Deterministic schema, API-path and captured CRUD fixture checks
+still block invalid proposals.
+
+**Test planning happens before building; test execution happens afterward.** The acceptance
+planner defines the expected behavior from the request and API contract, independently of
+generated code. Its reviewer checks coverage, response shapes and fixture lifecycles,
+including data remaining for restart checks. After approval and generation, the Docker
+runner executes application checks and returns failures to the repair workflow. Existing
+approved runs are not silently rewritten by these new planning reviews.
 The top bar offers **System theme**, **Light mode**, and **Dark mode**; the browser
 remembers your choice. New version-2 plans support different single-user app domains,
 up to five static pages, three data entities and twelve generated source files.

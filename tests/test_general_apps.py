@@ -26,7 +26,7 @@ def calculator_plan():
             'tasks':[{'owner':'frontend','objective':'Build calculator form','files':['app/page.tsx'],
                       'contract':'POST /api/calculate with bill, tipPercent, people; render tip, total, perPerson.'},
                      {'owner':'backend','objective':'Implement calculation','files':['app/api/calculate/route.ts'],
-                      'contract':'Export POST(Request): Promise<Response>; JSON bill, tipPercent, people -> tip, total, perPerson. Invalid input returns 400.'}],
+                      'contract':'POST /api/calculate: export POST(Request): Promise<Response>; JSON bill, tipPercent, people -> tip, total, perPerson. Invalid input returns 400.'}],
             'verification':['Typecheck','Production build','Approved HTTP acceptance']}
 
 
