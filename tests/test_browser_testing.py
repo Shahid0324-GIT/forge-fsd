@@ -1,10 +1,32 @@
 import json
+import subprocess
 
 import pytest
 
 import forge.browser_testing as browser
 from forge.persistence import JobStore
 from test_general_apps import calculator_spec,calculator_plan
+
+
+@pytest.mark.parametrize('network_message',['No such network: {name}','network {name} not found'])
+def test_browser_cleanup_accepts_already_removed_networks(monkeypatch,network_message):
+    resources={'app':'forge-browser-app-'+'a'*12,'browser':'forge-browser-check-'+'a'*12,'network':'forge-browser-net-'+'a'*12}
+    calls=[]
+    def docker(*args):
+        calls.append(args)
+        kind,_,name=args
+        message=network_message.format(name=name) if kind=='network' else f'No such container: {name}'
+        raise subprocess.CalledProcessError(1,args,output='Error response from daemon: '+message)
+    monkeypatch.setattr(browser,'docker',docker)
+    browser.cleanup_browser(resources,'b'*32)
+    assert len(calls)==3 and all(args[1]=='inspect' for args in calls)
+
+
+def test_browser_cleanup_does_not_ignore_daemon_errors(monkeypatch):
+    resources={'app':'forge-browser-app-'+'a'*12,'browser':'forge-browser-check-'+'a'*12,'network':'forge-browser-net-'+'a'*12}
+    def docker(*args):raise subprocess.CalledProcessError(1,args,output='Cannot connect to the Docker daemon: no such file or directory')
+    monkeypatch.setattr(browser,'docker',docker)
+    with pytest.raises(subprocess.CalledProcessError):browser.cleanup_browser(resources,'b'*32)
 
 
 def passed():

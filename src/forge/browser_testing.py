@@ -68,20 +68,25 @@ def docker(*args):
     return subprocess.check_output(['docker',*args],stderr=subprocess.STDOUT,text=True,timeout=30).strip()
 
 
+def missing_resource(error,kind,name):
+    message=str(error.output)
+    return any(marker in message for marker in [f'No such {kind}: {name}',f'{kind} {name} not found'])
+
+
 def cleanup_browser(resources,job_id):
     for kind,key in [('container','browser'),('container','app'),('network','network')]:
         name=resources[key]
         if not re.fullmatch(r'forge-browser-(?:app|check|net)-[a-f0-9]{12}',name):raise ValueError('Invalid browser resource name')
         try:info=json.loads(docker(kind,'inspect',name))[0]
         except subprocess.CalledProcessError as exc:
-            if 'No such' in str(exc.output):continue
+            if missing_resource(exc,kind,name):continue
             raise
         labels=info.get('Config',{}).get('Labels',{}) if kind=='container' else info.get('Labels',{})
         if labels.get('forge.job')!=job_id or labels.get('forge.role')!='browser_verification':
             raise ValueError('Refusing to remove an unrelated browser resource')
         try:docker('rm','--force',name) if kind=='container' else docker('network','rm',name)
         except subprocess.CalledProcessError as exc:
-            if 'No such' not in str(exc.output):raise
+            if not missing_resource(exc,kind,name):raise
 
 
 def run_browser_checks(root,directory,job_id,*,on_start=None,app_image=None):
