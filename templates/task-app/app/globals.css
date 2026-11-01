@@ -1,0 +1,7 @@
+:root { font-family: system-ui, sans-serif; color: #e8edf7; background: #101624; }
+body { margin: 0; } main { max-width: 900px; margin: 40px auto; padding: 24px; }
+h1 { font-size: 2.5rem; } section, article, form { background: #1a2437; padding: 20px; margin: 16px 0; border-radius: 12px; }
+label { display: block; margin: 12px 0; } input, textarea, select { display: block; box-sizing: border-box; width: 100%; padding: 10px; margin-top: 6px; border-radius: 6px; }
+button { padding: 10px 16px; margin: 6px 8px 6px 0; cursor: pointer; border-radius: 6px; border: 0; }
+button:disabled { opacity: .5; cursor: wait; } [role=alert] { color: #ffb4b4; }
+small { color: #b6c3df; } .actions { display: flex; gap: 8px; } pre { white-space: pre-wrap; }

@@ -1,0 +1,76 @@
+import subprocess
+import sys
+import time
+from uuid import uuid4
+
+import pytest
+
+from forge.operations import BusyError,OperationManager
+from forge.persistence import JobStore
+
+
+def manager_fixture(tmp_path,monkeypatch,delay=5):
+    import forge.operations as module
+    monkeypatch.setattr(module,'PROJECT',tmp_path)
+    def spawn(_command,**kwargs):
+        return subprocess.Popen([sys.executable,'-c',f'import time; time.sleep({delay})'],**kwargs)
+    store=JobStore(tmp_path/'jobs.db');job=store.create()
+    manager=OperationManager(store,spawn=spawn)
+    monkeypatch.setattr(manager,'cleanup_job',lambda *_:None)
+    return store,job,manager
+
+
+def test_operation_deduplication_and_global_worker_lock(tmp_path,monkeypatch):
+    store,job,manager=manager_fixture(tmp_path,monkeypatch)
+    sequence=store.read(job)['events'][-1]['sequence'];request=uuid4().hex
+    try:
+        first=manager.submit(job,'plan',{},request,sequence)
+        assert manager.submit(job,'plan',{},request,sequence)['id']==first['id']
+        another=store.create()
+        with pytest.raises(BusyError,match='Another operation'):
+            manager.submit(another,'plan',{},uuid4().hex,store.read(another)['events'][-1]['sequence'])
+    finally:manager.close()
+
+
+def test_stale_action_is_rejected_before_process_creation(tmp_path,monkeypatch):
+    store,job,manager=manager_fixture(tmp_path,monkeypatch)
+    sequence=store.read(job)['events'][-1]['sequence'];store.event(job,'PLANNING',{})
+    with pytest.raises(BusyError,match='out of date'):
+        manager.submit(job,'plan',{},uuid4().hex,sequence)
+    assert not manager.active()
+    manager.close()
+
+
+def test_cancel_terminates_owned_worker_and_preserves_source_history(tmp_path,monkeypatch):
+    store,job,manager=manager_fixture(tmp_path,monkeypatch)
+    operation=manager.submit(job,'plan',{},uuid4().hex,store.read(job)['events'][-1]['sequence'])
+    process=manager.processes[operation['id']]
+    manager.cancel(job)
+    assert process.poll() is not None
+    assert manager.read(operation['id'])['status']=='CANCELLED'
+    assert store.read(job)['status']=='CANCELLED'
+    assert store.read(job)['events'][0]['status']=='RECEIVED'
+    manager.close()
+
+
+def test_normal_operation_completion_releases_lock(tmp_path,monkeypatch):
+    store,job,manager=manager_fixture(tmp_path,monkeypatch,delay=.1)
+    operation=manager.submit(job,'plan',{},uuid4().hex,store.read(job)['events'][-1]['sequence'])
+    deadline=time.monotonic()+5
+    while manager.active() and time.monotonic()<deadline:time.sleep(.05)
+    assert manager.read(operation['id'])['status']=='SUCCEEDED'
+    assert manager.active()==[]
+    assert store.read(job)['status']=='RECEIVED'
+    manager.close()
+
+
+def test_unexpected_worker_exit_does_not_leave_job_running(tmp_path,monkeypatch):
+    store,job,manager=manager_fixture(tmp_path,monkeypatch)
+    manager._spawn=lambda _command,**kwargs:subprocess.Popen([sys.executable,'-c','raise SystemExit(2)'],**kwargs)
+    store.event(job,'BUILDING',{})
+    operation=manager.submit(job,'continue',{},uuid4().hex,store.read(job)['events'][-1]['sequence'])
+    deadline=time.monotonic()+5
+    while manager.active() and time.monotonic()<deadline:time.sleep(.05)
+    assert manager.read(operation['id'])['status']=='FAILED'
+    assert store.read(job)['status']=='FAILED'
+    manager.close()

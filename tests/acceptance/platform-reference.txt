@@ -1,0 +1,29 @@
+Supported platform: Next.js App Router + React + Node 24. No new npm dependencies.
+
+Reusable lib/*.ts modules export functions/types, NOT NextApiRequest/NextApiResponse handlers.
+App Router route.ts exports named methods:
+export async function POST(request: Request) {
+  let body: unknown;
+  try { body = await request.json(); } catch { return Response.json({error:'Invalid input'},{status:400}); }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return Response.json({error:'Invalid input'},{status:400});
+  // validate inputs, call a domain function, return the agreed JSON/status
+}
+GET returns Response.json(data). Do not import next/router; use next/navigation only when needed.
+Interactive TSX modules start with "use client"; and need visible associated form labels.
+
+Node 24 SQLite uses ONLY built-in modules:
+import { DatabaseSync } from 'node:sqlite';
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+const path = process.env.SQLITE_PATH || './data/app.sqlite3';
+mkdirSync(dirname(path), {recursive:true});
+const db = new DatabaseSync(path);
+db.exec('PRAGMA foreign_keys = ON');
+// db.exec(schemaSQL) initializes your app-specific tables and foreign keys.
+// db.prepare(sql).get(...params) -> one row or undefined.
+// db.prepare(sql).all(...params) -> array of rows.
+// db.prepare(sql).run(...params) -> {changes,lastInsertRowid}; convert IDs using Number().
+// A transaction: db.exec('BEGIN IMMEDIATE'); try { ...; db.exec('COMMIT'); } catch(error) { db.exec('ROLLBACK'); throw error; }
+There is NO StatementSync.finalize(), db.transaction(), db.run(), db.get(), or db.all().
+Do not import sqlite, sqlite3, uuid, Prisma or Drizzle. Integer primary keys can use SQLite AUTOINCREMENT.
+Share one documented database/function interface across your approved files; do not invent imports or new files.

@@ -1,0 +1,1 @@
+{"requirements":{"database":"sqlite","entities":[{"name":"child","fields":[{"name":"parent_id","kind":"reference"}]}]}}

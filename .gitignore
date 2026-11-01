@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+artifacts/
+workspace/
+node_modules/
+.next/
+.pytest_cache/
+*.egg-info/
+build/
+.tools/
+apps/web/dist/

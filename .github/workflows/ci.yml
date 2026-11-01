@@ -1,0 +1,90 @@
+name: ForgeFSD checks
+
+'on':
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forge-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  controller:
+    name: Controller and dashboard (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: requirements.lock.txt
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install locked controller dependencies
+        run: python -m pip install -r requirements.lock.txt
+      - name: Install project without resolving dependencies again
+        run: python -m pip install --no-deps -e .
+      - name: Run controller regression tests (no Ollama calls)
+        run: python -m pytest -q --basetemp artifacts/ci-pytest --junitxml artifacts/ci-pytest.xml
+      - name: Install locked dashboard dependencies
+        run: npm --prefix apps/web ci --ignore-scripts --no-audit --no-fund
+      - name: Typecheck and build dashboard
+        run: npm --prefix apps/web run build
+      - name: Save controller test results
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: controller-${{ matrix.os }}
+          path: artifacts/ci-pytest.xml
+          retention-days: 7
+          if-no-files-found: ignore
+
+  browser:
+    name: Converter browser profile and calibration
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: requirements.lock.txt
+      - name: Install locked controller and project
+        run: |
+          python -m pip install -r requirements.lock.txt
+          python -m pip install --no-deps -e .
+      - name: Build fixed application dependency image
+        run: docker build --file templates/task-app/Dockerfile.dependencies --tag forge-task-deps:local templates/task-app
+      - name: Build locked browser dependency image
+        run: docker build --tag forge-browser-deps:local tests/browser
+      - name: Accept the correct fixture and reject the stale-unit fixture
+        run: python scripts/check_browser_fixture.py
+      - name: Save browser reports and failure screenshots
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: browser-calibration
+          path: |
+            artifacts/browser-calibration/**/calibration.json
+            artifacts/browser-calibration/**/evidence/report.json
+            artifacts/browser-calibration/**/results/*.png
+          retention-days: 7
+          if-no-files-found: ignore

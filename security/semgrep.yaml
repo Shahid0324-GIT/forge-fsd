@@ -1,0 +1,27 @@
+rules:
+  - id: js-dynamic-code-execution
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Dynamic JavaScript execution requires review.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+  - id: js-process-execution-import
+    languages: [generic]
+    severity: ERROR
+    message: Generated application imports process execution capabilities.
+    paths:
+      include: ['*.ts', '*.tsx', '*.js', '*.mjs']
+    pattern-regex: '(?m)(?:from\s*["\x27](?:node:)?child_process["\x27]|require\(["\x27](?:node:)?child_process["\x27]\))'
+  - id: js-sql-concatenation
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: SQL assembled through concatenation requires injection review.
+    pattern-either:
+      - pattern: $DB.prepare($A + $B)
+      - pattern: $DB.exec($A + $B)
+  - id: python-shell-enabled
+    languages: [python]
+    severity: ERROR
+    message: Shell execution is outside generated-code policy.
+    pattern: subprocess.$METHOD(..., shell=True, ...)

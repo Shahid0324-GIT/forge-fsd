@@ -1,0 +1,21 @@
+{
+  "calculator": {
+    "requirements": {
+      "pages": ["/"],
+      "scenarios": [
+        {"name":"Calculate tip","phase":"functional","steps":[{"method":"POST","path":"/api/calculate","body_json":"{\"bill\":100,\"tipPercent\":10,\"people\":2}","status":200,"expect_json":"{\"tip\":10,\"total\":110,\"perPerson\":55}"}]},
+        {"name":"Reject invalid amount","phase":"functional","steps":[{"method":"POST","path":"/api/calculate","body_json":"{\"bill\":-1,\"tipPercent\":10,\"people\":2}","status":400}]}
+      ]
+    }
+  },
+  "persistence": {
+    "requirements": {
+      "pages": ["/"],
+      "scenarios": [
+        {"name":"Create expense","phase":"functional","steps":[{"method":"POST","path":"/api/expenses","body_json":"{\"amount\":12.5}","status":201,"expect_json":"{\"amount\":12.5}","save_as":"expense_id","save_pointer":"/id"},{"method":"POST","path":"/api/expenses/adjust","body_json":"{\"expenseId\":0,\"amount\":14}","body_bindings":[{"pointer":"/expenseId","capture":"expense_id"}],"status":201,"expect_json":"{\"id\":0,\"amount\":14}","expect_bindings":[{"pointer":"/id","capture":"expense_id"}]}]},
+        {"name":"Invalid expense","phase":"functional","steps":[{"method":"POST","path":"/api/expenses","body_json":"{\"amount\":-1}","status":400}]},
+        {"name":"Persist expense","phase":"restart","steps":[{"method":"GET","path":"/api/expenses/{{expense_id}}","status":200,"expect_json":"{\"amount\":14}"}]}
+      ]
+    }
+  }
+}

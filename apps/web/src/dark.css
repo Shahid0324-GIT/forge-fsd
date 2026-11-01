@@ -1,0 +1,62 @@
+.theme-control select{border:1px solid #dedee8;background:#fafafe;color:#746c81;padding:6px 8px;border-radius:6px;font-size:10px;cursor:pointer;max-width:125px}
+:root[data-theme=dark]{background:#101722;color:#e0e7f2;color-scheme:dark}
+[data-theme=dark] .sidebar{background:#121923;border-right:1px solid #2a3444}
+[data-theme=dark] .topbar{background:#161f2c;border-color:#2b3648;color:#a6b5ca}
+[data-theme=dark] .avatar{background:#302b46;border-color:#49415f;color:#d6c8f5}
+[data-theme=dark] .theme-control select{background:#202a3b;border-color:#40506a;color:#d4cbe8}
+[data-theme=dark] .panel,[data-theme=dark] .idea-card,[data-theme=dark] .stage-strip,[data-theme=dark] .preview-card,[data-theme=dark] .close-dialog{background:#1a2433;border-color:#334055;box-shadow:0 3px 8px #0002}
+[data-theme=dark] h1,[data-theme=dark] h2{color:#e2e8f4}
+[data-theme=dark] .page-subtitle,[data-theme=dark] .muted,[data-theme=dark] .criteria li,[data-theme=dark] .intro-grid p,[data-theme=dark] .close-dialog p,[data-theme=dark] .preview-info p{color:#aebbd0}
+[data-theme=dark] .eyebrow{color:#b7a2d6}
+[data-theme=dark] .criteria li,[data-theme=dark] .agent-row,[data-theme=dark] .timeline li,[data-theme=dark] .prompt-case{border-color:#2d3a4d}
+[data-theme=dark] .tabs,[data-theme=dark] .workspace-footer,[data-theme=dark] .assumptions,[data-theme=dark] .preview-footer{border-color:#334054}
+[data-theme=dark] .tabs button{color:#aeb9cd}
+[data-theme=dark] .tabs button.active{color:#c6acf3}
+[data-theme=dark] .tabs button.active:after{background:#bda0f1}
+[data-theme=dark] .tabs button span,[data-theme=dark] .assumptions span,[data-theme=dark] .subtle-chip{background:#263248;border-color:#3b4860;color:#c0b7d4}
+[data-theme=dark] .stage-strip>div{color:#8f9db5}
+[data-theme=dark] .stage-strip>div>span{background:#202c3e;border-color:#3b4c64;color:#aab8cf}
+[data-theme=dark] .stage-strip .complete{color:#b2d4bf}
+[data-theme=dark] .stage-strip .complete>span{background:#244335;border-color:#3a614c;color:#a4dfb8}
+[data-theme=dark] .stage-strip .current{color:#d2b9ff}
+[data-theme=dark] .stage-strip .current>span{background:#b79ae9;border-color:#b79ae9;color:#211733;box-shadow:0 0 0 4px #362e4b}
+[data-theme=dark] .stage-strip i{background:#354157}
+[data-theme=dark] .decision-card,[data-theme=dark] .running-card{background:#2a2440;border-color:#51406d}
+[data-theme=dark] .decision-card h2,[data-theme=dark] .running-card h2{color:#dfcaf9}
+[data-theme=dark] .decision-card p,[data-theme=dark] .decision-card small,[data-theme=dark] .running-card p,[data-theme=dark] .consent,[data-theme=dark] .question{color:#c0afd5}
+[data-theme=dark] .question textarea,[data-theme=dark] .idea-card>textarea{background:#141e2c;border-color:#41506b;color:#e3e8f3}
+[data-theme=dark] .idea-card>textarea::placeholder{color:#91a1b9}
+[data-theme=dark] .idea-bottom{background:#182231;border-color:#334157}
+[data-theme=dark] .idea-bottom>span,[data-theme=dark] .section-heading h2{color:#b1bed3}
+[data-theme=dark] .primary{background:#b99ced;border-color:#b99ced;color:#22182f}
+[data-theme=dark] .primary:hover:not(:disabled){background:#ccb0fb}
+[data-theme=dark] .secondary{background:#253146;border-color:#46516b;color:#d4c9e7}
+[data-theme=dark] .secondary:hover:not(:disabled){background:#34415a}
+[data-theme=dark] .text-button,[data-theme=dark] summary{color:#bda7d6}
+[data-theme=dark] .attention-card,[data-theme=dark] .error-banner{background:#3a262d;border-color:#704650;color:#ecc0c9}
+[data-theme=dark] .attention-card h2,[data-theme=dark] .attention-card p{color:#e8b3bd}
+[data-theme=dark] .status-badge{background:#233c30;border-color:#3d644a;color:#b4e2bf}
+[data-theme=dark] .status-badge.waiting{background:#413522;border-color:#685536;color:#edcf91}
+[data-theme=dark] .status-badge.danger{background:#442b35;border-color:#744659;color:#f0b9c7}
+[data-theme=dark] .task-grid article,[data-theme=dark] .report-card{background:#1d2839;border-color:#3a435a}
+[data-theme=dark] .task-grid h3,[data-theme=dark] .report-card strong,[data-theme=dark] .agent-row strong,[data-theme=dark] .intro-grid h3,[data-theme=dark] .report-detail h3{color:#d8cde6}
+[data-theme=dark] .task-owner,[data-theme=dark] .report-card>span,[data-theme=dark] .agent-row small,[data-theme=dark] .timeline p,[data-theme=dark] .timeline time{color:#a99cbb}
+[data-theme=dark] .report-card:hover{background:#2c3049;border-color:#6a567f}
+[data-theme=dark] .agent-avatar,[data-theme=dark] .intro-icon{background:#342c48;border-color:#514267;color:#d1bae8}
+[data-theme=dark] .agent-active .agent-avatar{background:#4c3967;color:#edd5ff}
+[data-theme=dark] .trust-note,[data-theme=dark] .report-assessment{background:#22362d;border-color:#3b5141}
+[data-theme=dark] .trust-note h3,[data-theme=dark] .trust-note p{color:#abc8ae}
+[data-theme=dark] .preview-art{background:linear-gradient(115deg,#2b2942,#20392f);border-color:#3d4355}
+[data-theme=dark] .fake-browser{background:#1b2331;border-color:#3b4355}
+[data-theme=dark] .preview-art-body strong{color:#c4ddc8}
+[data-theme=dark] .preview-art-body>span:last-child{color:#a7b8ae}
+[data-theme=dark] .preview-tick{background:#294936;border-color:#4b6a52;color:#b0e1b7}
+[data-theme=dark] .check-list,[data-theme=dark] .check-list>div,[data-theme=dark] .trash-list>div{border-color:#3a4359}
+[data-theme=dark] .check-list>div>span,[data-theme=dark] .report-detail p,[data-theme=dark] .report-detail li,[data-theme=dark] .prompt-case strong,[data-theme=dark] .prompt-case span,[data-theme=dark] .timeline h3{color:#c2b4d1}
+[data-theme=dark] .pass-text{color:#a8dbaf}[data-theme=dark] .fail-text{color:#f2adb9}
+[data-theme=dark] pre{background:#111b29;border-color:#3c4961;color:#c8d6eb}
+[data-theme=dark] .delete-control{color:#edb5bf;border-color:#70505a}
+[data-theme=dark] .delete-control:hover,[data-theme=dark] .close-control:hover{background:#3d2934}
+[data-theme=dark] .closed-workspace p{color:#b5a8c7}
+@media(max-width:650px){.theme-control select{font-size:9px;padding:5px;max-width:95px}.topbar-right{gap:8px}}
+[data-theme=dark] .handoff-list li{border-color:#334055}[data-theme=dark] .handoff-list time,[data-theme=dark] .handoff-list small{color:#aebbd0}
