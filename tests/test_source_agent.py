@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from forge.source_agent import SourceAgent,build_evidence,diagnostic_context
+from forge.source_agent import SourceAgent,build_evidence,diagnostic_context,REPAIR_INSTRUCTION
 from forge.tasks import CheckEvidence,Observation,TaskConflict
 from forge.workspace import source_fingerprint
 from forge.workspace_tools import file_hash
@@ -14,7 +14,7 @@ class Agent:
     activity=None
     def __init__(self,content):self.content=content;self.data=None
     def generate(self,schema,instruction,data,**_):
-        self.data=data;self.last_call_identity={'call_id':'model-call'}
+        self.data=data;self.instruction=instruction;self.last_call_identity={'call_id':'model-call'}
         if schema.__name__=='RepairFocus':
             return schema.model_validate({'file':data['allowed_targets'][0],'cause':'Observed compiler failure',
                 'changes':['Correct the reported source expression while preserving behavior']})
@@ -96,6 +96,10 @@ def test_repair_worker_uses_actual_failures_and_returns_fresh_build_evidence(too
     assert result[0].check=='isolated_build' and result[0].exit_code==0
     assert result[0].fingerprint==source_fingerprint(tools.root)
     assert agent.data['repair_focus']['file']=='app/page.tsx'
+    assert agent.instruction==REPAIR_INSTRUCTION
+    assert agent.data['acceptance_criteria']==tools.draft.acceptance_criteria
+    assert 'app_design' not in agent.data
+    assert 'tsconfig.json' in agent.data['source']
     assert any(t.task.owner=='qa' and t.task.parent_id==state.task.id for t in tools.ledger.list())
 
 
@@ -131,3 +135,50 @@ def test_existing_source_repairs_use_a_model_proposed_patch(tools):
     events=tools.ledger.store.read(tools.ledger.job_id)['events']
     patch=next(event for event in events if event['status']=='TOOL_CALL_COMPLETED' and event['payload']['tool']=='replace_text')
     assert patch['payload']['initiator']=='model' and patch['payload']['proposal_call_id']=='model-call'
+
+
+@pytest.mark.parametrize('patch_rejected',[False,True])
+def test_repair_can_replace_a_complete_file_without_bypassing_change_guards(tools,patch_rejected):
+    path=tools.root/'app/page.tsx'
+    path.write_text('export default function Page(){return null}',encoding='utf-8')
+    state=configured(tools,'repair_build')
+    if patch_rejected:
+        state=tools.ledger.observe(state,Observation(revision=state.revision,
+            fingerprint=source_fingerprint(tools.root),error='ValueError: Patch snippet must match exactly once; found 2 matches.'))
+        state=tools.ledger.reserve_action(state,'frontend')
+    class RewriteAgent(Agent):
+        def generate(self,schema,instruction,data,**kwargs):
+            if schema.__name__=='RepairFocus':return super().generate(schema,instruction,data,**kwargs)
+            target=data['allowed_targets'][0]
+            if patch_rejected:
+                assert data['replace_rejected_patch'] and 'complete corrected file' in data['edit_guidance']
+                from pydantic import ValidationError
+                with pytest.raises(ValidationError):
+                    schema.model_validate({'tool':'replace_text','path':target,
+                        'edits':[{'old':'return null','new':'return 1'}],
+                        'expected_sha256':data['source'][target]['sha256'],
+                        'expected_workspace_fingerprint':data['workspace_fingerprint']})
+            return schema.model_validate({'tool':'write_file','path':target,'content':self.content,
+                'expected_sha256':data['source'][target]['sha256'],
+                'expected_workspace_fingerprint':data['workspace_fingerprint'],'require_change':True})
+    def check(root,*_):return {'passed':False,'report':'check.json','source_fingerprint':source_fingerprint(root),
+        'coverage':{'application_behavior':'NOT_TESTED'},'checks':{'results':[]},'error':'fixture check'}
+    content='export default function Page(){return <main>Corrected</main>}'
+    worker=SourceAgent(tools.ledger,RewriteAgent(content),tools.root,tools.draft,
+        workspace_boundary=tools.root.parent,check_runner=check)
+    worker(state)
+    assert path.read_text()==content
+    with pytest.raises(ValueError,match='unchanged source'):worker(state)
+
+
+def test_fresh_build_evidence_clears_older_tool_rejection(tools):
+    state=configured(tools,'repair_build')
+    state=tools.ledger.observe(state,Observation(revision=state.revision,
+        fingerprint=source_fingerprint(tools.root),error='Patch snippet must match exactly once'))
+    state=tools.ledger.observe(state,state.observations[0])
+    state=tools.ledger.reserve_action(state,'frontend')
+    agent=Agent('export default function Page(){return <main>Fixed</main>}')
+    def check(root,*_):return {'passed':False,'report':'check.json','source_fingerprint':source_fingerprint(root),
+        'coverage':{'application_behavior':'NOT_TESTED'},'checks':{'results':[]},'error':'fixture check'}
+    SourceAgent(tools.ledger,agent,tools.root,tools.draft,workspace_boundary=tools.root.parent,check_runner=check)(state)
+    assert agent.data['last_tool_error']=='' and not agent.data['replace_rejected_patch']

@@ -26,7 +26,8 @@ fences, leave TODOs, edit tests/dependencies or claim checks passed. Use the sup
 capability inventory rather than assuming packages exist. Prefer simple working code.
 Use Next.js App Router, React, TypeScript, Node built-ins and existing CSS. No Tailwind,
 extra packages, external fonts/services or browser imports of server database modules.
-Interactive hook components need an explicit use client directive. Use import type for
+Interactive hook components need a use client directive as the first module statement,
+before imports, never inside a component function. Use import type for
 shared TypeScript-only symbols. Keep server-side SQLite behind server actions or API
 handlers; honor the app's chosen interfaces rather than inventing unrelated endpoints.
 Model source is not executed on the host. Real isolated checks will verify the result.
@@ -54,6 +55,26 @@ successful result or repeat an unchanged edit. Other files can be addressed in l
 iterations after this focused correction is checked. Ground the cause in the exact
 diagnostic line, column and expression_at_column; do not guess from a nearby function
 name. Re-evaluate prior diagnoses when they disagree with the actual location.'''
+
+
+REPAIR_INSTRUCTION='''Repair the selected existing file so the supplied real build
+errors are resolved. Return only a tool request matching the schema.
+The compiler output and actual source are evidence. repair_focus is an advisory
+hypothesis from another model: independently verify it and correct it if wrong.
+Read the selected file and other files' actual exports and props before editing.
+Resolve relative imports from the directory of the importing file, not the app root.
+Next.js supplies app/layout.tsx automatically; pages must not invent a layout import.
+Hooks and browser event handlers require a use client component boundary. The
+directive must be the first module statement, before imports, never inside a function.
+Choose write_file for a complete corrected file, or replace_text for small local
+edits. Prefer a complete file when changing component structure or several related
+declarations; do not insert a whole component into an import-line replacement.
+For replace_text each old snippet must occur exactly once, and new text must differ.
+For write_file return the entire corrected file once, with no duplicate declarations.
+Preserve the original user requirements and existing cross-file interfaces. Do not
+remove required behavior, weaken tests, add dependencies or claim a successful check.
+Use actual available dependencies and raw source strings, without markdown fences.
+Fix the cause at the diagnostic location; do not just restate the error.'''
 
 
 def diagnostic_context(failure,source):
@@ -114,19 +135,32 @@ class SourceAgent:
             data['diagnostic_locations']=diagnostic_context(data['latest_build_failure'],source)
             # A prior diagnosis is a hypothesis, not compiler evidence. Replaying it
             # beside each new diagnosis anchored the model on incorrect causes.
-            data['last_tool_error']=next((o.error for o in reversed(state.observations) if o.error),'')
+            data['last_tool_error']=state.observations[-1].error if state.observations else ''
+            data['replace_rejected_patch']=bool(data['last_tool_error']) and any(
+                message in data['last_tool_error'] for message in
+                ('Patch snippet','Patch edit','Proposed repair is unchanged source'))
+            if data['replace_rejected_patch']:
+                data['edit_guidance']='The preceding local patch failed. Return one complete corrected file with write_file instead of repeating a patch.'
             for key in ('recent_failures','recovery_strategy','previous_build'):
                 data.pop(key,None)
             focus=self._focus(state,data,targets)
             targets=[focus.file];data['allowed_targets']=targets;data['repair_focus']=focus.model_dump()
+            # Repair is a source/debugging task, not another architecture proposal.
+            # Retain requirements and complete interfaces, but avoid asking the
+            # builder to follow contradictory assumptions from the original draft.
+            data['acceptance_criteria']=self.draft.acceptance_criteria
+            data.pop('app_design')
             if len(json.dumps(data,separators=(',',':')))>22000:raise ValueError('Focused repair context exceeds the complete-source budget; split the task')
         for index,path in enumerate(targets):
             digest=file_hash(tools.root/path)
-            base=ReplaceText if repairing and digest is not None else WriteFile
             fields={'path':(Literal[path],...),'expected_sha256':(Literal[digest],...),
                 'expected_workspace_fingerprint':(Literal[fingerprint],...)}
-            if base is WriteFile:fields['require_change']=(Literal[repairing],...)
-            variants.append(create_model(f'OwnedEdit{index}',__base__=base,**fields))
+            write=create_model(f'OwnedWrite{index}',__base__=WriteFile,
+                require_change=(Literal[repairing],...),**fields)
+            if repairing and digest is not None and not data['replace_rejected_patch']:
+                patch=create_model(f'OwnedPatch{index}',__base__=ReplaceText,**fields)
+                variants.append(Annotated[Union[write,patch],Field(discriminator='tool')])
+            else:variants.append(write)
         choice=variants[0] if len(variants)==1 else Annotated[Union[tuple(variants)],Field(discriminator='path')]
         schema=create_model('SourceEdit',__base__=RootModel[choice])
         record_handoff(self.ledger.store,self.ledger.job_id,'qa' if repairing else 'coordinator',state.task.owner,
@@ -135,7 +169,7 @@ class SourceAgent:
         previous=getattr(self.agents,'activity',None)
         try:
             self.agents.activity=lambda status,payload:self.ledger.store.event(self.ledger.job_id,status,payload,update_status=False)
-            proposal=self.agents.generate(schema,INSTRUCTION,data,coding=True).root
+            proposal=self.agents.generate(schema,REPAIR_INSTRUCTION if repairing else INSTRUCTION,data,coding=True).root
         finally:self.agents.activity=previous
         outcome=tools.execute(proposal.model_dump(),initiator='model',
             proposal_call_id=getattr(self.agents,'last_call_identity',{}).get('call_id'))

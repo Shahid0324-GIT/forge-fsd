@@ -225,3 +225,50 @@ invalid entry both before and after a valid replacement, plus the persisted fail
 report. Focused source-worker/tool suite: **30 passed**, exit 0; diff check passed.
 No live model replay was run for this small change. Model repair accuracy remains
 unresolved; this improves tool feedback without claiming a successful app build.
+
+### Increment 5b: repair-specific context and changing edit strategy
+
+Repairs now use a shorter debugging instruction instead of the source-generation
+instruction that required following QA's steps. QA's diagnosis is explicitly advisory;
+actual compiler evidence and source take precedence. The builder retains the original
+request, acceptance criteria, complete source and dependency inventory, without
+repeating the draft's contradictory assumptions.
+
+The builder can choose a complete-file replacement or an exact local patch. After
+an unchanged or unmatched patch is rejected, the next dispatch requests a complete
+corrected file rather than repeating the failing patch form. The same file/workspace
+hash, ownership and nonempty-change guards apply. This selects an edit tool, not
+application business types or architecture. An older tool rejection is no longer
+carried forward past newer build evidence.
+
+Verification: **276 Python tests passed**, exit 0, with 13 upstream LangSmith warnings;
+the affected suite has **33 passing tests**. Tests cover both edit forms, fallback
+after rejected patches, unchanged-file rejection and clearing obsolete tool errors.
+
+Live replays use the same preserved fixture/evidence directory recorded above.
+`resume-34.json` records a corrected relative import followed by a malformed patch
+that introduced duplicate declarations. `resume-42.json` records no source progress
+despite allowing a choice of edit tool. These failed evaluations motivated explicit
+fallback after a rejected patch. Neither replay passed the build; both cleaned up
+their disposable resources. No generated source was manually fixed.
+
+The fallback replay **passed** (`resume-50.json`, command
+`.venv\Scripts\python.exe scripts/resume_source_agent_evaluation.py artifacts/source-agent-evaluation/6ebe47d5500d4765acfda72ef7271bae --additional-actions 8`,
+exit 0). From the saved failed checkpoint it used 8 dispatches: 5 builder/QA
+repair attempts and 3 senior reviews, totaling 13 actual model calls. It corrected
+duplicate declarations/imports with a whole-file edit, repaired the void-expression
+handler with a local patch, and iterated on Next.js client-boundary errors.
+
+Final build report: `source-checks/bed0cbf1f46349388c678dd65010c616/7d624033051f4f54b7db47586262e1e9.json`
+within the same evidence directory. TypeScript and `next build --webpack` both exited
+0. Source and harness remained unchanged during checks; cleanup reported no errors.
+Archived source fingerprint:
+`f8c55b8a65be4ab27a222a00226aaa8b5126dc15e5d5a4f828bcf22e7577cb9d`.
+
+This demonstrates build recovery on **one previously failing fixture**, not general
+repair reliability. Application behavior, browser checks and readiness remain
+unverified. Source inspection suggests zero-tip results may remain hidden by the
+generated display condition; independent behavior checks must cover that case.
+After the replay started, the instructions were further clarified to put client
+directives before imports rather than inside a component. The final affected-suite
+rerun passed all 33 tests; the live replay used the preceding instruction wording.
