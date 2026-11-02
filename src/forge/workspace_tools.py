@@ -30,13 +30,27 @@ class WriteFile(ReadFile):
     tool: Literal['write_file']
     content: str = Field(min_length=1,max_length=24000)
     expected_sha256: str | None = Field(pattern=r'^[a-f0-9]{64}$',description='Hash from the latest read; null only when the file does not exist')
+    expected_workspace_fingerprint: str | None = Field(default=None,pattern=r'^[a-f0-9]{64}$')
+    require_change: bool = False
 
 
 class CheckBuild(Envelope):
     tool: Literal['check_build']
 
 
-class ToolCall(RootModel[Annotated[ListFiles | ReadFile | WriteFile | CheckBuild,Field(discriminator='tool')]]):
+class TextEdit(Envelope):
+    old: str = Field(min_length=1,max_length=24000)
+    new: str = Field(max_length=24000)
+
+
+class ReplaceText(ReadFile):
+    tool: Literal['replace_text']
+    edits: list[TextEdit] = Field(min_length=1,max_length=8)
+    expected_sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
+    expected_workspace_fingerprint: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
+class ToolCall(RootModel[Annotated[ListFiles | ReadFile | WriteFile | ReplaceText | CheckBuild,Field(discriminator='tool')]]):
     pass
 
 
@@ -82,15 +96,15 @@ class WorkspaceTools:
             'coverage_not_yet_provided':['browser_interactions','application_acceptance','persistence_restart'],
             'package_installation':False,'host_shell':False}
 
-    def execute(self,request):
+    def execute(self,request,*,initiator='controller',proposal_call_id=None):
         self._active();call=ToolCall.model_validate(request).root
         call_id=uuid4().hex;report_path=self.directory/(call_id+'.json')
         packet={'call_id':call_id,'job_id':self.ledger.job_id,'task_id':self.state.task.id,
             'parent_task_id':self.state.task.parent_id,'revision':self.state.revision,
             'owner':self.state.task.owner,'request':call.model_dump(),'source_before':source_fingerprint(self.root),
-            'phase':'started'}
+            'phase':'started','initiator':initiator,'proposal_call_id':proposal_call_id}
         report_path.write_text(json.dumps(packet,indent=2),encoding='utf-8')
-        event={key:packet[key] for key in ['call_id','task_id','parent_task_id','revision','owner']}
+        event={key:packet[key] for key in ['call_id','task_id','parent_task_id','revision','owner','initiator','proposal_call_id']}
         self.ledger.store.event(self.ledger.job_id,'TOOL_CALL_STARTED',{**event,'tool':call.tool,'report':str(report_path.resolve())},update_status=False)
         try:
             if call.tool=='list_files':
@@ -98,6 +112,17 @@ class WorkspaceTools:
                     for path in sorted(set(self.owners)|SEEDED)]}
             elif call.tool=='read_file':data=self._read(call.path)
             elif call.tool=='write_file':data=self._write(call,packet,report_path)
+            elif call.tool=='replace_text':
+                read=self._read(call.path)
+                if not read['exists'] or read['sha256']!=call.expected_sha256:raise ValueError('Patch target changed or does not exist; read it again')
+                content=read['content']
+                for edit in call.edits:
+                    matches=content.count(edit.old)
+                    if matches!=1:raise ValueError(f'Patch snippet must match exactly once; found {matches} matches. Use actual source and enough surrounding text.')
+                    content=content.replace(edit.old,edit.new,1)
+                data=self._write(WriteFile(tool='write_file',path=call.path,content=content,
+                    expected_sha256=call.expected_sha256,expected_workspace_fingerprint=call.expected_workspace_fingerprint,
+                    require_change=True),packet,report_path)
             else:
                 report=self.check_runner(self.root,self.ledger.store.path.parent/'source-checks'/self.ledger.job_id,self.ledger.job_id)
                 packet['check_report']=report['report']
@@ -138,9 +163,13 @@ class WorkspaceTools:
             if rejected:raise ValueError('Dependencies/imports outside available capabilities: '+', '.join(rejected))
         with self.ledger.store.connect() as db:
             db.execute('BEGIN IMMEDIATE');self._active(db)
+            if call.expected_workspace_fingerprint is not None and source_fingerprint(self.root)!=call.expected_workspace_fingerprint:
+                raise ValueError('Workspace context changed during generation; inspect fresh references before editing')
             path=safe_path(self.root,call.path)
             if file_hash(path)!=call.expected_sha256:raise ValueError('File changed since it was read; inspect the latest content before editing')
             before=path.read_text(encoding='utf-8') if path.is_file() else None
+            if call.require_change and before==call.content:
+                raise ValueError('Proposed repair is unchanged source; it cannot resolve the recorded failure. Use the diagnosis to make a substantive correction.')
             packet.update(phase='prepared',before_content=before)
             # Preserve intent and the old source before performing the mutation.
             report_path.write_text(json.dumps(packet,indent=2),encoding='utf-8')

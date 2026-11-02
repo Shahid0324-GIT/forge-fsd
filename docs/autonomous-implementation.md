@@ -168,3 +168,50 @@ Verification:
 
 This is a verified tool increment, not an autonomous repair or generated-app success
 claim. Model-driven file generation and independent behavior checks remain next.
+
+## Increment 5: experimental model-driven source work and repair replay
+
+`source_agent.py` adds a builder callback for the durable coordinator. It receives
+the original request, agent-authored design, actual source and installed capability
+inventory. The model proposes an owned file edit; the controller executes it through
+the scoped workspace tools and records the model-call identity on the tool span.
+File and workspace fingerprints reject proposals made against changed context.
+
+Repairs delegate diagnosis to a QA child task, then propose exact-text replacements
+in one owned file and run actual isolated checks. Patches must match uniquely and
+are prepared fully before writing. Unchanged proposals cannot count as repairs.
+Compiler locations include the actual line, column and expression. Subsequent
+diagnoses retain real compiler evidence and the last tool rejection, rather than
+replaying previous unverified reviewer hypotheses as if they were facts.
+
+The evaluation scripts generate a disposable internal fixture from the previously
+saved calculator design and resume its same task/source checkpoint. They archive
+source, model calls, tool calls and build reports before removing the checked UUID
+workspace. They do not approve a user app, publish, deploy or start a preview.
+
+### Verification and observed limitations
+
+- Full Python suite: **271 passed**, exit 0, 13 upstream LangSmith warnings.
+- After the final context adjustment, the affected source/tool tests: **28 passed**,
+  exit 0. `git diff --check` passed.
+- A sandboxed pytest attempt could not create its temporary fixture directories
+  (`OSError: could not create numbered dir`); the suite passed when run with access
+  to its normal temporary directories. No dependencies or lockfiles changed.
+- Evidence directory:
+  `artifacts/source-agent-evaluation/6ebe47d5500d4765acfda72ef7271bae`.
+- The installed 7B model generated the three declared source files. One proposal
+  attempted an unavailable dependency and was rejected; a later proposal removed it.
+- The generated candidate failed real TypeScript checks: a void-expression
+  truthiness test, an incorrect relative import and an undeclared layout component.
+  No generated application source was manually corrected.
+- Initial and resumed repair attempts repeatedly returned unchanged code or an
+  incorrect diagnosis. The coordinator saved resource pauses and all evidence;
+  neither the reviewer nor a completed source-write task marked the app ready.
+- Exact patches and compiler-location grounding are general tool improvements,
+  **not proof that the model repair loop is reliable**. Application behavior and
+  browser interaction remain NOT_TESTED. No successful autonomous app build or
+  end-to-end readiness is claimed by this increment.
+
+The next checkpoint must demonstrate effective source repair against actual checks,
+then independent application behavior checks. Normal approval/dashboard integration
+and the later UI redesign remain deferred; the dashboard still uses the older path.

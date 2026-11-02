@@ -8,6 +8,7 @@ from forge.autonomous_planning import AppDraft
 from forge.persistence import JobStore
 from forge.tasks import Task,TaskConflict,TaskLedger
 from forge.workspace import seed_workspace
+from forge.workspace import source_fingerprint
 from forge.workspace_tools import ToolCall,WorkspaceTools,file_hash
 
 
@@ -56,6 +57,34 @@ def test_stale_file_hash_cannot_overwrite_new_source(tools):
     outcome=tools.execute({'tool':'write_file','path':'app/page.tsx','content':'stale edit','expected_sha256':None})
     assert not outcome['ok'] and 'changed since' in outcome['error']
     assert path.read_text()=='new source'
+
+
+def test_repair_cannot_repeat_unchanged_source_as_a_correction(tools):
+    path=tools.root/'app/page.tsx';path.write_text('export default function Page(){return null}',encoding='utf-8')
+    outcome=tools.execute({'tool':'write_file','path':'app/page.tsx','content':path.read_text(),
+        'expected_sha256':file_hash(path),'require_change':True})
+    assert not outcome['ok'] and 'unchanged source' in outcome['error']
+    assert outcome['source_before']==outcome['source_after']
+
+
+def test_exact_text_patch_preserves_unrelated_source_and_before_image(tools):
+    path=tools.root/'app/page.tsx';before='export default function Page(){return null}\n'
+    path.write_text(before,encoding='utf-8')
+    result=tools.execute({'tool':'replace_text','path':'app/page.tsx',
+        'edits':[{'old':'return null','new':'return <main>Fixed</main>'}],
+        'expected_sha256':file_hash(path),'expected_workspace_fingerprint':source_fingerprint(tools.root)})
+    assert result['ok'] and result['before_content']==before
+    assert path.read_text()=='export default function Page(){return <main>Fixed</main>}\n'
+
+
+@pytest.mark.parametrize('edits',[[{'old':'missing','new':'new'}],[{'old':'return','new':'return'}],
+    [{'old':'return null','new':'return 1'},{'old':'missing','new':'new'}]])
+def test_bad_or_noop_patch_is_rejected_without_partial_mutation(tools,edits):
+    path=tools.root/'app/page.tsx';before='export default function Page(){return null}'
+    path.write_text(before,encoding='utf-8')
+    result=tools.execute({'tool':'replace_text','path':'app/page.tsx','edits':edits,
+        'expected_sha256':file_hash(path),'expected_workspace_fingerprint':source_fingerprint(tools.root)})
+    assert not result['ok'] and path.read_text()==before
 
 
 @pytest.mark.parametrize('path',['../control-plane.py','package.json','lib/types.ts','app/tests/page.test.ts','app/new-helper.ts'])
