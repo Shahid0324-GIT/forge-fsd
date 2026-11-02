@@ -423,3 +423,17 @@ with no backend or internet assumption. Evidence:
 This is one improved proposal, not proof of general planning quality. No application
 was approved, generated or tested by that replay. Approval/source execution and
 independent app-specific behavior checks remain the next integration step.
+
+## Increment 8a: bind human decisions to immutable proposals
+
+New proposals receive a separate immutable review snapshot with task/revision and
+runtime/scaffold provenance. `autonomous_review.py` computes a review fingerprint
+over the exact proposal, original inputs/answers, selected model and runtime. Approval
+and rejection are serialized decisions; approval records source-generation/build scope
+only and does not claim application correctness, preview or publishing permission.
+Changed proposals, tasks, requirements or runtime invalidate the decision. Cancelled
+and rejected jobs cannot reuse it. This checkpoint exposes no new UI execution action.
+
+Verification: **35 focused review/planning/API tests passed**, exit 0; 13 upstream
+LangSmith deprecation warnings. No generated app code or model calls were executed
+by the approval tests.

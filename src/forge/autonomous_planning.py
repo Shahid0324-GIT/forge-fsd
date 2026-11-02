@@ -13,7 +13,10 @@ from forge.senior_review import SeniorReviewer
 from forge.contracts import IntakeDecision
 from forge.planning import INTAKE_INSTRUCTION,HELP_RESPONSES
 from forge.tasks import CheckEvidence,Dependency,Envelope,Task,TaskLedger
-from forge.workspace import safe_path,is_test_source
+from forge.workspace import safe_path,is_test_source,source_fingerprint
+
+
+TEMPLATE=Path(__file__).resolve().parents[2]/'templates/task-app'
 
 
 class DraftFile(Envelope):
@@ -61,7 +64,7 @@ review is supplied, use it to change the unsuccessful approach.'''
 
 
 def planning_capabilities():
-    package=Path(__file__).resolve().parents[2]/'templates/task-app/package.json'
+    package=TEMPLATE/'package.json'
     raw=package.read_bytes();declared=json.loads(raw)
     packages=set(declared.get('dependencies',{}))|set(declared.get('devDependencies',{}))
     return {'framework':'Next.js App Router','language':'TypeScript','node_major':24,
@@ -74,6 +77,10 @@ def planning_capabilities():
         'browser_coverage':'Fixed controller profiles only; general app-specific browser assertions still require implementation.',
         'test_frameworks_available':sorted(packages & {'jest','vitest','@testing-library/react'}),
         'network_and_packages':'No package installation or external services in generated-app execution.'}
+
+
+def capability_fingerprint():
+    return hashlib.sha256(json.dumps(planning_capabilities(),sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
 
 def manifest_issues(draft,root):
@@ -115,7 +122,9 @@ def continue_draft(ledger,task_id,agents):
     if getattr(agents,'trace_directory',None) is None:
         agents.trace_directory=ledger.store.path.parent/'model-calls'/ledger.job_id
     def planner(state):
+        template_before=source_fingerprint(TEMPLATE)
         data=context(state)
+        capabilities_before=hashlib.sha256(json.dumps(data['runtime_capabilities'],sort_keys=True,separators=(',',':')).encode()).hexdigest()
         record_handoff(ledger.store,ledger.job_id,'coordinator','planner',
             'Choose the application design and shared interfaces from the user goal; use observed feedback to revise it.',
             data,agents=agents,task_id=state.task.id,parent_task_id=state.task.parent_id)
@@ -127,8 +136,11 @@ def continue_draft(ledger,task_id,agents):
             snapshot=directory/f'draft-{state.actions_used}.json';snapshot.write_bytes(candidate.read_bytes())
         finally:agents.activity=previous_activity
         issues=manifest_issues(proposed,directory/'unexecuted-workspace')
+        if source_fingerprint(TEMPLATE)!=template_before or capability_fingerprint()!=capabilities_before:
+            issues.append('Runtime capabilities or scaffold changed during planning; inspect the current base and propose again.')
         report=directory/f'check-{state.actions_used}.json'
         report.write_text(json.dumps({'draft_sha256':fingerprint(),'draft_snapshot':str(snapshot.resolve()),'issues':issues,
+            'template_fingerprint':template_before,'runtime_capabilities_sha256':capabilities_before,
             'scope':'Proposal structure and workspace manifest only; business completeness and execution remain unverified.'},indent=2),encoding='utf-8')
         return [CheckEvidence(check=name,exit_code=int(bool(issues)) if name=='workspace_manifest' else 0,
             fingerprint=fingerprint(),report=str(report.resolve()),summary='; '.join(issues) if issues else 'Draft protocol validated; app execution not performed.')
@@ -138,8 +150,18 @@ def continue_draft(ledger,task_id,agents):
     state=TaskCoordinator(ledger,{'planner':planner},reviewer,fingerprint).run(task_id)
     if state.status=='completed':
         draft=AppDraft.model_validate_json(candidate.read_text(encoding='utf-8'))
+        snapshot=safe_path(directory,f'review-{task_id}-r{state.revision}-v{state.version}.json')
+        raw=candidate.read_bytes()
+        if snapshot.exists():
+            if snapshot.read_bytes()!=raw:raise ValueError('The saved review snapshot changed; inspect it before continuing')
+        else:
+            with snapshot.open('xb') as file:file.write(raw)
+        checks=json.loads(Path(state.observations[-1].checks[0].report).read_text(encoding='utf-8'))
         ledger.store.event(ledger.job_id,'AUTONOMOUS_DRAFT_READY',{'title':draft.title,'task_id':task_id,'revision':state.revision,
-            'report':str(candidate.resolve()),'draft_sha256':fingerprint(),'approval':'NOT_APPROVED','app_execution':'NOT_RUN'})
+            'task_version':state.version,'review_snapshot_version':1,
+            'report':str(snapshot.resolve()),'draft_sha256':fingerprint(),
+            'template_fingerprint':checks['template_fingerprint'],'runtime_capabilities_sha256':checks['runtime_capabilities_sha256'],
+            'approval':'NOT_APPROVED','app_execution':'NOT_RUN'})
     else:
         ledger.store.event(ledger.job_id,'AUTONOMOUS_PAUSED',{'task_id':task_id,'reason':state.pause_reason or state.status,
             'revision':state.revision,'app_execution':'NOT_RUN'})
