@@ -63,7 +63,7 @@ class WorkspaceTools:
     Each instance is bound to one task dispatch. It cannot grant itself publishing,
     deployment, package installation, or access to another workspace.
     """
-    def __init__(self,ledger,state,root,draft,*,workspace_boundary=None,check_runner=run_source_checks):
+    def __init__(self,ledger,state,root,draft,*,workspace_boundary=None,check_runner=run_source_checks,authorization=None):
         boundary=Path(workspace_boundary) if workspace_boundary else Path(__file__).resolve().parents[2]/'workspace'
         self.root=Path(root).absolute()
         if self.root.resolve()==boundary.resolve() or not self.root.resolve().is_relative_to(boundary.resolve()):
@@ -74,6 +74,7 @@ class WorkspaceTools:
         issues=manifest_issues(self.draft,self.root)
         if issues:raise ValueError('; '.join(issues))
         self.ledger=ledger;self.state=state;self.check_runner=check_runner
+        self.authorization=authorization
         self.owners={file.path:file.owner for file in self.draft.files}
         self.baseline={path:file_hash(safe_path(self.root,path)) for path in PROTECTED}
         self.directory=ledger.store.path.parent/'tool-calls'/ledger.job_id
@@ -81,6 +82,9 @@ class WorkspaceTools:
 
     def _active(self,db=None):
         self.ledger.assert_active(self.state,db)
+        if self.authorization is not None:
+            try:self.authorization()
+            except (ValueError,OSError,KeyError) as exc:raise TaskConflict('Plan authorization changed: '+str(exc)) from exc
         if any(file_hash(safe_path(self.root,path))!=digest for path,digest in self.baseline.items()):
             raise TaskConflict('Protected runtime configuration changed; refresh the authorized workspace')
 

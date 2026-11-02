@@ -437,3 +437,35 @@ and rejected jobs cannot reuse it. This checkpoint exposes no new UI execution a
 Verification: **35 focused review/planning/API tests passed**, exit 0; 13 upstream
 LangSmith deprecation warnings. No generated app code or model calls were executed
 by the approval tests.
+
+## Increment 8b: approved generation and isolated build execution
+
+`autonomous_build.py` executes the approved manifest with durable per-file source
+tasks, followed by a verification/repair task. Workers receive the original request,
+clarifications, review feedback, complete relevant source and approved ownership.
+Generation reviewers are limited to the file's owner; the build reviewer can reassign
+repairs among registered owners. No task-manager source fallback is used.
+
+Tool actions recheck plan authorization, including after model calls. Cancellation
+prevents a returned proposal from writing source. Saved build pauses retain work;
+resume rechecks current source and does not regenerate files already completed before
+the repair phase. Untracked workspaces are never overwritten. The final status is
+`AUTONOMOUS_BUILD_CHECKS_PASSED`, with application behavior explicitly `NOT_TESTED`;
+it does not grant preview, security, readiness or publishing status.
+
+Verification:
+
+- **48 focused build/review/source/tool tests passed**, exit 0; 13 upstream warnings.
+- `.venv\Scripts\python.exe scripts/evaluate_approved_build.py`: exit 0. The fixed
+  internal counter request went through fresh local-model planning and source
+  generation, then real isolated TypeScript/production builds, with **14 model calls**.
+- Evidence: `artifacts/approved-build-evaluation/745726adee9f454f87fc03930edb3a43`.
+  Approval actor is `internal_evaluation`; human approval is **not claimed**.
+  No generated source was manually corrected. Source archive/report fingerprints
+  match, and the disposable source workspace and verification containers were removed.
+- Final source fingerprint:
+  `1f2e4052dbc9e4fc327fdc790f31167e80b973c2bf9285418f6329c80a71259e`.
+
+This checkpoint does not yet expose dashboard approval/build controls. App-specific
+behavior tests, normal preview integration and safe technical design amendments remain
+separate work; the live result proves build recovery, not that the counter works.

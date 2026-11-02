@@ -94,9 +94,9 @@ def diagnostic_context(failure,source):
 
 
 class SourceAgent:
-    def __init__(self,ledger,agents,root,draft,*,workspace_boundary=None,check_runner=None):
+    def __init__(self,ledger,agents,root,draft,*,workspace_boundary=None,check_runner=None,authorization=None):
         self.ledger=ledger;self.agents=agents;self.root=root;self.draft=AppDraft.model_validate(draft)
-        self.tool_options={'workspace_boundary':workspace_boundary}
+        self.tool_options={'workspace_boundary':workspace_boundary,'authorization':authorization}
         if check_runner is not None:self.tool_options['check_runner']=check_runner
 
     def __call__(self,state):
@@ -118,6 +118,7 @@ class SourceAgent:
         data={'task':{'goal':state.task.goal,'owner':state.task.owner,'revision':state.revision},
             'original_request':state.task.inputs.get('original_request',''),
             'human_clarifications':state.task.inputs.get('human_clarifications',[]),
+            'human_review_feedback':state.task.inputs.get('human_review_feedback',[]),
             'app_design':self.draft.model_dump(),'capabilities':capabilities,
             'source':source,'workspace_fingerprint':fingerprint,'allowed_targets':targets,
             'recent_failures':[o.model_dump() for o in state.observations if o.revision==state.revision][-2:],
