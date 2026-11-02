@@ -116,7 +116,9 @@ class WorkspaceTools:
                 read=self._read(call.path)
                 if not read['exists'] or read['sha256']!=call.expected_sha256:raise ValueError('Patch target changed or does not exist; read it again')
                 content=read['content']
-                for edit in call.edits:
+                for index,edit in enumerate(call.edits,1):
+                    if edit.old==edit.new:
+                        raise ValueError(f'Patch edit {index} is unchanged. Supply different old/new text or omit this edit; no source was written.')
                     matches=content.count(edit.old)
                     if matches!=1:raise ValueError(f'Patch snippet must match exactly once; found {matches} matches. Use actual source and enough surrounding text.')
                     content=content.replace(edit.old,edit.new,1)

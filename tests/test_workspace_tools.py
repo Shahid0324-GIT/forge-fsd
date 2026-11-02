@@ -87,6 +87,23 @@ def test_bad_or_noop_patch_is_rejected_without_partial_mutation(tools,edits):
     assert not result['ok'] and path.read_text()==before
 
 
+@pytest.mark.parametrize('noop_first',[True,False])
+def test_mixed_patch_rejects_unchanged_edit_and_records_actionable_feedback(tools,noop_first):
+    path=tools.root/'app/page.tsx';before='export default function Page(){return null}'
+    path.write_text(before,encoding='utf-8')
+    noop={'old':'export default','new':'export default'}
+    change={'old':'return null','new':'return <main>Changed</main>'}
+    result=tools.execute({'tool':'replace_text','path':'app/page.tsx',
+        'edits':[noop,change] if noop_first else [change,noop],
+        'expected_sha256':file_hash(path),'expected_workspace_fingerprint':source_fingerprint(tools.root)})
+    assert not result['ok'] and path.read_text()==before
+    assert f'Patch edit {1 if noop_first else 2} is unchanged' in result['error']
+    assert 'omit this edit' in result['error']
+    assert result['source_before']==result['source_after']
+    saved=json.loads(Path(result['report']).read_text())
+    assert saved['error']==result['error'] and saved['phase']=='failed'
+
+
 @pytest.mark.parametrize('path',['../control-plane.py','package.json','lib/types.ts','app/tests/page.test.ts','app/new-helper.ts'])
 def test_writes_cannot_escape_scope_change_dependencies_or_edit_other_owners(tools,path):
     outcome=tools.execute({'tool':'write_file','path':path,'content':'overwrite','expected_sha256':None})

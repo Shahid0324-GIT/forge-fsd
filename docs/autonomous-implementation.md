@@ -215,3 +215,13 @@ workspace. They do not approve a user app, publish, deploy or start a preview.
 The next checkpoint must demonstrate effective source repair against actual checks,
 then independent application behavior checks. Normal approval/dashboard integration
 and the later UI redesign remain deferred; the dashboard still uses the older path.
+
+### Increment 5a: precise feedback for ineffective patch entries
+
+Each exact-text replacement must now change its matched text, including within a
+mixed patch containing other valid edits. Rejection identifies the unchanged entry,
+asks the builder to correct or omit it, and preserves all source. Tests cover the
+invalid entry both before and after a valid replacement, plus the persisted failure
+report. Focused source-worker/tool suite: **30 passed**, exit 0; diff check passed.
+No live model replay was run for this small change. Model repair accuracy remains
+unresolved; this improves tool feedback without claiming a successful app build.
