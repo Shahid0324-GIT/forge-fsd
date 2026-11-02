@@ -68,7 +68,7 @@ def build_app(job_id,agents,store,*,resume=False,additional_actions=8,workspace_
     capabilities={role:'Owns only: '+', '.join(file.path for file in draft.files if file.owner==role)
         for role in {file.owner for file in draft.files}}
     def reviewer_for(roles):return SeniorReviewer(agents,ledger,set(roles),context_loader=lambda state:{
-        'original_request':review['binding']['inputs']['original_request'],'approved_design':draft.model_dump(),
+        **context,'approved_design':draft.model_dump(),
         'current_source':{file.path:safe_path(root,file.path).read_text(encoding='utf-8')
             for file in draft.files if safe_path(root,file.path).is_file()}},capabilities={role:capabilities[role] for role in roles})
     writer=SourceAgent(ledger,agents,root,draft,workspace_boundary=boundary,check_runner=check_runner,authorization=authorize)

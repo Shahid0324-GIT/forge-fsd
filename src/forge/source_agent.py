@@ -27,7 +27,11 @@ capability inventory rather than assuming packages exist. Prefer simple working 
 Use Next.js App Router, React, TypeScript, Node built-ins and existing CSS. No Tailwind,
 extra packages, external fonts/services or browser imports of server database modules.
 Interactive hook components need a use client directive as the first module statement,
-before imports, never inside a component function. Use import type for
+before imports, never inside a component function. Its exact source syntax is:
+'use client';
+Keep the quotes and semicolon; bare use client is invalid TypeScript.
+Next.js applies app/layout.tsx automatically; pages do not import or render that root layout.
+Use import type for
 shared TypeScript-only symbols. Keep server-side SQLite behind server actions or API
 handlers; honor the app's chosen interfaces rather than inventing unrelated endpoints.
 Model source is not executed on the host. Real isolated checks will verify the result.
@@ -66,6 +70,8 @@ Resolve relative imports from the directory of the importing file, not the app r
 Next.js supplies app/layout.tsx automatically; pages must not invent a layout import.
 Hooks and browser event handlers require a use client component boundary. The
 directive must be the first module statement, before imports, never inside a function.
+The exact source statement is 'use client'; including the quotes and semicolon.
+Do not emit bare use client or an escaped JSON string inside the source file.
 Choose write_file for a complete corrected file, or replace_text for small local
 edits. Prefer a complete file when changing component structure or several related
 declarations; do not insert a whole component into an import-line replacement.

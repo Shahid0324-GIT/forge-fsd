@@ -5,7 +5,7 @@ import pytest
 
 from forge.autonomous_build import build_app,build_resumable
 from forge.autonomous_planning import plan_app
-from forge.autonomous_review import decide_plan,review_snapshot
+from forge.autonomous_review import decide_plan,review_snapshot,request_changes
 from forge.persistence import JobStore
 from forge.tasks import TaskLedger
 from forge.workspace import source_fingerprint
@@ -14,11 +14,12 @@ from test_autonomous_planning import Agent,draft
 
 class Builder(Agent):
     def __init__(self,proposal):
-        super().__init__(proposal);self.edits=[];self.cancel=None
+        super().__init__(proposal);self.edits=[];self.cancel=None;self.review_contexts=[]
     def generate(self,schema,instruction,data,**kwargs):
         if schema.__name__=='RepairFocus':
             return schema.model_validate({'file':data['allowed_targets'][0],'cause':'Actual compiler failure','changes':['Correct the reported expression']})
         if schema.__name__=='RecoveryDecision':
+            self.review_contexts.append(data['app_context'])
             return schema.model_validate({'diagnosis':'Previous edit did not improve the check','strategy':'Inspect the concrete diagnostic before editing',
                 'action':'retry','owner':data['current_owner'],'question':''})
         if schema.__name__!='SourceEdit':return super().generate(schema,instruction,data,**kwargs)
@@ -108,3 +109,13 @@ def test_resume_cannot_adopt_modified_runtime_configuration(setup):
     with pytest.raises(ValueError,match='runtime configuration'):
         build_app(job,agent,store,resume=True,workspace_boundary=boundary,check_runner=runner())
     assert agent.edits==before and store.read(job)['status']=='AUTONOMOUS_BUILD_PAUSED'
+
+
+def test_senior_build_review_retains_human_feedback_and_original_goal(setup):
+    store,job,agent,boundary,review=setup
+    request_changes(job,agent,store,review['fingerprint'],'Keep the calculation visible on the page.',actor='test_operator')
+    review=review_snapshot(job,store);approve(store,job,review)
+    result=build_app(job,agent,store,workspace_boundary=boundary,check_runner=runner(False))
+    assert result['status']=='AUTONOMOUS_BUILD_PAUSED' and agent.review_contexts
+    assert all(context['human_review_feedback']==['Keep the calculation visible on the page.'] for context in agent.review_contexts)
+    assert all(context['original_request']==review['binding']['inputs']['original_request'] for context in agent.review_contexts)
