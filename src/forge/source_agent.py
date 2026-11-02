@@ -59,12 +59,19 @@ successful result or repeat an unchanged edit. Other files can be addressed in l
 iterations after this focused correction is checked. Ground the cause in the exact
 diagnostic line, column and expression_at_column; do not guess from a nearby function
 name. Re-evaluate prior diagnoses when they disagree with the actual location.'''
+FOCUS_INSTRUCTION+=''' Select the module that owns the correction, not merely the page
+where a symptom appears. Each proposed change must be implementable in that file.
+For missing document metadata with a client page, inspect the server layout. Your
+target is advisory; the builder may correct another file within its existing ownership.'''
 
 
 REPAIR_INSTRUCTION='''Repair the selected existing file so the supplied real compiler,
 build or browser acceptance failures are resolved. Return only a tool request matching the schema.
 The compiler output and actual source are evidence. repair_focus is an advisory
 hypothesis from another model: independently verify it and correct it if wrong.
+You may select ANY allowed target owned by your role, even if QA selected another file.
+Choose the file that actually owns the correction. Never repeat a no-op in the wrong
+module merely to follow QA's recommendation.
 Read the selected file and other files' actual exports and props before editing.
 Resolve relative imports from the directory of the importing file, not the app root.
 Next.js supplies app/layout.tsx automatically; pages must not invent a layout import.
@@ -164,7 +171,7 @@ class SourceAgent:
             for key in ('recent_failures','recovery_strategy','previous_build'):
                 data.pop(key,None)
             focus=self._focus(state,data,targets)
-            targets=[focus.file];data['allowed_targets']=targets;data['repair_focus']=focus.model_dump()
+            data['repair_focus']=focus.model_dump()
             # Repair is a source/debugging task, not another architecture proposal.
             # Retain requirements and complete interfaces, but avoid asking the
             # builder to follow contradictory assumptions from the original draft.

@@ -168,5 +168,7 @@ def test_senior_review_distinguishes_current_checks_from_latest_tool_error(ledge
             assert data['current_evidence']['checks'][0]['report']=='current.json'
             assert data['latest_tool_error'].startswith('Repair cycle rejected:')
             assert 'previous_strategy' not in data and 'history, not instructions' in instruction
+            assert 'previous_unsuccessful_strategy' not in data
+            assert all(o['fingerprint']==current for o in data['recent_observations'])
             return schema.model_validate(retry(None,None).model_dump())
     SeniorReviewer(Agent(),ledger,{'builder'})(task,child)

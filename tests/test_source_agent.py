@@ -133,6 +133,25 @@ def test_framework_findings_reach_diagnosis_with_actual_source_location():
     assert location['code']=='INVALID_MODULE_DIRECTIVE' and location['line_text']=='use client;'
 
 
+def test_builder_can_correct_another_owned_module_when_qa_target_is_wrong(tools):
+    draft=tools.draft.model_copy(update={'files':[*tools.draft.files,
+        tools.draft.files[0].model_copy(update={'path':'app/layout.tsx','purpose':'Server layout'})]})
+    state=configured(tools,'repair_build');content="export const metadata={title:'Preserved'};"
+    class IndependentBuilder(Agent):
+        def generate(self,schema,instruction,data,**kwargs):
+            if schema.__name__=='RepairFocus':return super().generate(schema,instruction,data,**kwargs)
+            assert data['repair_focus']['file']=='app/page.tsx'
+            assert 'app/layout.tsx' in data['allowed_targets'] and 'lib/types.ts' not in data['allowed_targets']
+            old=data['source']['app/layout.tsx']
+            return schema.model_validate({'tool':'write_file','path':'app/layout.tsx','content':content,
+                'expected_sha256':old['sha256'],'expected_workspace_fingerprint':data['workspace_fingerprint'],'require_change':True})
+    def check(root,*_):return {'passed':True,'report':'actual.json','source_fingerprint':source_fingerprint(root),
+        'coverage':{'application_behavior':'NOT_TESTED'},'checks':{'results':[]}}
+    SourceAgent(tools.ledger,IndependentBuilder(content),tools.root,draft,
+        workspace_boundary=tools.root.parent,check_runner=check)(state)
+    assert (tools.root/'app/layout.tsx').read_text()==content
+
+
 def test_existing_source_repairs_use_a_model_proposed_patch(tools):
     (tools.root/'app/page.tsx').write_text('export default function Page(){return null}',encoding='utf-8')
     state=configured(tools,'repair_build');agent=Agent('export default function Page(){return <main>Updated</main>}')

@@ -58,7 +58,11 @@ class SeniorReviewer:
                 checks.append({'check':check.check,'exit_code':check.exit_code,'report':check.report,'summary':text})
             observations.append({'fingerprint':observed.fingerprint,'checks':checks,'error':observed.error[:1000]})
         history=[o for o in failed.observations if o.revision==failed.revision]
-        latest=next((o for o in reversed(history) if o.checks),None)
+        current_fingerprint=history[-1].fingerprint if history else None
+        latest=next((o for o in reversed(history) if o.checks and o.fingerprint==current_fingerprint),None)
+        # Preserve old details in reports, not alongside the current debugging input.
+        # The small model otherwise copies a previously suggested diagnosis verbatim.
+        observations=[o for o in observations if o['fingerprint']==current_fingerprint]
         data={'current_evidence':latest.model_dump() if latest else None,
             'latest_tool_error':history[-1].error if history else '',
             'original_goal':failed.task.goal,'current_owner':failed.task.owner,
@@ -67,7 +71,7 @@ class SeniorReviewer:
             'recent_observations':observations,'available_owners':self.roles,
             'owner_capabilities':self.capabilities,
             'review_questions_authorized':failed.task.allow_review_questions,
-            'previous_unsuccessful_strategy':failed.recovery.model_dump() if failed.recovery else None,
+            'prior_strategy_supplied':failed.recovery is not None,
             'previous_review_error':failed.review_error,
             'context_limits':{'check_summaries_bounded':True,'full_evidence_in_referenced_reports':True}}
         if len(json.dumps(data,separators=(',',':')))>20000:
