@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from forge.autonomous_planning import AppDraft,answer_intake,continue_draft,manifest_issues,plan_app
+from forge.autonomous_planning import AppDraft,answer_intake,continue_draft,manifest_issues,plan_app,start_planning
 from forge.persistence import JobStore
 from forge.contracts import IntakeDecision
 from forge.tasks import TaskLedger
@@ -116,3 +116,22 @@ def test_help_intent_never_calls_the_app_planner(tmp_path):
     agent=HelpAgent(draft())
     result=plan_app('How does this app development workflow work?',agent,JobStore(tmp_path/'jobs.sqlite3'))
     assert result['status']=='REQUEST_ANSWERED' and agent.calls==[IntakeDecision]
+
+
+def test_controller_created_job_keeps_its_identity_and_operation_history(tmp_path):
+    store=JobStore(tmp_path/'jobs.sqlite3');agent=Agent(draft())
+    job=store.create({'description':'Build an interactive calculator.','model':agent.model_name,'workflow':'autonomous'})
+    store.event(job,'OPERATION_STARTED',{'operation_id':'operation'},update_status=False)
+    result=start_planning(job,agent,store)
+    assert result['job_id']==job and result['status']=='AUTONOMOUS_DRAFT_READY'
+    assert len(store.list_jobs())==1 and result['events'][1]['status']=='OPERATION_STARTED'
+    assert agent.calls[-1][1]['original_request']=='Build an interactive calculator.'
+    with pytest.raises(ValueError,match='already dispatched'):start_planning(job,agent,store)
+
+
+@pytest.mark.parametrize('workflow,model',[('typed','qwen2.5-coder:7b'),('autonomous','qwen2.5-coder:3b')])
+def test_existing_job_cannot_switch_workflow_or_model(tmp_path,workflow,model):
+    store=JobStore(tmp_path/'jobs.sqlite3');agent=Agent(draft())
+    job=store.create({'description':'Build an interactive calculator.','model':model,'workflow':workflow})
+    with pytest.raises(ValueError):start_planning(job,agent,store)
+    assert not agent.calls and TaskLedger(store,job).list()==[]

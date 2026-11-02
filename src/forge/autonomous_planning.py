@@ -127,9 +127,21 @@ def continue_draft(ledger,task_id,agents):
 
 def plan_app(description,agents,store,*,action_limit=8):
     request=ApplicationRequest(description=description,model=agents.model_name)
-    job=store.create(request.model_dump());ledger=TaskLedger(store,job)
+    job=store.create({**request.model_dump(),'workflow':'autonomous'})
+    return start_planning(job,agents,store,action_limit=action_limit)
+
+
+def start_planning(job_id,agents,store,*,action_limit=8):
+    """Start a controller-created job without creating a second identity/history."""
+    record=store.read(job_id);received=record['events'][0]['payload']
+    ledger=TaskLedger(store,job_id)
+    if received.get('workflow')!='autonomous':raise ValueError('This job does not use autonomous planning')
+    if record['status']!='RECEIVED' or ledger.list():
+        raise ValueError('Planning was already dispatched; inspect and resume its saved tasks instead')
+    request=ApplicationRequest(description=received['description'],model=received['model'])
+    if agents.model_name!=request.model:raise ValueError('The planner must use the model selected for this job')
     intake=ledger.create(Task(owner='requirements',goal='Determine whether the user request is understood, needs business clarification or is outside scope.',
-        inputs={'original_request':description},required_checks=['intake_schema']),action_limit=action_limit)
+        inputs={'original_request':request.description},required_checks=['intake_schema']),action_limit=action_limit)
     return continue_intake(ledger,intake.task.id,agents)
 
 

@@ -342,3 +342,15 @@ The counter's increment bug was corrected by the model before its first browser
 run; the formatter provides the direct failing-to-passing browser calibration.
 This small sample does not establish general repair accuracy. Broader behavior,
 database/restart checks and normal autonomous dashboard integration remain next.
+
+## Increment 7a: managed-job planning adapter
+
+`start_planning` starts intake/planning inside an already-created autonomous job,
+preserving its request, job identity and managed-operation history. It rejects a
+different workflow/model and repeat starts instead of creating duplicate task trees.
+CLI planning now marks new jobs as autonomous and uses the same adapter. Existing
+clarification/resume behavior is retained. This is the backend prerequisite for
+dashboard routing; no dashboard controls change in this checkpoint.
+
+Verification: **17 planning tests passed**, exit 0, including existing CLI cases,
+same-job operation history, repeat-start rejection and model/workflow guards.
