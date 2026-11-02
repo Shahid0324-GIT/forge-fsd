@@ -176,6 +176,14 @@ class WorkspaceTools:
             before=path.read_text(encoding='utf-8') if path.is_file() else None
             if call.require_change and before==call.content:
                 raise ValueError('Proposed repair is unchanged source; it cannot resolve the recorded failure. Use the diagnosis to make a substantive correction.')
+            if call.require_change:
+                candidate=source_fingerprint(self.root,replacements={call.path:call.content})
+                failed=next((o for o in reversed(self.state.observations) if o.revision==self.state.revision
+                    and o.fingerprint==candidate and any(c.exit_code!=0 for c in o.checks)),None)
+                if failed:
+                    reason='; '.join(c.summary for c in failed.checks if c.exit_code!=0)[:900]
+                    raise ValueError('Repair cycle rejected: this would restore an already failed workspace '+candidate+
+                        '. No source was written. Address both the current failure and this earlier failure: '+reason)
             packet.update(phase='prepared',before_content=before)
             # Preserve intent and the old source before performing the mutation.
             report_path.write_text(json.dumps(packet,indent=2),encoding='utf-8')

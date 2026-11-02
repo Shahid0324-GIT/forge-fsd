@@ -22,6 +22,13 @@ claim that tests ran or passed, declare the app ready, expand tool permissions o
 publishing/deployment. A proposed strategy will be checked by subsequent execution.
 Return a short factual diagnosis and actionable strategy, not private reasoning.'''
 
+INSTRUCTION+=''' The current_evidence packet is the present blocker. Earlier observations
+and the previous unsuccessful strategy are history, not instructions. Verify the
+diagnostic against current_source before recommending any symbol or import change.
+If source no longer contains a previously broken symbol, that diagnosis is obsolete.
+For a cycle, propose a correction addressing both failures instead of undoing the
+latest edit and restoring a known failing workspace.'''
+
 
 class SeniorReviewer:
     def __init__(self,agents,ledger,roles,*,context_loader=None,capabilities=None):
@@ -50,13 +57,17 @@ class SeniorReviewer:
                 text=check.summary[:min(800,remaining)];remaining-=len(text)
                 checks.append({'check':check.check,'exit_code':check.exit_code,'report':check.report,'summary':text})
             observations.append({'fingerprint':observed.fingerprint,'checks':checks,'error':observed.error[:1000]})
-        data={'original_goal':failed.task.goal,'current_owner':failed.task.owner,
+        history=[o for o in failed.observations if o.revision==failed.revision]
+        latest=next((o for o in reversed(history) if o.checks),None)
+        data={'current_evidence':latest.model_dump() if latest else None,
+            'latest_tool_error':history[-1].error if history else '',
+            'original_goal':failed.task.goal,'current_owner':failed.task.owner,
             'input_revision':failed.revision,'required_checks':failed.task.required_checks,
             'app_context':self.context_loader(failed) if self.context_loader else failed.task.inputs,
             'recent_observations':observations,'available_owners':self.roles,
             'owner_capabilities':self.capabilities,
             'review_questions_authorized':failed.task.allow_review_questions,
-            'previous_strategy':failed.recovery.model_dump() if failed.recovery else None,
+            'previous_unsuccessful_strategy':failed.recovery.model_dump() if failed.recovery else None,
             'previous_review_error':failed.review_error,
             'context_limits':{'check_summaries_bounded':True,'full_evidence_in_referenced_reports':True}}
         if len(json.dumps(data,separators=(',',':')))>20000:

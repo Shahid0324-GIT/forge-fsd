@@ -172,11 +172,14 @@ def seed_workspace(template, root, *, generic=False):
                 target.write_text(target.read_text(encoding='utf-8').replace('Forge Tasks','Forge Application').replace('Generated task manager','Generated small application'),encoding='utf-8')
 
 
-def source_fingerprint(root):
-    entries = []
+def source_fingerprint(root, *, replacements=None):
+    entries = {}
     for path in sorted(root.rglob("*")):
         if path.is_symlink() or path.is_junction():
             raise ValueError("Unexpected link in source")
         if path.is_file():
-            entries.append((path.relative_to(root).as_posix(), hashlib.sha256(path.read_bytes()).hexdigest()))
-    return hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest()
+            entries[path.relative_to(root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+    for relative,content in (replacements or {}).items():
+        entries[relative] = hashlib.sha256(content.encode('utf-8')).hexdigest()
+    ordered=sorted(entries.items(),key=lambda item:root/item[0])
+    return hashlib.sha256(json.dumps(ordered, separators=(",", ":")).encode()).hexdigest()

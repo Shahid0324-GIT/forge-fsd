@@ -131,6 +131,8 @@ def test_senior_model_handoff_uses_real_child_identity_and_restores_context(ledg
         def generate(self,schema,instruction,data,**_):
             assert data['original_goal']==task.task.goal
             assert data['recent_observations'][0]['checks'][0]['exit_code']==1
+            assert data['current_evidence']['fingerprint']==FP
+            assert data['current_evidence']['checks'][0]['summary']==task.observations[-1].checks[0].summary
             assert self.invocation_context['task_id']==child.task.id
             assert self.invocation_context['parent_task_id']==task.task.id
             return schema.model_validate(retry(None,None).model_dump())
@@ -149,3 +151,22 @@ def test_review_report_fingerprint_matches_persisted_bytes(ledger):
     from pathlib import Path
     assert hashlib.sha256(Path(check.report).read_bytes()).hexdigest()==check.fingerprint
     assert json.loads(Path(check.report).read_text())['scope'].startswith('Recovery proposal validation only')
+
+
+def test_senior_review_distinguishes_current_checks_from_latest_tool_error(ledger):
+    task=ledger.start(create(ledger))
+    old=CheckEvidence(check='functional',exit_code=1,fingerprint=FP,report='old.json',summary='Old missing import')
+    task=ledger.observe(task,Observation(revision=1,fingerprint=FP,checks=[old]))
+    current='b'*64
+    new=CheckEvidence(check='functional',exit_code=1,fingerprint=current,report='current.json',summary='Current parse error')
+    task=ledger.observe(task,Observation(revision=1,fingerprint=current,checks=[new]))
+    task=ledger.observe(task,Observation(revision=1,fingerprint=current,error='Repair cycle rejected: earlier failed workspace'))
+    child=ledger.create(Task(parent_id=task.task.id,owner='senior_reviewer',goal='Review current failure',required_checks=['proposal']))
+    class Agent:
+        def generate(self,schema,instruction,data,**_):
+            assert data['current_evidence']['fingerprint']==current
+            assert data['current_evidence']['checks'][0]['report']=='current.json'
+            assert data['latest_tool_error'].startswith('Repair cycle rejected:')
+            assert 'previous_strategy' not in data and 'history, not instructions' in instruction
+            return schema.model_validate(retry(None,None).model_dump())
+    SeniorReviewer(Agent(),ledger,{'builder'})(task,child)

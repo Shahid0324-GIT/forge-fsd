@@ -10,9 +10,33 @@ from forge.tasks import Task,TaskConflict,TaskLedger
 from forge.workspace import seed_workspace
 from forge.workspace import source_fingerprint
 from forge.workspace_tools import ToolCall,WorkspaceTools,file_hash
+from forge.tasks import CheckEvidence,Observation
 
 
 PROJECT=Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize('patch',[False,True])
+def test_repair_cannot_restore_failed_workspace_but_can_reuse_code_after_other_changes(tools,patch):
+    path=tools.root/'app/page.tsx';old='export default function Page(){return <main>Before</main>}'
+    new='export default function Page(){return <main>After</main>}'
+    path.write_text(old,encoding='utf-8');failed=source_fingerprint(tools.root)
+    state=tools.ledger.observe(tools.state,Observation(revision=tools.state.revision,fingerprint=failed,
+        checks=[CheckEvidence(check='isolated_build',exit_code=1,fingerprint=failed,report='failed.json',summary='Earlier actual failure')]))
+    state=tools.ledger.reserve_action(state,'frontend');path.write_text(new,encoding='utf-8')
+    current=source_fingerprint(tools.root)
+    assert source_fingerprint(tools.root,replacements={'app/page.tsx':old})==failed
+    writer=WorkspaceTools(tools.ledger,state,tools.root,tools.draft,workspace_boundary=tools.root.parent)
+    request={'tool':'replace_text' if patch else 'write_file','path':'app/page.tsx',
+        'expected_sha256':file_hash(path),'expected_workspace_fingerprint':current}
+    request.update({'edits':[{'old':new,'new':old}]} if patch else {'content':old,'require_change':True})
+    result=writer.execute(request,initiator='model')
+    assert not result['ok'] and 'Repair cycle rejected' in result['error']
+    assert 'Earlier actual failure' in result['error'] and path.read_text()==new
+    assert result['source_before']==result['source_after']==current
+    (tools.root/'app/globals.css').write_text('/* another module changed */',encoding='utf-8')
+    request['expected_workspace_fingerprint']=source_fingerprint(tools.root)
+    assert writer.execute(request,initiator='model')['ok']
 
 
 @pytest.fixture

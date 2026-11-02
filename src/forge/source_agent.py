@@ -72,6 +72,9 @@ Hooks and browser event handlers require a use client component boundary. The
 directive must be the first module statement, before imports, never inside a function.
 The exact source statement is 'use client'; including the quotes and semicolon.
 Do not emit bare use client or an escaped JSON string inside the source file.
+If an invalid unquoted directive caused a parse error, quote it rather than deleting
+the client boundary still needed by hooks. Client modules cannot export server metadata;
+keep metadata in the server layout or separate interactive code from server metadata.
 Choose write_file for a complete corrected file, or replace_text for small local
 edits. Prefer a complete file when changing component structure or several related
 declarations; do not insert a whole component into an import-line replacement.
@@ -147,9 +150,15 @@ class SourceAgent:
             # A prior diagnosis is a hypothesis, not compiler evidence. Replaying it
             # beside each new diagnosis anchored the model on incorrect causes.
             data['last_tool_error']=state.observations[-1].error if state.observations else ''
+            data['repair_cycle_detected']='Repair cycle rejected:' in data['last_tool_error']
+            data['framework_reference']={
+                'client_directive_source':"'use client';\n",
+                'client_boundary':'Place the quoted string literal before imports when using client hooks or browser handlers.',
+                'server_metadata':'Client modules cannot export metadata/generateMetadata; keep these in server modules.',
+                'root_layout':'Next.js applies the root layout automatically; do not import it into a page.'}
             data['replace_rejected_patch']=bool(data['last_tool_error']) and any(
                 message in data['last_tool_error'] for message in
-                ('Patch snippet','Patch edit','Proposed repair is unchanged source'))
+                ('Patch snippet','Patch edit','Proposed repair is unchanged source','Repair cycle rejected:'))
             if data['replace_rejected_patch']:
                 data['edit_guidance']='The preceding local patch failed. Return one complete corrected file with write_file instead of repeating a patch.'
             for key in ('recent_failures','recovery_strategy','previous_build'):
