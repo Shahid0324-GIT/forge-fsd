@@ -39,7 +39,7 @@ This diagram describes the target integration; the two paths above describe what
 
 ## Verified checkpoints
 
-Latest local controller suite: **326 Python tests passed**. These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy. Dashboard TypeScript and production build also pass.
+Latest local controller suite: **333 Python tests passed**. These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy. Three static framework diagnostic tests also pass. Dashboard TypeScript and production build passed at the preceding UI checkpoint.
 
 Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker builds and Chromium:
 
@@ -50,6 +50,7 @@ Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker b
 | Formatter repair fixture | Initial build passed but both browser assertions failed on lowercase output; one model repair reached passing build and 2/2 assertions. |
 | Fresh counter planning and generation | Internal evaluation approved an agent-authored proposal; model-generated source reached passing TypeScript and production builds in 14 model calls. Behavior was not tested. |
 | Dashboard counter with review feedback | Consent, same-job revision and restart/resume worked. Generation remained paused after repeated client-directive repair failures; no working-app claim. |
+| Next.js client-boundary repair fixture | After the repair-loop fixes, the same 7B model corrected the directive and moved metadata to the server layout. Real build and 4/4 frozen browser assertions passed in 8 model calls. |
 
 The counter and formatter start from **deliberately faulty, controller-authored test fixtures**. They evaluate repair, not autonomous generation from a fresh request. Their frozen browser assertions run in a separate container and cannot be edited by the builder. All source corrections after fixture setup came from model tool calls.
 
@@ -139,6 +140,7 @@ Inspect interrupted dispatch outcomes before claiming they are reconciled. Resou
 ```powershell
 .\.venv\Scripts\python.exe scripts/evaluate_repair_regressions.py --case formatter
 .\.venv\Scripts\python.exe scripts/evaluate_repair_regressions.py --case counter
+.\.venv\Scripts\python.exe scripts/evaluate_repair_regressions.py --case client-boundary
 ```
 
 These use real local inference, Docker builds and browser interactions. The scripts save initial failures, task/model/tool traces, final source and reports under `artifacts/repair-regressions/`, then remove disposable fixture workspaces, containers and networks. They publish no host preview ports or cloud deployments. A failed or paused evaluation exits nonzero; inspect the saved evidence rather than treating a pause as success.
@@ -149,9 +151,12 @@ These use real local inference, Docker builds and browser interactions. The scri
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m pip check
 npm --prefix apps/web run build
+node --test tests/framework-diagnostics.test.mjs
 ```
 
 Python tests and dashboard checks are separate from the live model evaluations. Runtime artifacts, historical runs, model weights, generated workspaces and local environment files are excluded from Git. A fresh clone does not include previous run evidence; use the reproduction commands to create new evidence.
+
+The framework diagnostic tests use the dashboard's locked TypeScript package. Live build checks run static parser diagnostics in the isolated dependency image, alongside the real compiler/build. Diagnostics explain invalid module directives and client/server metadata conflicts; they do not rewrite source or establish app behavior. Repairs that exactly restore a failed workspace in the same task revision are rejected before writing.
 
 ## CI, deployment and safety boundaries
 

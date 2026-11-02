@@ -532,3 +532,84 @@ the disposable workspace was removed and the isolated dashboard closed. No user 
 cloud resource or main dashboard database was changed. Next repair work should make
 the current source/check evidence explicit to reviewers and verify that their proposed
 correction addresses it, before broadening autonomous behavior-test integration.
+
+## Increment 9: current evidence, repair cycles and framework diagnostics
+
+Repair tools now predict the whole-workspace fingerprint before writing a correction.
+An edit restoring an exactly previously failed workspace in the same task revision is
+rejected without mutation, with the earlier failure supplied as feedback. Reusing an
+earlier file after another module changes remains possible. This detects exact cycles;
+it does not equate every semantically similar program or prevent every unproductive edit.
+
+Senior review receives a primary current-check packet and latest tool error separately
+from history and previous unsuccessful advice. Approved-build context includes the live
+source fingerprint. QA and builders receive the same small framework reference.
+
+The trusted build harness uses the installed TypeScript parser for source locations and
+module structure, plus lexical detection of an unquoted directive. It reports missing
+quoted client boundaries for named hook imports and client/server metadata conflicts.
+These are advisory diagnostics, not a complete Next.js analyzer or substitute for the
+compiler, production build or acceptance tests. It never executes app modules or rewrites
+source. Both diagnostic modules are mounted read-only and included in the harness hash.
+
+A frozen `client-boundary` regression starts with an invalid directive and metadata in
+the interactive page. Its independent browser assertions cover initial zero, repeated
+increments, reset and preserved document title. The model may edit page/layout source,
+but cannot edit the assertions. This evaluates repair of a deliberately broken fixture,
+not fresh app generation or arbitrary app support.
+
+Verification: **330 Python tests passed**, exit 0, with 13 upstream LangSmith warnings;
+`node --test tests/framework-diagnostics.test.mjs`: **3 passed**, exit 0. An initial
+exploratory replay had its harness changed during execution; later checks were incomplete
+and that replay is excluded as a verdict on the final code. Its evidence is retained at
+`artifacts/repair-regressions/bd255bffcaf7423e98c4481a138fcfbe` with that limitation.
+
+The first fixed-harness replay (`0ea6007e347b4ecfb08c85fc97ee8195`) corrected the
+quoted directive through a model-proposed patch, passed the real build and passed
+three of four browser assertions. It paused without restoring the document title.
+QA recommended changing the layout but selected the page; the controller had narrowed
+the builder's tool schema to that selected file, despite describing QA as advisory.
+
+Incremental correction: QA now recommends a target without narrowing the builder's
+existing role ownership. A builder can correct another owned module; cross-owner
+writes remain prohibited. A regression verifies this behavior. Reviewer context no
+longer repeats the previous strategy or observations belonging to older fingerprints;
+those details remain in the ledger/reports. Focused handoff/build tests: **33 passed**,
+exit 0. A fresh fixed-harness replay is recorded separately below.
+
+That replay (`00c3fe2a64654910ac947fa73147b933`) still paused on metadata after
+correcting the directive. Inspection exposed another context gap: repair removed all
+senior-review strategy data, including advice produced for the current source. Fresh
+advice is now passed to both QA and builder only when the reviewed observation count
+still matches; the existing source-fingerprint check rejects stale build locations.
+Another observation invalidates that advice even if source bytes did not change.
+Two regression variants verify fresh versus superseded advice; **24 focused tests
+passed**, exit 0. Historical reviewer text is not blindly replayed.
+
+Final fixed-harness client-boundary replay: **passed**, exit 0, with the same local
+`qwen2.5-coder:7b`. The model quoted the directive, added the preserved title metadata
+to `app/layout.tsx`, then removed the server-only export from the client page. All
+post-fixture source changes were model-issued tool requests; no generated code was
+manually corrected. It completed in **6 dispatches / 8 model calls**.
+
+- TypeScript and production build: passed.
+- Independent browser assertions: **4/4 passed** (initial zero, repeated increments,
+  reset to zero and preserved document title).
+- Final source, build and browser fingerprints match; source/harness remained
+  unchanged during checks; verified image IDs match and cleanup reports no errors.
+- Evidence: `artifacts/repair-regressions/cd8968c791054740a0befc9e028dac34/client-boundary`.
+- Final source fingerprint:
+  `2ff179f652559e9876c4e8636166a2d61e503f74af71f441e85c5ff3d6e765f3`.
+- Final full controller suite: **333 passed**, exit 0, with 13 upstream warnings.
+
+This demonstrates recovery on the frozen regression, not arbitrary application
+generation or completion of the dashboard's independent app-QA integration.
+
+Unrelated formatter replay with the same final code: **passed**, exit 0. Initial
+TypeScript/build passed but both frozen browser assertions failed on lowercase output.
+The model selected `lib/format.ts` and patched the transformation; final build and
+**2/2 browser assertions passed** in 2 dispatches / 2 model calls. Evidence:
+`artifacts/repair-regressions/cf8eea19e39b44e7885758fba572981f/formatter`.
+Source fingerprint:
+`e4004ee7a36b5b3abf3c66207144e3860755b785dd86a4710d56099f3921bf9f`.
+No manual source corrections, dependency changes or model downloads were used.
