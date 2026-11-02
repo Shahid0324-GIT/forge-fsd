@@ -4,6 +4,7 @@ from typing import Literal,Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator,JsonValue
 from forge.models import LocalModel,DEFAULT_MODEL
+from forge.contracts import DataContract, AppDesign
 
 
 class Boundary(BaseModel):
@@ -83,6 +84,14 @@ def validate_app_contract(requirements,plan):
         raise ValueError('Requirements and plan versions must match')
     if requirements.spec_version==1:return
     if requirements.database!=plan.database:raise ValueError('Database choice differs from requirements')
+    if requirements.data_contract is not None and plan.design is None:
+        raise ValueError('Typed business requirements need their authoritative typed app design')
+    if plan.design is not None:
+        from forge.contracts import compile_design
+        brief=AppBrief.model_validate({key:value for key,value in requirements.model_dump().items() if key in AppBrief.model_fields})
+        expected=compile_design(brief,plan.design)
+        if expected.model_dump()!=plan.model_dump():
+            raise ValueError('Execution plan differs from its authoritative typed design')
     files={file for task in plan.tasks for file in task.files}
     for page in requirements.pages:
         path='app/'+(page.strip('/')+'/' if page!='/' else '')+'page.tsx'
@@ -175,6 +184,7 @@ class AppBrief(Boundary):
     database: Literal['sqlite','none']
     entities: list[AppEntity] = Field(max_length=3)
     pages: list[str] = Field(min_length=1,max_length=5)
+    data_contract: DataContract | None = None
 
     @model_validator(mode='after')
     def validate_scope(self):
@@ -244,6 +254,7 @@ class RequirementsDocument(Boundary):
     entities: list[AppEntity] = Field(default_factory=list,max_length=3)
     pages: list[str] = Field(default_factory=list,max_length=5)
     scenarios: list[AcceptanceScenario] = Field(default_factory=list,max_length=10)
+    data_contract: DataContract | None = None
 
     @model_validator(mode="after")
     def require_crud(self):
@@ -273,6 +284,7 @@ class ImplementationPlan(Boundary):
     routes: list[Annotated[str,Field(pattern=r'^(GET|POST|PUT|PATCH|DELETE) /api/[a-zA-Z0-9_/{}/-]+$')]] = Field(min_length=1,max_length=15)
     tasks: list[ImplementationTask] = Field(min_length=2, max_length=6)
     verification: list[str] = Field(min_length=3, max_length=10)
+    design: AppDesign | None = None
 
     @model_validator(mode="after")
     def check_contract(self):
@@ -325,11 +337,3 @@ class BackendTask(ImplementationTask):
 class AppImplementationPlan(ImplementationPlan):
     spec_version: Literal[2] = Field(...)
     tasks: tuple[FrontendTask,BackendTask]
-
-    @model_validator(mode='after')
-    def concrete_api_contract(self):
-        contract=self.tasks[1].contract
-        missing=[route.split(' ',1)[1] for route in self.routes if route.split(' ',1)[1] not in contract]
-        if missing:
-            raise ValueError('Backend contract must specify the request/response interface for each API path: '+', '.join(dict.fromkeys(missing)))
-        return self

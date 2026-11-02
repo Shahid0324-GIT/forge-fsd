@@ -1,8 +1,8 @@
 type WorkflowEvent={sequence:number;timestamp:string;status:string;payload:Record<string,any>};
 type Props={events:WorkflowEvent[];busy:boolean;status:string;onContext:(event:WorkflowEvent)=>void};
 
-const roles:Record<string,string>={FileOperation:'Builder',RequirementsDocument:'Requirements',AppBrief:'Requirements',AppRequirements:'Requirements',AppImplementationPlan:'Architect',ImplementationPlan:'Architect',NativeAcceptancePlan:'Acceptance planner',ArchitectureReview:'Architecture reviewer',AcceptanceReview:'Acceptance reviewer',AppAcceptancePlan:'QA',architecture_reviewer:'Architecture reviewer',acceptance_reviewer:'Acceptance reviewer',requirements_agent:'Requirements',architect_agent:'Architect',qa:'Test planning & repair',backend_builder:'Backend',frontend_builder:'Frontend',implementation_coordinator:'Build coordinator',verification:'Test runner',ci_agent:'App CI',deployment_agent:'Deployment'};
-const name=(value:string)=>roles[value]??value?.replaceAll('_',' ')??'Agent';
+const roles:Record<string,string>={IntakeDecision:'Intake',BusinessBrief:'Requirements',ApiDesign:'API architect',ApiProposal:'API architect',LayoutDesign:'Implementation architect',AcceptanceDesign:'Acceptance planner',api_architect:'API architect',implementation_architect:'Implementation architect',FileOperation:'Builder',RequirementsDocument:'Requirements',AppBrief:'Requirements',AppRequirements:'Requirements',AppImplementationPlan:'Architect',ImplementationPlan:'Architect',NativeAcceptancePlan:'Acceptance planner',ArchitectureReview:'Architecture reviewer',AcceptanceReview:'Acceptance reviewer',AppAcceptancePlan:'QA',architecture_reviewer:'Architecture reviewer',acceptance_reviewer:'Acceptance reviewer',requirements_agent:'Requirements',architect_agent:'Architect',qa:'Test planning & repair',backend_builder:'Backend',frontend_builder:'Frontend',implementation_coordinator:'Build coordinator',verification:'Test runner',ci_agent:'App CI',deployment_agent:'Deployment'};
+const name=(value:string)=>(value==='LayoutProposal'?'Implementation architect':roles[value])??value?.replaceAll('_',' ')??'Agent';
 export function conciseIssue(message:string):string{
   if(message.includes('Failed to parse')){
     const role=message.includes('AcceptancePlan')?'QA':message.includes('AppBrief')?'Requirements':'Planning';
@@ -34,6 +34,7 @@ function describe(event:WorkflowEvent):[string,string]{
   if(event.status==='PLANNING_QUALITY_REVIEW')return [name(p.reviewer),p.issues?.length?p.issues.join(' '):p.summary];
   if(event.status==='AGENT_HANDOFF')return [`${name(p.sender)} → ${name(p.recipient)}`,String(p.summary??'Saved context supplied to the next role.')];
   if(event.status==='AGENT_CALL_STARTED')return [`${name(p.schema)} · model call`, `Generating a structured proposal${p.attempt>1?` · correction attempt ${p.attempt}`:''}.`];
+  if(event.status==='AGENT_CALL_FAILED')return [`${name(p.schema)} · call failed`,String(p.summary??'The model call failed. Open its recorded call for details.')];
   if(event.status==='AGENT_CALL_COMPLETED')return [`${name(p.schema)} · response validated`,'The response passed its schema checks. Application tests have not been implied.'];
   if(event.status==='AGENT_VALIDATION_FAILED')return [`${name(p.schema)} · ${p.retrying?'correcting proposal':'needs attention'}`,String(p.summary??'Proposal validation failed.')];
   if(event.payload.reason)return ['Step needs attention',conciseIssue(String(event.payload.reason))];
@@ -42,7 +43,7 @@ function describe(event:WorkflowEvent):[string,string]{
 }
 
 export default function AgentFlow({events,busy,status,onContext}:Props){
-  const visible=events.filter(e=>e.status in summaries||['PLANNING_QUALITY_REVIEW','AGENT_HANDOFF','AGENT_CALL_STARTED','AGENT_CALL_COMPLETED','AGENT_VALIDATION_FAILED','FAILED','VERIFICATION_FAILED','SECURITY_BLOCKED','INTERRUPTED','CANCELLED'].includes(e.status));
+  const visible=events.filter(e=>e.status in summaries||['PLANNING_QUALITY_REVIEW','AGENT_HANDOFF','AGENT_CALL_STARTED','AGENT_CALL_COMPLETED','AGENT_CALL_FAILED','AGENT_VALIDATION_FAILED','FAILED','VERIFICATION_FAILED','SECURITY_BLOCKED','INTERRUPTED','CANCELLED'].includes(e.status));
   const recent=visible.slice(-8).reverse();
   const active=events.filter(e=>steps.some(([,statuses])=>(statuses as readonly string[]).includes(e.status))).at(-1);
   const failed=['FAILED','VERIFICATION_FAILED','SECURITY_BLOCKED','INTERRUPTED'].includes(status);
@@ -58,10 +59,11 @@ export default function AgentFlow({events,busy,status,onContext}:Props){
       {recent.length===0?<p className="muted">Agent activity will appear when planning starts.</p>:recent.map(event=>{
         const [title,summary]=describe(event);
         const handoff=event.status==='AGENT_HANDOFF';
-        const warning=event.status==='AGENT_VALIDATION_FAILED'||event.status==='FAILED'||(event.status==='PLANNING_QUALITY_REVIEW'&&event.payload.issues?.length>0);
+        const warning=event.status==='AGENT_VALIDATION_FAILED'||event.status==='AGENT_CALL_FAILED'||event.status==='FAILED'||(event.status==='PLANNING_QUALITY_REVIEW'&&event.payload.issues?.length>0);
         return <article key={event.sequence} className={`flow-update ${handoff?'flow-handoff':''} ${warning?'flow-warning':''}`}>
           <span className="flow-marker" aria-hidden="true">{handoff?'↗':warning?'!':'·'}</span>
           <div className="flow-body"><div className="flow-update-heading"><h3>{title}</h3><time dateTime={event.timestamp}>{new Date(event.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</time></div><p>{summary}</p>
+            {['AGENT_CALL_COMPLETED','AGENT_CALL_FAILED','AGENT_VALIDATION_FAILED'].includes(event.status)&&event.payload.report&&<button className="text-button" onClick={()=>onContext(event)}>Inspect recorded call →</button>}
             {handoff&&<details><summary>What was shared</summary><p>{(event.payload.context_fields??[]).map((field:string)=>field.replaceAll('_',' ')).join(' · ')}</p><button className="text-button" onClick={()=>onContext(event)}>Open saved context →</button></details>}
             {event.status==='AGENT_VALIDATION_FAILED'&&<small>{event.payload.retrying?'A bounded correction is being requested automatically.':event.payload.schema==='FileOperation'?'Correction attempts ended. This generated file was not accepted.':'Correction attempts ended. The run remains unapproved.'}</small>}
           </div>

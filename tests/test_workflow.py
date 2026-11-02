@@ -47,8 +47,11 @@ def test_delegation_persists_plan_and_stops_for_review(tmp_path):
     result = run_job("Build a task management application", agents, store)
     assert result["status"] == "PLAN_REVIEW"
     assert agents.calls == ["requirements", "architect"]
-    assert [e["status"] for e in result["events"]] == ["RECEIVED", "REQUIREMENTS", "REQUIREMENTS_READY", "PLANNING", "AGENT_HANDOFF", "PLAN_REVIEW"]
-    handoff=next(e['payload'] for e in result['events'] if e['status']=='AGENT_HANDOFF')
+    assert [e["status"] for e in result["events"]] == ["RECEIVED", "REQUIREMENTS", "AGENT_HANDOFF", "REQUIREMENTS_READY", "PLANNING", "AGENT_HANDOFF", "PLAN_REVIEW"]
+    handoffs=[e['payload'] for e in result['events'] if e['status']=='AGENT_HANDOFF']
+    assert handoffs[0]['sender']=='coordinator' and handoffs[0]['parent_task_id'] is None
+    assert handoffs[1]['parent_task_id']==handoffs[0]['task_id']
+    handoff=next(e['payload'] for e in result['events'] if e['status']=='AGENT_HANDOFF' and e['payload']['recipient']=='architect_agent')
     assert (handoff['sender'],handoff['recipient'])==('requirements_agent','architect_agent')
     assert JobStore(store.path).read(result["job_id"]) == result
 

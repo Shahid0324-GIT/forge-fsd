@@ -43,16 +43,23 @@ this recovery path does not guarantee that a local model will produce a valid pl
 Builder corrections likewise receive the rejected source and concrete import/boundary
 errors. Client-side SQLite imports remain rejected, including files that already declare
 `"use client"`; correcting an import path does not make a database module browser-safe.
-Users supply the app idea and functionality; the architect chooses app-specific files,
-components, routes, data layout and interfaces within the supported platform. Version-2
-architecture proposals and acceptance plans now receive a separate review role before
-human approval. Each stage permits one revision in response to saved review findings;
-unresolved suggestions remain visible for human review. Reviewer handoffs appear in the live
-workspace.
-These additional local model calls increase planning time. Reviewers use the same chosen
-model and can miss defects or raise incorrect findings; their advice is not application
-verification evidence. Deterministic schema, API-path and captured CRUD fixture checks
-still block invalid proposals.
+Users supply the app idea and functionality. New planning runs classify the request,
+then create a typed business brief, business operations, UI/helper layout and independent
+acceptance recipes. One compiler derives HTTP routes, Next.js files and shared TypeScript
+interfaces from those decisions. The HTTP profile uses GET for entity reads/lists and
+JSON POST for mutations; custom operations support calculations and domain rules.
+Builders cannot edit the controller-rendered interface file. Legacy approved runs retain
+their saved plans; a failed checkpoint without a typed brief must start a fresh plan.
+New typed planning uses deterministic consistency checks and bounded corrections rather
+than same-model advisory reviewers as its correctness gate. Test design precedes code;
+actual application checks run after generation. Human approval remains required.
+
+Model-call inspection records the actual prompts, schema, output and metadata, linked
+to the saved handoff and parent task. Help and unrelated requests end without building
+an app. No web browsing or model-driven execution tools have been added by this milestone.
+See [typed planning implementation](docs/typed-planning-milestone.md) for validation,
+remaining work and limits. This remains experimental: valid contracts alone do not
+establish complete requirement coverage or successful generated-app execution.
 
 **Test planning happens before building; test execution happens afterward.** The acceptance
 planner defines the expected behavior from the request and API contract, independently of

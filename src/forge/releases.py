@@ -62,7 +62,7 @@ def release_gate(record, root):
 def preparation_graph(agents, store, job_id):
     def ci(state):
         record_handoff(store, job_id, 'verification_controller', 'ci_agent',
-                       'Prepare generated-app CI from the approved contract and current evidence.', state['context'])
+                       'Prepare generated-app CI from the approved contract and current evidence.', state['context'],agents=agents)
         store.event(job_id, 'CI_PLANNING', {'delegated_to':'ci_agent'}, update_status=False)
         notes = CINotes.model_validate(agents.generate(CINotes,
             'You are the generated-application CI Agent. Explain the supplied fixed CI policy: '
@@ -76,7 +76,7 @@ def preparation_graph(agents, store, job_id):
     def deployment(state):
         context = {**state['context'], 'ci_agent':state['ci']}
         record_handoff(store, job_id, 'ci_agent', 'deployment_agent',
-                       'Plan a separate approved Vercel deployment after generated-app CI.', context)
+                       'Plan a separate approved Vercel deployment after generated-app CI.', context,agents=agents)
         store.event(job_id, 'DEPLOYMENT_PLANNING', {'delegated_to':'deployment_agent'}, update_status=False)
         notes = DeploymentNotes.model_validate(agents.generate(DeploymentNotes,
             'You are the generated-application Deployment Agent. Target Vercel. Explain only the supplied '

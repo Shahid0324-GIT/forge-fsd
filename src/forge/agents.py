@@ -7,6 +7,11 @@ from langsmith import tracing_context
 from forge.schemas import ImplementationPlan, RequirementsDocument,AppRequirements,AppImplementationPlan,AppBrief,AppAcceptancePlan,NativeAcceptancePlan
 from forge.models import DEFAULT_MODEL
 from forge.schemas import ArchitectureReview,AcceptanceReview
+from forge.contracts import BusinessBrief, ApiDesign, LayoutDesign, AppDesign, brief_fingerprint, compile_design, validate_api, IntakeDecision, AnsweredIntent
+from forge.acceptance_design import AcceptanceDesign, acceptance_schema, compile_acceptance
+from forge.invocations import begin_call,finish_call
+from forge.operations_design import ApiProposal,proposal_schema,compile_operations
+from forge.layout_design import LayoutProposal,layout_proposal_schema,compile_layout
 
 
 def validation_summary(error):
@@ -43,40 +48,41 @@ class OllamaAgents:
             ("human", json.dumps(data,separators=(',',':'))),
         ]
         # Never inherit an enabled cloud tracing session for user requirements.
-        attempts=2 if schema in {AppRequirements,AppImplementationPlan,AppBrief,AppAcceptancePlan,NativeAcceptancePlan,ArchitectureReview,AcceptanceReview} else 1
+        attempts=2 if issubclass(schema,(AppRequirements,AppImplementationPlan,AppBrief,AppAcceptancePlan,NativeAcceptancePlan,ArchitectureReview,AcceptanceReview,BusinessBrief,ApiDesign,ApiProposal,LayoutDesign,LayoutProposal,AcceptanceDesign,IntakeDecision)) else 1
         for attempt in range(attempts):
             activity=getattr(self,'activity',None)
-            if activity:activity('AGENT_CALL_STARTED',{'schema':schema.__name__,'attempt':attempt+1,'model':self.model_name})
-            with tracing_context(enabled=False):
-                result = runnable.invoke(messages)
-            directory=getattr(self,'trace_directory',None)
-            if directory is not None:
-                directory.mkdir(parents=True,exist_ok=True)
-                raw=result.get('raw')
-                (directory/(uuid4().hex+'.json')).write_text(json.dumps({
-                    'model':self.model_name,'schema':schema.__name__,'attempt':attempt+1,
-                    'done_reason':getattr(raw,'response_metadata',{}).get('done_reason'),
-                    'output':str(getattr(raw,'content',''))[:40000],
-                    'validation_error':str(result.get('parsing_error') or '')[-8000:]},indent=2),encoding='utf-8')
+            packet=begin_call(self,schema,messages,attempt+1,coding)
+            identity={key:packet[key] for key in ['call_id','job_id','operation_id','handoff_id','task_id','parent_task_id'] if key in packet}
+            if activity:activity('AGENT_CALL_STARTED',{**identity,'schema':schema.__name__,'attempt':attempt+1,'model':getattr(self,'model_name','unknown')})
+            try:
+                with tracing_context(enabled=False):result=runnable.invoke(messages)
+            except Exception as exc:
+                trace=finish_call(self,packet,error=exc)
+                if activity:activity('AGENT_CALL_FAILED',{**identity,'schema':schema.__name__,'summary':str(exc)[:1000],**({'report':trace['report']} if 'report' in trace else {})})
+                raise
+            trace=finish_call(self,packet,result)
+            self.last_call_identity={**identity,**({'report':trace['report']} if 'report' in trace else {})}
             if result.get('parsing_error'):
                 summary=validation_summary(result['parsing_error'])
                 error=f"Invalid {schema.__name__} output: {summary}"
-                if activity:activity('AGENT_VALIDATION_FAILED',{'schema':schema.__name__,'attempt':attempt+1,'summary':summary,'retrying':attempt+1<attempts})
+                if activity:activity('AGENT_VALIDATION_FAILED',{**identity,'schema':schema.__name__,'attempt':attempt+1,'summary':summary,'retrying':attempt+1<attempts,**({'report':trace['report']} if 'report' in trace else {})})
                 if attempt+1==attempts:raise ValueError(error)
                 raw=str(getattr(result.get('raw'),'content',''))
                 if raw:messages.append(('assistant',raw[:16000]))
-                messages.append(('human','Correct your previous proposal using the original requirements and API contract. '
-                    'Return the COMPLETE corrected JSON, not a patch. Validation error: '+summary+'. '
-                    'Preserve requested behavior and valid tests. Do not remove assertions to pass validation. '
-                    'For persistence, create a separate record during the functional phase, leave it undeleted, '
-                    'then assert its actual fields in a nonempty restart GET response. '
-                    'Never expect an empty list as proof of persistence. Pages are static HTML routes. '
-                    'Runtime path captures use {{capture_name}} after saving that capture.'))
+                correction='Correct the reported validation error in the previous proposal. Return the COMPLETE corrected JSON. Preserve the original functionality and valid decisions. Validation error: '+summary+'. '
+                if issubclass(schema,(NativeAcceptancePlan,AcceptanceDesign,AppAcceptancePlan)):
+                    correction+='Do not remove assertions. Keep created persistence fixtures alive for restart checks. Use declared operation IDs/types; captures must be saved before use.'
+                elif issubclass(schema,(ApiDesign,ApiProposal,LayoutDesign,LayoutProposal)):
+                    correction+='Use exact available type names, requirement IDs and operation IDs. Declare decisions only; framework filenames and methods are compiled by the controller.'
+                elif schema is BusinessBrief:
+                    correction+='Enums need actual choices, references need known entity names, and computed outputs are separate from stored fields. Choose concrete business defaults without changing the requested app.'
+                messages.append(('human',correction))
                 continue
             if result['raw'].response_metadata.get('done_reason')!='stop':
+                if activity:activity('AGENT_CALL_FAILED',{**identity,'schema':schema.__name__,'summary':'Model response did not complete normally',**({'report':trace['report']} if 'report' in trace else {})})
                 raise ValueError('Model response did not complete normally')
             parsed=schema.model_validate(result['parsed'])
-            if activity:activity('AGENT_CALL_COMPLETED',{'schema':schema.__name__,'attempt':attempt+1})
+            if activity:activity('AGENT_CALL_COMPLETED',{**identity,'schema':schema.__name__,'attempt':attempt+1,'wall_seconds':trace['wall_seconds'],**({'report':trace['report']} if 'report' in trace else {}),'tokens':getattr(result['raw'],'usage_metadata',None)})
             return parsed
 
     def reviewed_generate(self,schema,instruction,data,review_schema,review_instruction):
@@ -107,30 +113,47 @@ class OllamaAgents:
                 'revision_instruction':'Return the complete corrected proposal. Preserve every requested feature and valid assertion. Resolve the review findings without adding unsupported scope.'}
             if handoff:handoff(reviewer,actor,'Revise the proposal using the saved review findings.',request)
 
+    def decide(self,schema,instruction,data,validate):
+        """One bounded semantic correction of this decision, not a whole-workflow retry."""
+        original=dict(data);request=dict(original)
+        for revision in range(2):
+            proposal=self.generate(schema,instruction,request,coding=True)
+            try:validate(proposal)
+            except ValueError as exc:
+                activity=getattr(self,'activity',None)
+                if activity:activity('AGENT_VALIDATION_FAILED',{**getattr(self,'last_call_identity',{}),'schema':schema.__name__,'attempt':revision+1,
+                    'summary':str(exc),'retrying':revision==0})
+                if revision:raise ValueError(f'{schema.__name__} decision is inconsistent after one correction: {exc}') from exc
+                request={**original,'previous_proposal':proposal.model_dump(exclude_unset=True),'validation_error':str(exc),
+                    'correction_instruction':'Correct only the reported inconsistency. Return the complete decision, preserving the original functionality and valid assertions.'}
+            else:return proposal
+
     def requirements(self, description):
-        return self.generate(AppBrief,
-            "You are the Requirements Agent for varied small single-user web apps. Return a "
-            "business brief with spec_version=2, NOT tests or code. "
-            "The user describes WHAT the app should do, not its engineering structure. Infer "
-            "reasonable data entities and pages from that functionality. Do not ask the user "
-            "to specify files, API designs, schema syntax or implementation details. "
-            "Preserve the requested domain, API field names, behavior and relationships; never convert it to task management. "
-            "Honor the requested page count: a single-page app has pages=[\"/\"] with all "
-            "forms and actions on that page. Pages must be static HTML paths, with no dynamic "
-            "parameters such as :id, {id}, or [id]. API endpoints are separate from pages. "
-            "Use up to five HTML pages including / (never /api in pages), three entities with "
-            "eight fields each, SQLite for persistence or database=none for stateless apps. "
-            "Entity field names use snake_case; explain API camelCase mapping in criteria when "
-            "requested. Computed outputs belong in acceptance criteria, not stored fields with "
-            "constant-zero constraints. Clearly describe calculations, validation, atomicity and "
-            "persistence. A separate Architect and QA Agent will design files and concrete tests. "
-            "No authentication, payments, external services or new dependencies in this POC. "
-            "Ask up to three material questions only for genuinely unclear or unsupported scope, "
-            "never cosmetic preferences already answered. Otherwise open_questions=[]. Use "
-            "reasonable visible defaults. Do not claim implementation or tests have run.",
-            {"application_request":description},coding=True)
+        from forge.planning import BUSINESS_INSTRUCTION,INTAKE_INSTRUCTION,HELP_RESPONSES
+        decision=self.generate(IntakeDecision,INTAKE_INSTRUCTION,{'application_request':description}).root
+        activity=getattr(self,'activity',None)
+        if activity:activity('REQUEST_ROUTED',{'intent':decision.intent})
+        if decision.intent=='out_of_scope':
+            return AnsweredIntent(intent='out_of_scope',message='ForgeFSD helps design and build small web apps. This request is outside that workflow; no app will be generated. Live external information is not connected.')
+        if decision.intent=='help':return AnsweredIntent(intent='help',message=HELP_RESPONSES[decision.topic])
+        if decision.intent=='clarify':
+            return AppBrief(spec_version=2,title='Clarification needed',database='none',pages=['/'],entities=[],
+                acceptance_criteria=['Scope is pending clarification.','No implementation plan is approved.',
+                                     'No application code has been generated.','Answers will be incorporated before design.'],
+                assumptions=[decision.blocking_reason],open_questions=decision.questions)
+        return self.generate(BusinessBrief,BUSINESS_INSTRUCTION,{'application_request':description},coding=True).to_brief()
 
     def acceptance(self,requirements,plan,description):
+        if plan.design is not None:
+            from forge.planning import ACCEPTANCE_INSTRUCTION,business_context,api_context
+            data={**business_context(requirements,description),'api':api_context(requirements,plan.design.api)}
+            # Fixture types are in the response schema. Do not repeat the same
+            # generated DTO table twice in a small model's context window.
+            data.pop('provided_records',None)
+            data['api'].pop('records',None)
+            proposal=self.decide(acceptance_schema(requirements,plan.design),ACCEPTANCE_INSTRUCTION,data,
+                lambda value:compile_acceptance(requirements,plan.design,value))
+            return compile_acceptance(requirements,plan.design,proposal)
         result=self.reviewed_generate(NativeAcceptancePlan,
             "You are the independent QA planning agent. Propose concrete tests against the "
             "business brief, architecture and original request. Never implement the app or weaken "
@@ -184,48 +207,29 @@ class OllamaAgents:
 
     def plan(self, requirements, *, original_request=None):
         if requirements.spec_version==2:
-            return self.reviewed_generate(AppImplementationPlan,
-                "You are the Architect Agent for a small Next.js App Router TypeScript app. "
-                "Set spec_version=2 and preserve the approved database and domain. Plan only. "
-                "The user specifies functionality; YOU choose the app's files, components, API, "
-                "data schema and interactions. Do not ask the user to design them. Choose the "
-                "smallest coherent structure; extract components only when they help. "
-                "Declare unique API routes as METHOD /api/path with {id} placeholders. Every "
-                "acceptance request must be supported. Include file manifests for frontend and "
-                "backend tasks with non-overlapping ownership, at most twelve files total. "
-                "Return EXACTLY TWO tasks: frontend first, backend second. Each task contains "
-                "all files for that owner. Do not make a task per function. Contracts are concise "
-                "interface declarations and JSON shapes, not implementation bodies or SQL code. "
-                "Preserve explicit API paths and JSON field casing in the original request. "
-                "Frontend owns app/page.tsx and other app pages/components; backend owns lib/*.ts "
-                "and app/api/**/route.ts. Each route needs its corresponding route.ts; {id} maps "
-                "to [id]. Each task needs contract: exact exports, function signatures, request "
-                "and response JSON shapes/statuses, database schema and imports shared across files. "
-                "Write concrete per-file interfaces, not feature summaries: name exports with "
-                "parameter/return types, UI component props and callbacks, collection/item JSON "
-                "shapes, nullable fields, error statuses and missing-record behavior. Explain "
-                "how UI state and requested totals refresh after every mutation. Client UI uses "
-                "fetch to the declared API; server SQLite helpers stay on the server. "
-                "Prefer a few self-contained files to avoid integration errors. List backend files in dependency order (database and data helpers before API routes), and UI helpers before pages. Fixed scaffold "
-                "owns package files, configuration, app/layout.tsx, app/globals.css and "
-                "app/api/health/route.ts; never put these in the manifest. SQLite uses Node 24 "
-                "node:sqlite DatabaseSync, process.env.SQLITE_PATH and mkdirSync for its directory; "
-                "never hardcode a database path. No dependencies beyond Next/React/TypeScript. "
-                "App Router route params are Promise<{id:string}> and must be awaited. Include "
-                "build, app acceptance, invalid-input and applicable persistence verification.",
-                {'requirements':requirements.model_dump(),'original_request':original_request},
-                ArchitectureReview,
-                'You are the Architecture Reviewer. Independently check this proposed design '
-                'against the business brief and original request before builders receive it. '
-                'Return issues=[] only when the plan is implementable without guessing shared '
-                'interfaces. Verify all requested features have an implementation path; each '
-                'file has concrete exports/types and shared component props; API methods, JSON '
-                'request/response shapes, error statuses and database schema are specified. '
-                'Check client/server boundaries, UI refresh after mutations, missing records '
-                'and requested aggregates. Flag contracts that merely restate the features. '
-                'Do not demand cosmetic changes, extra components, new frameworks or dependencies. '
-                'List at most six concrete blocking corrections. This is a design review, '
-                'not evidence that code exists or tests passed.')
+            if requirements.data_contract is None:
+                raise ValueError('This saved planning checkpoint predates typed business contracts. Start a new plan; existing approved apps remain available.')
+            from forge.planning import API_INSTRUCTION,LAYOUT_INSTRUCTION,business_context,api_context
+            data=business_context(requirements,original_request)
+            parent_context=dict(getattr(self,'invocation_context',{}))
+            handoff=getattr(self,'handoff',None)
+            if handoff:handoff('architect_agent','api_architect','Choose typed operations from the business brief; framework paths will be compiled.',data)
+            proposal=self.decide(proposal_schema(requirements),API_INSTRUCTION,data,
+                lambda value:compile_operations(requirements,value))
+            api=compile_operations(requirements,proposal)
+            fingerprint=brief_fingerprint(requirements)
+            layout_data={**data,'api':api_context(requirements,api)}
+            api_files=len({endpoint.file for endpoint in api.endpoints})
+            layout_data['file_budget']={'total_editable_files':12,'files_per_owner':10,
+                'api_files_already_required':api_files,'pages_already_required':len(requirements.pages),
+                'remaining_components_and_helpers':12-api_files-len(requirements.pages)}
+            if handoff:handoff('api_architect','implementation_architect','Compose the implementation from the validated API and business contract.',layout_data)
+            def assemble(layout):
+                return AppDesign(brief_fingerprint=fingerprint,api=api,layout=compile_layout(api,layout))
+            layout=self.decide(layout_proposal_schema(requirements,api),LAYOUT_INSTRUCTION,layout_data,
+                lambda value:compile_design(requirements,assemble(value)))
+            self.invocation_context=parent_context
+            return compile_design(requirements,assemble(layout))
         return self.generate(ImplementationPlan,
             "You are the Architect Agent. Plan only, never claim execution. "
             "framework=nextjs-app-router, database=sqlite. Include exactly these routes: "

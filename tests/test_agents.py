@@ -153,10 +153,12 @@ def test_captured_crud_restart_fixture_must_survive_deletion():
     assert NativeAcceptancePlan.model_validate(data).database=='sqlite'
 
 
-def test_vague_architecture_cannot_replace_a_concrete_api_contract():
-    from pydantic import ValidationError
-    from forge.schemas import AppImplementationPlan
-    from test_general_apps import calculator_plan
-    data=calculator_plan();data['tasks'][1]['contract']='Implement calculations and validation.'
-    with pytest.raises(ValidationError,match='Backend contract must specify'):
-        AppImplementationPlan.model_validate(data)
+def test_prose_cannot_override_the_authoritative_compiled_design():
+    from forge.contracts import compile_design
+    from forge.schemas import validate_app_contract
+    from test_contracts import design_fixture
+    brief,design=design_fixture(False)
+    plan=compile_design(brief,design)
+    plan.tasks[1].contract='A different free-form contract'
+    with pytest.raises(ValueError,match='authoritative typed design'):
+        validate_app_contract(brief,plan)

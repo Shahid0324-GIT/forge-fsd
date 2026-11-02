@@ -52,8 +52,14 @@ def build_graph(agents, store: JobStore, checkpointer=None):
         budget(state)
         store.event(state["job_id"], "REQUIREMENTS", {"delegated_to": "requirements_agent"})
         context = request_context(state)
+        record_handoff(store,state['job_id'],'coordinator','requirements_agent',
+                       'Classify the request and prepare a business brief or focused response.',
+                       {'original_request':context},agents=agents)
         proposal=agents.requirements(context)
         data=proposal.model_dump() if hasattr(proposal,'model_dump') else proposal
+        if data.get('intent') in {'help','out_of_scope'}:
+            store.event(state['job_id'],'REQUEST_ANSWERED',{'intent':data['intent'],'message':data['message']})
+            return {'status':'REQUEST_ANSWERED','calls':state.get('calls',0)+1}
         if data.get('spec_version')==2:
             # Compatibility with injected fixtures supplying a complete v2 document.
             if 'scenarios' in data:
@@ -65,6 +71,7 @@ def build_graph(agents, store: JobStore, checkpointer=None):
         return {"requirements": result.model_dump(), "calls": state.get("calls", 0) + 1}
 
     def route(state):
+        if state.get('status')=='REQUEST_ANSWERED':return END
         return "clarify" if state["requirements"]["open_questions"] else "architect"
 
     def clarify(state):
@@ -87,7 +94,7 @@ def build_graph(agents, store: JobStore, checkpointer=None):
         document=schema.model_validate(state['requirements'])
         record_handoff(store,state['job_id'],'requirements_agent','architect_agent',
                        'Turn the saved requirements and human answers into an implementation plan.',
-                       {'requirements':document.model_dump(),'original_request':request_context(state)})
+                       {'requirements':document.model_dump(),'original_request':request_context(state)},agents=agents)
         proposal=agents.plan(document,original_request=request_context(state)) if document.spec_version==2 else agents.plan(document)
         result = ImplementationPlan.model_validate(proposal)
         validate_app_contract(document,result)
@@ -100,7 +107,7 @@ def build_graph(agents, store: JobStore, checkpointer=None):
         plan=ImplementationPlan.model_validate(state['plan'])
         record_handoff(store,state['job_id'],'architect_agent','qa',
                        'Design acceptance checks against the same requirements, interfaces and original request.',
-                       {'requirements':brief.model_dump(),'plan':plan.model_dump(),'original_request':request_context(state)})
+                       {'requirements':brief.model_dump(),'plan':plan.model_dump(),'original_request':request_context(state)},agents=agents)
         tests=AppAcceptancePlan.model_validate(agents.acceptance(brief,plan,request_context(state)))
         if tests.database!=brief.database:raise ValueError('QA database choice differs from requirements')
         document=RequirementsDocument.model_validate({**brief.model_dump(),'scenarios':[s.model_dump() for s in tests.scenarios]})
@@ -109,6 +116,12 @@ def build_graph(agents, store: JobStore, checkpointer=None):
         return {'requirements':document.model_dump(),'calls':state.get('calls',0)+1}
 
     def review(state):
+        if state['plan'].get('design'):
+            from forge.workspace import app_coding_context
+            root=store.path.parent/'.context-preflight'/state['job_id']
+            for task in state['plan']['tasks']:
+                for file in task['files']:
+                    app_coding_context(state['requirements'],state['plan'],root,file)
         fingerprint = review_fingerprint(state["requirements"], state["plan"])
         store.event(state["job_id"], "PLAN_REVIEW", {"requirements": state["requirements"], "plan": state["plan"], "fingerprint": fingerprint})
         return {"fingerprint": fingerprint, "status": "PLAN_REVIEW"}
@@ -142,6 +155,7 @@ def config(job_id):
 
 
 def invoke_job(job_id, graph_input, agents, store):
+    if agents is not None:agents.invocation_context={**getattr(agents,'invocation_context',{}),'job_id':job_id}
     try:
         with store.checkpoints() as saver, tracing_context(enabled=False):
             build_graph(agents, store, saver).invoke(graph_input, config(job_id)) # type: ignore

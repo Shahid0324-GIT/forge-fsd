@@ -107,6 +107,7 @@ class OperationManager:
         from forge.browser_testing import cleanup_browser
         from forge.preview import cleanup,preview_resources
         record=self.store.read(job_id)
+        if record['status']=='REQUEST_ANSWERED':return
         browser=next((e['payload']['resources'] for e in reversed(record['events']) if e['status']=='AUTOMATED_BROWSER_STARTED'),None)
         if browser:cleanup_browser(browser,job_id)
         resources=preview_resources(record)

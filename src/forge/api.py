@@ -112,6 +112,7 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
         latest_source=next((e['payload'].get('source_fingerprint') for e in reversed(job['events']) if e['status']=='FUNCTIONALLY_VERIFIED'),None)
         job['browser_checks_blocked']=bool(latest_source and not browser_gate(job,latest_source))
         job['title']=next((e['payload']['title'] for e in reversed(job['events']) if e['status']=='REQUIREMENTS_READY'),'New application')
+        if job['status']=='REQUEST_ANSWERED':job['title']='Request response'
         if job['status']=='PLAN_REVIEW':
             review=next((e for e in reversed(job['events']) if e['status']=='PLAN_REVIEW'),None)
             if review and 'fingerprint' not in review['payload']:
@@ -258,6 +259,10 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
         if not path.is_relative_to((PROJECT/'artifacts').resolve()) or path.suffix!='.json':raise HTTPException(403,'Report outside the artifact boundary')
         if not path.is_file():raise HTTPException(404,'Report file is unavailable')
         if path.stat().st_size>2_000_000:raise HTTPException(413,'Report exceeds display budget')
+        if event['status']=='AGENT_HANDOFF':
+            from forge.handoffs import read_handoff
+            try:return JSONResponse(read_handoff(path,event['payload']))
+            except (ValueError,KeyError):raise HTTPException(409,'Saved handoff failed its context/identity check')
         return JSONResponse(json.loads(path.read_text(encoding='utf-8')))
 
     @app.get('/api/jobs/{job_id}/source.zip')

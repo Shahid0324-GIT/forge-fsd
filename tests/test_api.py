@@ -12,7 +12,7 @@ from forge.persistence import now
 def client(tmp_path,monkeypatch):
     import forge.api as module
     monkeypatch.setattr(module,'PROJECT',tmp_path)
-    app=create_app(tmp_path/'jobs.db')
+    app=create_app(tmp_path/'artifacts'/'jobs.db')
     monkeypatch.setattr(app.state.operations,'cleanup_job',lambda *_:None)
     with TestClient(app,base_url='http://127.0.0.1:8787') as client:
         yield client,app
@@ -38,6 +38,21 @@ def test_session_required_for_api(client):
     assert browser.get('/api/jobs').status_code==401
     session(browser)
     assert browser.get('/api/jobs').status_code==200
+
+
+def test_inspect_handoff_rejects_corrupted_context(client):
+    from forge.handoffs import record_handoff
+    browser,app=client;session(browser)
+    job=app.state.store.create()
+    packet=record_handoff(app.state.store,job,'architect','builder','Implement the contract',{'contract':'original'})
+    event=app.state.store.read(job)['events'][-1]
+    url=f'/api/jobs/{job}/reports/{event["sequence"]}'
+    response=browser.get(url)
+    assert response.status_code==200 and response.json()['context']=={'contract':'original'}
+    from pathlib import Path
+    path=Path(packet['report']);changed=json.loads(path.read_text())
+    changed['context']['contract']='tampered';path.write_text(json.dumps(changed),encoding='utf-8')
+    assert browser.get(url).status_code==409
 
 
 def test_app_release_actions_require_review_and_separate_consent(client,monkeypatch):

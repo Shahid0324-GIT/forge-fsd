@@ -72,7 +72,7 @@ def app_coding_context(requirements,plan,root,relative,limit=14000,*,extra=None,
     """Keep complete contracts; include only whole source files that fit the input budget."""
     summary={key:requirements[key] for key in ['title','database','pages','entities','acceptance_criteria']}
     examples=[]
-    for scenario in requirements['scenarios']:
+    for scenario in ([] if plan.get('design') else requirements['scenarios']):
         steps=[]
         for step in scenario['steps']:
             item={key:step[key] for key in ['method','path','status']}
@@ -86,11 +86,24 @@ def app_coding_context(requirements,plan,root,relative,limit=14000,*,extra=None,
     reference=Path(__file__).resolve().parents[2]/'tests/acceptance/platform-reference.txt'
     result={'file':relative,'requirements':summary,'plan':plan,'platform_reference':reference.read_text(encoding='utf-8'),
             'existing_source':{},'context_omitted':[]}
+    if plan.get('design'):
+        from forge.contracts import AppDesign,coding_contract
+        from forge.schemas import AppBrief,ImplementationPlan
+        brief=AppBrief.model_validate({key:value for key,value in requirements.items() if key in AppBrief.model_fields})
+        summary.pop('entities',None)
+        summary.pop('acceptance_examples',None)
+        summary['data_contract']=brief.data_contract.model_dump() if brief.data_contract else None
+        result['plan']={key:plan[key] for key in ['spec_version','framework','database','routes']}
+        result['plan']['manifest']={owner:sorted(paths) for owner,paths in plan_owners(ImplementationPlan.model_validate(plan)).items()}
+        result['design']=coding_contract(brief,AppDesign.model_validate(plan['design']),relative)
     if extra:result['repair']=extra
     size=lambda:len(json.dumps(result,separators=(',',':')))
     if size()>limit:raise ValueError('Approved contracts exceed the local coding context budget; simplify the plan before generation')
     files=list(dict.fromkeys(file for task in plan['tasks'] for file in task['files']))
     frontend=relative.startswith('app/') and not relative.startswith('app/api/')
+    if plan.get('design') and frontend:
+        # UI builders consume DTOs and HTTP interfaces, not database implementation.
+        files=[file for file in files if file.startswith('app/') and not file.startswith('app/api/')]
     files.sort(key=lambda path:(path!=relative if required else False,path not in priority,
                                (path.startswith(('lib/','app/api/')) if frontend else not path.startswith('lib/')),path))
     if required and (relative not in files or not safe_path(root,relative).is_file()):

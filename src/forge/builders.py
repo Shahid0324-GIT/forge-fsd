@@ -36,7 +36,7 @@ def builder_subgraph(agents, store):
                 if plan.spec_version==2:
                     context=app_coding_context(state['requirements'],plan.model_dump(),root,relative)
                     record_handoff(store,state['job_id'],'implementation_coordinator',f'{owner}_builder',
-                                   f'Implement {relative} using the approved contract and available work from preceding builders.',context)
+                                   f'Implement {relative} using the approved contract and available work from preceding builders.',context,agents=agents)
                     result=FileOperation.model_validate(agents.build_app_file(owner,relative,plan.model_dump(),state['requirements'],root))
                 else:result = FileOperation.model_validate(agents.build_file(owner, relative, baseline, state["requirements"]))
                 if plan.spec_version==2:
@@ -89,6 +89,16 @@ def build_job(job_id, agents, store, *, resume=False):
             if not root.is_dir():raise ValueError('Partial generation workspace is missing')
             store.event(job_id,'GENERATION_RETRY',{'source_fingerprint':source_fingerprint(root),'strategy':'generate_missing_files','maximum':1},update_status=False)
         else:seed_workspace(PROJECT / "templates" / "task-app", root,generic=plan.spec_version==2)
+        if plan.design is not None:
+            from forge.contracts import render_types
+            from forge.schemas import AppBrief
+            brief=AppBrief.model_validate({key:value for key,value in requirements.model_dump().items() if key in AppBrief.model_fields})
+            path=safe_path(root,'lib/forge_contracts.ts');content=render_types(brief,plan.design)
+            if resume and (not path.is_file() or path.read_text(encoding='utf-8')!=content):
+                raise ValueError('Controller-rendered interfaces changed; refusing to resume a different contract')
+            if not resume:
+                path.parent.mkdir(parents=True,exist_ok=True);path.write_text(content,encoding='utf-8')
+                store.event(job_id,'SOURCE_ADJUSTED',{'file':'lib/forge_contracts.ts','rule':'typed-contract-compilation','actor':'framework_controller'},update_status=False)
         store.event(job_id, "BUILDING", {"workspace": str(root), "approval": approval["fingerprint"]})
         # A parent graph delegates to the compiled implementation subgraph.
         parent = StateGraph(BuildState)

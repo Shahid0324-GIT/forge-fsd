@@ -73,7 +73,7 @@ def repair_job(job_id, agents, store):
                   'failure_source_fingerprint':report['source_fingerprint']}
         context=app_coding_context(review['requirements'],review['plan'],root,'',extra=feedback,priority=affected)
         record_handoff(store,job_id,'verification','qa',
-                       'Diagnose actual failing checks using the approved contract, current source and previous repair diagnosis.',context)
+                       'Diagnose actual failing checks using the approved contract, current source and previous repair diagnosis.',context,agents=agents)
         analysis=AppRepairAnalysis.model_validate(agents.generate(AppRepairAnalysis,
             'You are the QA subagent. Diagnose actual compiler/build/HTTP acceptance failures '
             'and operator-recorded browser failures. '
@@ -95,7 +95,7 @@ def repair_job(job_id, agents, store):
                 # Re-read disk after every preceding edit; never reuse a stale source snapshot.
                 data=builder_repair_context(review['requirements'],review['plan'],root,relative,feedback,analysis,affected)
                 record_handoff(store,job_id,'qa',f'{owner}_builder',
-                               f'Repair {relative} from the QA diagnosis and fresh source. Verification must run again.',data)
+                               f'Repair {relative} from the QA diagnosis and fresh source. Verification must run again.',data,agents=agents)
                 result=FileOperation.model_validate(agents.generate(FileOperation,
                     f'You are the {owner} repair subagent. Return the complete corrected TypeScript '
                     f'file {relative} in content. Preserve the approved app contracts. Use Node 24 '
