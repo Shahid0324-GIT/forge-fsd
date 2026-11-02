@@ -19,10 +19,11 @@ retain their history.
 Saved local jobs, model weights and runtime evidence are excluded from Git; a fresh
 clone starts without the historical demonstration runs described in the milestone notes.
 
-The next implementation direction is the [autonomous POC plan](docs/autonomous-poc-plan.md):
-agents author and revise app designs using a bounded coordinator/tool loop. That redesign
-is planned, not yet implemented; the experimental typed-planning path below remains the
-current code.
+The [autonomous POC plan](docs/autonomous-poc-plan.md) is being implemented incrementally.
+The new task/recovery loop, senior-review escalation and agent-authored planning path
+are available through experimental CLI commands. See [implementation checkpoints](docs/autonomous-implementation.md)
+for commands, actual evaluation results and remaining work. The existing dashboard still
+uses the earlier typed-planning pipeline below; the new path is not its default yet.
 
 ## Current milestone: general small-app workflow (experimental)
 
