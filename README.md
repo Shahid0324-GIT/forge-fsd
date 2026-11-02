@@ -39,7 +39,7 @@ This diagram describes the target integration; the two paths above describe what
 
 ## Verified checkpoints
 
-Latest local controller suite: **304 Python tests passed**. These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy.
+Latest local controller suite: **305 Python tests passed**. These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy.
 
 Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker builds and Chromium:
 
@@ -161,7 +161,7 @@ The earlier pipeline includes limited static, dependency, secret-pattern and pro
 
 ## Remaining work
 
-1. Connect human approval and source generation to the dashboard's autonomous planning option, with better grounding in actual framework/tool capabilities.
+1. Connect human approval and source generation to the dashboard's autonomous planning option, including safe design revision when execution reveals a problem.
 2. Verify a fresh request-to-app generation run with independent behavior checks and no manual source corrections.
 3. Broaden repair and behavior coverage, including SQLite integrity and persistence after restart through the updated path.
 4. Integrate/revalidate generated-app CI and publishing against that path; database-backed cloud deployment remains separate work.

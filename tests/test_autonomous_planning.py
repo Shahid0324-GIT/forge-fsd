@@ -135,3 +135,18 @@ def test_existing_job_cannot_switch_workflow_or_model(tmp_path,workflow,model):
     job=store.create({'description':'Build an interactive calculator.','model':model,'workflow':workflow})
     with pytest.raises(ValueError):start_planning(job,agent,store)
     assert not agent.calls and TaskLedger(store,job).list()==[]
+
+
+def test_planner_receives_real_base_dependencies_and_framework_facts(tmp_path):
+    from pathlib import Path
+    agent=Agent(draft());store=JobStore(tmp_path/'jobs.sqlite3')
+    result=plan_app('Build a small interactive page.',agent,store)
+    assert result['status']=='AUTONOMOUS_DRAFT_READY'
+    context=agent.calls[-1][1]
+    capabilities=context['runtime_capabilities']
+    package=json.loads((Path(__file__).resolve().parents[1]/'templates/task-app/package.json').read_text())
+    assert capabilities['dependencies']==package['dependencies']
+    assert capabilities['dev_dependencies']==package['devDependencies']
+    assert capabilities['framework_entrypoints']['optional_http_handler'].endswith('/route.ts')
+    assert capabilities['test_frameworks_available']==[]
+    assert context['original_request']=='Build a small interactive page.'

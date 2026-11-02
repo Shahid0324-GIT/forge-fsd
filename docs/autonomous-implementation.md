@@ -405,3 +405,21 @@ These remain open model/planning-quality findings. The UI/API integration passed
 this is not an end-to-end app build or a claim that the proposal is implementation-ready.
 Before connecting approval and generation, ground plans in actual runtime capabilities
 and ensure the execution loop can revise ineffective design decisions safely.
+
+## Increment 7d: ground planning in the committed runtime
+
+Planner handoffs now include dependencies/dev dependencies read from the committed
+template package, its fingerprint, framework entrypoint conventions, available
+verification coverage and server-only SQLite limitations. Test-framework availability
+is derived from that inventory. Instructions distinguish optional HTTP handlers
+from ordinary source helpers, without prescribing app business types or requiring
+a backend. The original user request and clarification answers are preserved.
+
+Full suite: **305 passed**, exit 0; 13 upstream LangSmith warnings. A separate
+local-7B replay of the same counter request reached a proposal in **2 model calls**.
+This time the design used only `app/page.tsx`, `app/layout.tsx` and `app/globals.css`,
+with no backend or internet assumption. Evidence:
+`artifacts/planning-context-evaluation/74045c70f51d41df94c4ecc331316573`.
+This is one improved proposal, not proof of general planning quality. No application
+was approved, generated or tested by that replay. Approval/source execution and
+independent app-specific behavior checks remain the next integration step.

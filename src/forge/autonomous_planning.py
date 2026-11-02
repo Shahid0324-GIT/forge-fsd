@@ -51,9 +51,29 @@ from the request, not invented implementation results. Assumptions cannot waive
 requirements. Requirements intake has already established the supported scope. Respect
 the supplied clarification answers and choose sensible defaults for remaining design
 choices. Do not reopen optional scope questions or ask the user to design the internals.
+Use runtime_capabilities as the actual platform facts. Do not assume test frameworks
+or external services are installed. If you choose HTTP handlers, use the runtime's
+route-handler convention; a source helper is not automatically an HTTP endpoint.
+Prefer the simplest design that satisfies the request; a backend is optional.
 This is a proposal for human review; never claim that an app was built or tests passed.
 Return the complete design, not only a correction. If previous evidence or senior
 review is supplied, use it to change the unsuccessful approach.'''
+
+
+def planning_capabilities():
+    package=Path(__file__).resolve().parents[2]/'templates/task-app/package.json'
+    raw=package.read_bytes();declared=json.loads(raw)
+    packages=set(declared.get('dependencies',{}))|set(declared.get('devDependencies',{}))
+    return {'framework':'Next.js App Router','language':'TypeScript','node_major':24,
+        'dependencies':declared.get('dependencies',{}),'dev_dependencies':declared.get('devDependencies',{}),
+        'template_package_sha256':hashlib.sha256(raw).hexdigest(),
+        'framework_entrypoints':{'home':'app/page.tsx','root_layout':'app/layout.tsx',
+            'optional_http_handler':'app/api/<path-segments>/route.ts'},
+        'storage':'No database is valid. node:sqlite is available only on the server; no remote database adapter is implemented.',
+        'execution_checks':['typecheck','production_build'],
+        'browser_coverage':'Fixed controller profiles only; general app-specific browser assertions still require implementation.',
+        'test_frameworks_available':sorted(packages & {'jest','vitest','@testing-library/react'}),
+        'network_and_packages':'No package installation or external services in generated-app execution.'}
 
 
 def manifest_issues(draft,root):
@@ -88,7 +108,8 @@ def continue_draft(ledger,task_id,agents):
     directory.mkdir(parents=True,exist_ok=True);candidate=directory/'candidate.json'
     def fingerprint():return hashlib.sha256(candidate.read_bytes() if candidate.exists() else b'').hexdigest()
     def context(state):
-        return {**state.task.inputs,'latest_proposal':json.loads(candidate.read_text(encoding='utf-8')) if candidate.exists() else None,
+        return {**state.task.inputs,'runtime_capabilities':planning_capabilities(),
+            'latest_proposal':json.loads(candidate.read_text(encoding='utf-8')) if candidate.exists() else None,
             'recent_failures':[o.model_dump() for o in state.observations if o.revision==state.revision][-2:],
             'recovery_strategy':state.recovery.model_dump() if state.recovery else None}
     if getattr(agents,'trace_directory',None) is None:
