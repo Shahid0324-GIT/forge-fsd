@@ -4,20 +4,25 @@ Local-first agentic full-stack development POC using LangGraph, LangChain and Ol
 
 Generated applications have their own CI/deployment agents and separate review,
 publish and deploy controls. See [generated-app CI/CD](docs/generated-app-cicd.md).
-The badge below checks Forge itself; it is not evidence of a generated app's CI.
+ForgeFSD's own hosted checks are paused; generated-app CI remains a separate capability.
 
 The converter completed a separate app CI and one-time Vercel deployment test.
 Its live API/browser checks passed, then the deployment, test project and temporary
 credentials were removed. The generated-app CI/CD guide retains the workflow links
 and describes the local evidence and remaining database-deployment limitations.
 
-[![ForgeFSD checks](https://github.com/Shahid0324-GIT/forge-fsd/actions/workflows/ci.yml/badge.svg)](https://github.com/Shahid0324-GIT/forge-fsd/actions/workflows/ci.yml)
-
-The repository is private. Hosted CI checks Windows/Ubuntu controller tests and
-dashboard builds, plus the fixed converter browser calibration on Linux. See
-[CI runs](https://github.com/Shahid0324-GIT/forge-fsd/actions) for current results.
+The repository is private. Its `ForgeFSD checks` workflow is disabled on GitHub and
+retained with a manual trigger only. To resume it, re-enable the workflow in GitHub;
+automatic push/PR triggers would also need to be restored. Local verification remains
+available. [Previous CI runs](https://github.com/Shahid0324-GIT/forge-fsd/actions)
+retain their history.
 Saved local jobs, model weights and runtime evidence are excluded from Git; a fresh
 clone starts without the historical demonstration runs described in the milestone notes.
+
+The next implementation direction is the [autonomous POC plan](docs/autonomous-poc-plan.md):
+agents author and revise app designs using a bounded coordinator/tool loop. That redesign
+is planned, not yet implemented; the experimental typed-planning path below remains the
+current code.
 
 ## Current milestone: general small-app workflow (experimental)
 
