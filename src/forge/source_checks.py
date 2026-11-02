@@ -21,9 +21,11 @@ def run_source_checks(root,directory,job_id):
     directory.mkdir(parents=True,exist_ok=True)
     name='forge-check-'+uuid4().hex[:12]
     harness=PROJECT/'tests/acceptance/source-checks.mjs'
+    diagnostics=PROJECT/'tests/acceptance/framework-diagnostics.mjs'
+    def harness_hash():return hashlib.sha256(harness.read_bytes()+b'\0'+diagnostics.read_bytes()).hexdigest()
     fingerprint=source_fingerprint(root)
     report={'job_id':job_id,'source_fingerprint':fingerprint,'container':name,
-        'harness_fingerprint':hashlib.sha256(harness.read_bytes()).hexdigest(),
+        'harness_fingerprint':harness_hash(),
         'coverage':{'typecheck':'NOT_RUN','production_build':'NOT_RUN','application_behavior':'NOT_TESTED'},
         'cleanup_errors':[],'passed':False}
     attempted=False
@@ -41,6 +43,7 @@ def run_source_checks(root,directory,job_id):
             '--tmpfs','/work:rw,nosuid,size=2g,uid=1000,gid=1000',
             '--mount',f'type=bind,source={root},target=/source,readonly',
             '--mount',f'type=bind,source={harness},target=/trusted/source-checks.mjs,readonly',
+            '--mount',f'type=bind,source={diagnostics},target=/trusted/framework-diagnostics.mjs,readonly',
             '--workdir','/work','--env','NEXT_TELEMETRY_DISABLED=1','--env','SQLITE_PATH=/work/data/app.sqlite3',image,'/bin/sh','-c',
             'cp -R /source/. /work/ && ln -s /opt/forge-deps/node_modules /work/node_modules && node /trusted/source-checks.mjs']
         attempted=True;report['execution']=bounded_command(args,timeout=540)
@@ -51,7 +54,7 @@ def run_source_checks(root,directory,job_id):
             if row['name'] in {'typecheck','production_build'}:
                 report['coverage'][row['name']]='PASSED' if row['exit_code']==0 and not row.get('stopped') else 'FAILED'
         report['source_unchanged']=source_fingerprint(root)==fingerprint
-        report['harness_unchanged']=hashlib.sha256(harness.read_bytes()).hexdigest()==report['harness_fingerprint']
+        report['harness_unchanged']=harness_hash()==report['harness_fingerprint']
         lock=report.get('checks',{}).get('source_lock')
         report['passed']=(report['execution']['exit_code']==0 and not report['execution']['stopped']
             and report.get('checks',{}).get('passed') is True and report['source_unchanged'] and report['harness_unchanged']

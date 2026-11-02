@@ -126,6 +126,13 @@ def test_diagnostic_context_points_to_the_exact_expression_not_a_guessed_callee(
     assert context[0]['line_text']==line and context[0]['column']==16
 
 
+def test_framework_findings_reach_diagnosis_with_actual_source_location():
+    source={'app/page.tsx':{'content':'use client;\n'}}
+    failure={'checks':[{'summary':"app/page.tsx(1,1): INVALID_MODULE_DIRECTIVE: Quote the directive"}]}
+    location=diagnostic_context(failure,source)[0]
+    assert location['code']=='INVALID_MODULE_DIRECTIVE' and location['line_text']=='use client;'
+
+
 def test_existing_source_repairs_use_a_model_proposed_patch(tools):
     (tools.root/'app/page.tsx').write_text('export default function Page(){return null}',encoding='utf-8')
     state=configured(tools,'repair_build');agent=Agent('export default function Page(){return <main>Updated</main>}')

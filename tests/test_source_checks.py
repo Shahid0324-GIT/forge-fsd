@@ -35,6 +35,7 @@ def test_generic_checks_are_isolated_and_do_not_claim_behavior_coverage(setup):
     assert '--network=none' in command and '--read-only' in command and '--pull=never' in command
     assert 'forge.role=verification' in command
     assert any('target=/trusted/source-checks.mjs,readonly' in arg for arg in command)
+    assert any('target=/trusted/framework-diagnostics.mjs,readonly' in arg for arg in command)
     assert not any('target=/trusted,readonly' in arg for arg in command)
     assert calls[-1][:3]==['docker','rm','--force']
 

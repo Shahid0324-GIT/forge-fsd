@@ -24,6 +24,15 @@ from forge.workspace_tools import WorkspaceTools
 
 
 FIXTURES={
+    'client-boundary':{
+        'request':'Build a counter displaying Count: 0 initially. Increment adds one per click; Reset returns to zero. No saved data. Keep page title metadata.',
+        'files':{
+            'app/page.tsx':"use client;\nimport {useState} from 'react';\nexport default function Page(){const [count,setCount]=useState(0);return <main><output>Count: {count}</output><button onClick={()=>setCount(count+1)}>Increment</button><button onClick={()=>setCount(0)}>Reset</button></main>}\nexport const metadata={title:'Counter App'};\n",
+            'app/layout.tsx':"import type {ReactNode} from 'react';\nexport default function Layout({children}:{children:ReactNode}){return <html lang='en'><body>{children}</body></html>}\n",
+        },
+        'criteria':['Initially show Count: 0','Each Increment click adds one','Reset returns the counter to zero','Keep page title metadata'],
+        'initial_failure':'typecheck',
+    },
     'counter':{
         'request':'Build a counter. Display Count: 0 initially. The Increment button adds exactly one on each click. No saved data.',
         'files':{

@@ -12,7 +12,8 @@ from forge.verification import bounded_command
 from forge.workspace import safe_path,source_fingerprint
 
 
-CASES={'counter':{'starts_at_zero','increments_by_one'},'formatter':{'uppercases_name','trims_whitespace'}}
+CASES={'counter':{'starts_at_zero','increments_by_one'},'formatter':{'uppercases_name','trims_whitespace'},
+    'client-boundary':{'starts_at_zero','increments_by_one','resets_to_zero','preserves_metadata'}}
 
 
 def harness_fingerprint():

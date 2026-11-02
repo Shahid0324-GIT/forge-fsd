@@ -134,6 +134,7 @@ class WorkspaceTools:
                 packet['check_report']=report['report']
                 self._active()
                 data={'passed':report['passed'],'report':report['report'],'coverage':report['coverage'],
+                    'source_diagnostics':report.get('checks',{}).get('source_diagnostics',[]),
                     'source_fingerprint':report['source_fingerprint'],
                     'error':report.get('error',report.get('checks',{}).get('error')),
                     'checks':[{**{key:row.get(key) for key in ['name','exit_code','stopped']},

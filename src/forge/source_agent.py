@@ -91,7 +91,7 @@ def diagnostic_context(failure,source):
     output='\n'.join(check['summary'] for check in failure.get('checks',[]))
     locations=[]
     for path,file in source.items():
-        pattern=re.escape(path)+r'\((\d+),(\d+)\): error (TS\d+): ([^\r\n]+)'
+        pattern=re.escape(path)+r'\((\d+),(\d+)\): (?:error )?([A-Z][A-Z0-9_]+): ([^\r\n]+)'
         lines=file['content'].splitlines()
         for match in re.finditer(pattern,output):
             line,column=int(match[1]),int(match[2])
@@ -232,7 +232,9 @@ def build_evidence(tools):
     outcome=tools.execute({'tool':'check_build'})
     if not outcome['ok']:raise ValueError(outcome['error'])
     data=outcome['data']
-    summary='\n'.join(f"{row['name']} (exit {row['exit_code']}): {row['output']}" for row in data['checks'])
+    diagnostic='\n'.join(f"{row['file']}({row['line']},{row['column']}): {row['code']}: {row['message']}"
+        for row in data.get('source_diagnostics',[]))
+    summary=(diagnostic+'\n' if diagnostic else '')+'\n'.join(f"{row['name']} (exit {row['exit_code']}): {row['output']}" for row in data['checks'])
     return [CheckEvidence(check='isolated_build',exit_code=0 if data['passed'] else 1,
         fingerprint=data['source_fingerprint'],report=data['report'],
         summary=(summary or str(data.get('error') or 'Build report was incomplete'))[:2000])]
