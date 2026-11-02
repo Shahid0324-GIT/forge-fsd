@@ -65,17 +65,11 @@ def main():
         result=answer_intake(args.job_id,args.answers,OllamaAgents(saved['events'][0]['payload']['model']),store)
     elif args.command=='autoplan-resume':
         from forge.agents import OllamaAgents
-        from forge.autonomous_planning import continue_draft,continue_intake
-        from forge.tasks import TaskLedger
+        from forge.autonomous_planning import resume_planning
         saved=store.read(args.job_id)
-        if saved['status']!='AUTONOMOUS_PAUSED':raise ValueError('Only paused autonomous planning can resume here')
-        ledger=TaskLedger(store,args.job_id)
-        pause=next(e['payload'] for e in reversed(saved['events']) if e['status']=='AUTONOMOUS_PAUSED')
-        root=ledger.read(pause['task_id'])
-        ledger.resume(root,additional_actions=args.additional_actions,reconciled=args.reconciled)
         model=saved['events'][0]['payload']['model']
-        resume=continue_intake if root.task.owner=='requirements' else continue_draft
-        result=resume(ledger,root.task.id,OllamaAgents(model))
+        result=resume_planning(args.job_id,OllamaAgents(model),store,
+            additional_actions=args.additional_actions,reconciled=args.reconciled)
     elif args.command == "inspect":
         result = store.read(args.job_id)
     elif args.command == "report":

@@ -35,6 +35,12 @@ def pipeline(job_id,agents,store):
 
 
 def execute(job_id,action,payload,store,agents):
+    from forge.autonomous_planning import uses_autonomous_planning,start_planning,answer_intake,resume_planning
+    if uses_autonomous_planning(store.read(job_id)):
+        if action=='plan':return start_planning(job_id,agents,store)
+        if action=='answer':return answer_intake(job_id,payload['answers'],agents,store)
+        if action=='resume_planning':return resume_planning(job_id,agents,store)
+        raise ValueError('Autonomous planning currently supports proposals, clarification and resume only; no app execution')
     if action in {'prepare_release','publish_release','deploy_release','release_status'}:
         from forge.releases import prepare_release,publish_release,deploy_release,refresh_release
         if action=='prepare_release':return prepare_release(job_id,agents,store,payload['repository'])

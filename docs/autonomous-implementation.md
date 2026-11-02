@@ -354,3 +354,20 @@ dashboard routing; no dashboard controls change in this checkpoint.
 
 Verification: **17 planning tests passed**, exit 0, including existing CLI cases,
 same-job operation history, repeat-start rejection and model/workflow guards.
+
+## Increment 7b: opt-in managed API routing
+
+`POST /api/jobs` accepts `workflow: autonomous`; omitted workflow keeps the typed
+pipeline. The worker routes from the saved job marker rather than an untrusted
+replacement request. Clarification and resource-budget resume use the same job,
+model and task history. CLI resume shares the same adapter. Interrupted dispatches
+cannot resume through the dashboard without inspection/reconciliation.
+
+API views identify the workflow and safe-resume availability. Reading an autonomous
+proposal verifies its saved content hash and schema. Autonomous planning jobs cannot
+enter legacy build, approval, preview or publishing actions. No UI selector or new
+app-execution path is included in this checkpoint.
+
+Verification: **42 focused API/planning/pipeline tests passed**, exit 0, covering
+old API behavior, managed-job identity, immutable workflow selection, same-run
+clarification/resume, interrupted-action rejection and proposal tampering.

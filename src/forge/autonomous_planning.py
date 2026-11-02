@@ -145,6 +145,34 @@ def start_planning(job_id,agents,store,*,action_limit=8):
     return continue_intake(ledger,intake.task.id,agents)
 
 
+def uses_autonomous_planning(record):
+    marker=record['events'][0]['payload'].get('workflow')
+    if marker is not None:return marker=='autonomous'
+    return any(event['status'].startswith('AUTONOMOUS_') for event in record['events'])
+
+
+def resumable_planning(record,store):
+    if not uses_autonomous_planning(record) or record['status']!='AUTONOMOUS_PAUSED':return False
+    try:
+        pause=next(e['payload'] for e in reversed(record['events']) if e['status']=='AUTONOMOUS_PAUSED')
+        state=TaskLedger(store,record['job_id']).read(pause['task_id'])
+        return state.status=='paused' and state.task.owner in {'requirements','planner'} and state.inflight_role is None
+    except (KeyError,StopIteration):return False
+
+
+def resume_planning(job_id,agents,store,*,additional_actions=8,reconciled=False):
+    record=store.read(job_id)
+    if not uses_autonomous_planning(record) or record['status']!='AUTONOMOUS_PAUSED':
+        raise ValueError('Only paused autonomous planning can resume here')
+    if agents.model_name!=record['events'][0]['payload']['model']:raise ValueError('Use the saved job model when resuming')
+    pause=next(e['payload'] for e in reversed(record['events']) if e['status']=='AUTONOMOUS_PAUSED')
+    ledger=TaskLedger(store,job_id);state=ledger.read(pause['task_id'])
+    if state.task.owner not in {'requirements','planner'}:raise ValueError('This task is not an intake/planning task')
+    state=ledger.resume(state,additional_actions=additional_actions,reconciled=reconciled)
+    resume=continue_intake if state.task.owner=='requirements' else continue_draft
+    return resume(ledger,state.task.id,agents)
+
+
 def continue_intake(ledger,task_id,agents):
     directory=ledger.store.path.parent/'autonomous-plans'/ledger.job_id;directory.mkdir(parents=True,exist_ok=True)
     route=directory/'intake.json'

@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import io
 import json
 import re
@@ -22,14 +23,16 @@ from forge.schemas import ApplicationRequest,Boundary
 from forge.workspace import safe_path
 from forge.workflow import planning_retryable
 from forge.browser_testing import profile_for,browser_gate
+from forge.autonomous_planning import uses_autonomous_planning,resumable_planning,AppDraft
 
 
 class NewJob(ApplicationRequest):
     request_id: str = Field(pattern=r'^[a-f0-9-]{32,36}$')
+    workflow: Literal['typed','autonomous'] = 'typed'
 
 
 class Action(Boundary):
-    action: Literal['answer','approve','reject','continue','preview_start','preview_stop','preview_status','report','security','retry_plan','retry_build','browser_check','prepare_release','publish_release','deploy_release','release_status']
+    action: Literal['answer','approve','reject','continue','preview_start','preview_stop','preview_status','report','security','retry_plan','retry_build','browser_check','prepare_release','publish_release','deploy_release','release_status','resume_planning']
     request_id: str = Field(pattern=r'^[a-f0-9-]{32,36}$')
     expected_sequence: int = Field(ge=1)
     fingerprint: str | None = Field(default=None,pattern=r'^[a-f0-9]{64}$')
@@ -43,7 +46,8 @@ ALLOWED={
     'browser_check':{'FUNCTIONALLY_VERIFIED','SECURITY_PASSED','PREVIEW_RUNNING','PREVIEW_STOPPED','PREVIEW_FAILED'},
     'retry_build':{'FAILED'},
     'retry_plan':{'FAILED'},
-    'answer':{'AWAITING_CLARIFICATION'},'approve':{'PLAN_REVIEW'},'reject':{'PLAN_REVIEW'},
+    'answer':{'AWAITING_CLARIFICATION','AUTONOMOUS_INPUT_NEEDED'},'approve':{'PLAN_REVIEW'},'reject':{'PLAN_REVIEW'},
+    'resume_planning':{'AUTONOMOUS_PAUSED'},
     'continue':{'APPROVED','GENERATED_UNVERIFIED','VERIFICATION_FAILED','FUNCTIONALLY_VERIFIED','SECURITY_BLOCKED','SECURITY_PASSED'},
     'preview_start':{'SECURITY_PASSED','PREVIEW_STOPPED','PREVIEW_FAILED'},
     'preview_stop':{'PREVIEW_RUNNING','PREVIEW_STARTING','PREVIEW_FAILED'},
@@ -106,12 +110,14 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
     def view(job):
         job={**job}
         job['active_operation']=next(iter(manager.active(job['job_id'])),None)
+        job['workflow']='autonomous' if uses_autonomous_planning(job) else 'typed'
+        job['planning_resumable']=resumable_planning(job,store)
         job['last_sequence']=job['events'][-1]['sequence'] if job['events'] else 0
         job['generation_retryable']=build_retryable(job)
         job['browser_profile']=profile_for(job)
         latest_source=next((e['payload'].get('source_fingerprint') for e in reversed(job['events']) if e['status']=='FUNCTIONALLY_VERIFIED'),None)
         job['browser_checks_blocked']=bool(latest_source and not browser_gate(job,latest_source))
-        job['title']=next((e['payload']['title'] for e in reversed(job['events']) if e['status']=='REQUIREMENTS_READY'),'New application')
+        job['title']=next((e['payload']['title'] for e in reversed(job['events']) if e['status'] in {'REQUIREMENTS_READY','AUTONOMOUS_DRAFT_READY'}),'New application')
         if job['status']=='REQUEST_ANSWERED':job['title']='Request response'
         if job['status']=='PLAN_REVIEW':
             review=next((e for e in reversed(job['events']) if e['status']=='PLAN_REVIEW'),None)
@@ -176,12 +182,14 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
                 existing=db.execute('SELECT id,job_id,action FROM operations WHERE request_id=?',(body.request_id,)).fetchone()
             if existing:
                 if existing[2]!='plan':raise HTTPException(409,'Request identity already used for another action')
-                try:store.read(existing[1])
+                try:previous=store.read(existing[1])
                 except KeyError:raise HTTPException(409,'This request belongs to a deleted run. Start a new request or restore it from Trash.')
+                if ('autonomous' if uses_autonomous_planning(previous) else 'typed')!=body.workflow:
+                    raise HTTPException(409,'Request identity already belongs to a different workflow')
                 return {'job_id':existing[1],'operation':manager.read(existing[0])}
             if manager.active():raise HTTPException(409,'Another operation is running. Wait or stop it first.')
             request=ApplicationRequest(description=body.description,model=body.model)
-            job_id=store.create(request.model_dump());latest=store.read(job_id)['events'][-1]['sequence']
+            job_id=store.create({**request.model_dump(),'workflow':body.workflow});latest=store.read(job_id)['events'][-1]['sequence']
             operation=manager.submit(job_id,'plan',request.model_dump(),body.request_id,latest)
             return {'job_id':job_id,'operation':operation}
 
@@ -194,6 +202,10 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
             if existing[1]!=body.action:raise HTTPException(409,'Request identity already used for another action')
             return {'operation':manager.read(existing[0])}
         if current['status'] not in ALLOWED[body.action]:raise HTTPException(409,'That action is unavailable in the current job state')
+        if uses_autonomous_planning(current) and body.action not in {'answer','resume_planning'}:
+            raise HTTPException(409,'This workflow currently supports planning only; no app execution')
+        if body.action=='resume_planning' and not resumable_planning(current,store):
+            raise HTTPException(409,'Planning needs saved-task inspection before it can resume')
         if body.action=='retry_plan' and not planning_retryable(current):raise HTTPException(409,'Only failed pre-review planning can be retried')
         if body.action=='retry_build' and not build_retryable(current):raise HTTPException(409,'Only an interrupted approved generation can be resumed once')
         if body.action=='browser_check' and not profile_for(current):raise HTTPException(409,'This app has no trusted automated browser profile')
@@ -214,7 +226,8 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
                 raise HTTPException(409,'Review the current requirements and plan before deciding')
             payload['fingerprint']=body.fingerprint
         if body.action=='answer':
-            questions=next(e['payload']['questions'] for e in reversed(current['events']) if e['status']=='AWAITING_CLARIFICATION')
+            question_status='AUTONOMOUS_INPUT_NEEDED' if uses_autonomous_planning(current) else 'AWAITING_CLARIFICATION'
+            questions=next(e['payload']['questions'] for e in reversed(current['events']) if e['status']==question_status)
             if not body.answers or len(body.answers)!=len(questions) or any(not a.strip() or len(a)>1000 for a in body.answers):
                 raise HTTPException(422,'Provide one nonempty answer per question, at most 1000 characters each')
             payload['answers']=body.answers
@@ -263,7 +276,13 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
             from forge.handoffs import read_handoff
             try:return JSONResponse(read_handoff(path,event['payload']))
             except (ValueError,KeyError):raise HTTPException(409,'Saved handoff failed its context/identity check')
-        return JSONResponse(json.loads(path.read_text(encoding='utf-8')))
+        raw=path.read_bytes()
+        if event['status']=='AUTONOMOUS_DRAFT_READY':
+            if hashlib.sha256(raw).hexdigest()!=event['payload'].get('draft_sha256'):
+                raise HTTPException(409,'The saved proposal changed; do not review stale evidence')
+            try:return JSONResponse(AppDraft.model_validate_json(raw).model_dump())
+            except ValueError:raise HTTPException(409,'The saved proposal is no longer valid')
+        return JSONResponse(json.loads(raw))
 
     @app.get('/api/jobs/{job_id}/source.zip')
     def source(job_id:str):
