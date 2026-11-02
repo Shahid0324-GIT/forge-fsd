@@ -280,3 +280,65 @@ locations are supplied to QA or the builder. Otherwise the worker runs fresh che
 without a model call or source edit. Tests cover both newly passing and still-failing
 source. Existing recovery tests now record the fresh result as the coordinator does,
 so stale context cannot accidentally exercise a different branch.
+
+## Increment 6: reproducible repair fixtures with independent browser checks
+
+`scripts/evaluate_repair_regressions.py` seeds two deliberately faulty, committed
+test fixtures. These are controlled repair evaluations, not model-generated app or
+requirements-planning success claims. After initial seeding, all source corrections
+must come from the model through the existing owned/hash-checked tools.
+
+The counter exercises a component import/props mismatch, client boundary and
+increment behavior. The formatter initially builds successfully but returns lowercase
+text contrary to its request. Frozen browser assertions live in `tests/repair`,
+outside both the app manifest and the application container. A separate browser
+container receives the assertions but no source mount. It interacts with the real
+app through an internal Docker network, without host ports or external requests.
+The existing dependency/browser images are resolved by immutable IDs; nothing is
+downloaded or installed.
+
+The evaluation's controller-supplied check runner combines actual TypeScript,
+production-build and browser evidence. A successful build cannot mask a failed
+browser assertion, different source fingerprint or different app image. Coverage is
+explicitly `PARTIAL_FROZEN_FIXTURE_ONLY`. The existing dashboard, converter browser
+gate and application readiness/publishing gates are unchanged. This is not a new
+automatic browser profile for arbitrary apps.
+
+Browser reports include source/harness fingerprints, exact case results and cleanup
+outcomes. Resource identities are written before Docker starts so interrupted
+evaluations can be inspected. Normal failure/exit cleanup removes the owned browser
+and app containers plus their internal network. Abrupt process death still requires
+reconciliation of the saved resource record; this increment does not add a new
+dashboard restart sweeper.
+
+Reproduce with the installed 7B model and existing app/browser Docker images:
+
+```powershell
+.venv\Scripts\python.exe scripts/evaluate_repair_regressions.py --case formatter
+.venv\Scripts\python.exe scripts/evaluate_repair_regressions.py --case counter
+```
+
+These commands require local Ollama and Docker. The Python tests mock those services
+and do not run these live evaluations. Source snapshots, task ledgers, model/tool
+calls, screenshots and reports are saved under `artifacts/repair-regressions`.
+
+### Observed results
+
+| Fixture | Initial evidence | Final evidence | Actual model calls |
+| --- | --- | --- | --- |
+| Formatter | Build passed; both browser assertions failed with lowercase page text | Build and 2/2 browser assertions passed | 2 |
+| Counter | TypeScript failed on the component contract; browser not yet run | Build and 2/2 browser assertions passed | 8 |
+
+- Formatter evidence: `fbddf7a6fb8045ce817d057af3a2350c/formatter` under the directory above;
+  source fingerprint `e4004ee7a36b5b3abf3c66207144e3860755b785dd86a4710d56099f3921bf9f`.
+- Counter evidence: `6eb2c8a1e69a46728900cdd879df27b6/counter`;
+  source fingerprint `7ceecd3ddacc8c900a0eedccfc57160705a1186690976b25be38aba801ac993e`.
+- Both commands exited 0. Final source archives match their build/browser reports.
+  Disposable workspaces, containers and networks were confirmed removed.
+- Full Python suite: **292 passed**, exit 0, with 13 upstream LangSmith warnings.
+  Node syntax check and `git diff --check` passed. No dependencies, lockfiles or models changed.
+
+The counter's increment bug was corrected by the model before its first browser
+run; the formatter provides the direct failing-to-passing browser calibration.
+This small sample does not establish general repair accuracy. Broader behavior,
+database/restart checks and normal autonomous dashboard integration remain next.

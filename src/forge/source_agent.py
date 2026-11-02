@@ -45,7 +45,7 @@ class RepairFocus(Envelope):
     changes: list[str] = Field(min_length=1,max_length=6)
 
 
-FOCUS_INSTRUCTION='''You are the QA diagnosis subagent. Inspect the actual latest build
+FOCUS_INSTRUCTION='''You are the QA diagnosis subagent. Inspect the actual latest verification
 failure and current app source. Choose ONE authorized file to correct next and give
 concrete source-level changes that address its reported causes. Prioritize actual
 errors, not formatting. State what must change, not only that an error exists. Use
@@ -57,8 +57,8 @@ diagnostic line, column and expression_at_column; do not guess from a nearby fun
 name. Re-evaluate prior diagnoses when they disagree with the actual location.'''
 
 
-REPAIR_INSTRUCTION='''Repair the selected existing file so the supplied real build
-errors are resolved. Return only a tool request matching the schema.
+REPAIR_INSTRUCTION='''Repair the selected existing file so the supplied real compiler,
+build or browser acceptance failures are resolved. Return only a tool request matching the schema.
 The compiler output and actual source are evidence. repair_focus is an advisory
 hypothesis from another model: independently verify it and correct it if wrong.
 Read the selected file and other files' actual exports and props before editing.
