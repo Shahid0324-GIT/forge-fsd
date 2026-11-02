@@ -49,6 +49,7 @@ Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker b
 | Counter repair fixture | Initial component-contract failure; model repairs reached passing build and 2/2 browser assertions, including repeated increments by one. |
 | Formatter repair fixture | Initial build passed but both browser assertions failed on lowercase output; one model repair reached passing build and 2/2 assertions. |
 | Fresh counter planning and generation | Internal evaluation approved an agent-authored proposal; model-generated source reached passing TypeScript and production builds in 14 model calls. Behavior was not tested. |
+| Dashboard counter with review feedback | Consent, same-job revision and restart/resume worked. Generation remained paused after repeated client-directive repair failures; no working-app claim. |
 
 The counter and formatter start from **deliberately faulty, controller-authored test fixtures**. They evaluate repair, not autonomous generation from a fresh request. Their frozen browser assertions run in a separate container and cannot be edited by the builder. All source corrections after fixture setup came from model tool calls.
 

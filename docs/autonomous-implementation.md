@@ -520,3 +520,15 @@ Verification: **326 Python tests passed**, exit 0, with 13 upstream LangSmith wa
 dashboard TypeScript and Vite production build passed, exit 0. Live build recovery is
 recorded separately from these controller checks; independent app behavior, preview and
 release integration remain pending.
+
+Live outcome: the resumed browser test reached another saved resource pause after
+16 total verification-task dispatches. The model still alternated between missing
+and invalid client directives despite the clarified instruction; senior review also
+repeated an obsolete layout diagnosis. This is an unresolved model/context recovery
+weakness, not a passing app demonstration. Nine build reports recorded no cleanup
+errors. The source and job were archived with fingerprint
+`46a963398f6857fbbb1cb6b68588418093fe98fec73f6185e868153a6db1eebe`;
+the disposable workspace was removed and the isolated dashboard closed. No user run,
+cloud resource or main dashboard database was changed. Next repair work should make
+the current source/check evidence explicit to reviewers and verify that their proposed
+correction addresses it, before broadening autonomous behavior-test integration.
