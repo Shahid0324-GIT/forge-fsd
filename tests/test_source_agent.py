@@ -150,7 +150,7 @@ def test_repair_can_replace_a_complete_file_without_bypassing_change_guards(tool
         def generate(self,schema,instruction,data,**kwargs):
             if schema.__name__=='RepairFocus':return super().generate(schema,instruction,data,**kwargs)
             target=data['allowed_targets'][0]
-            if patch_rejected:
+            if patch_rejected and data['last_tool_error']:
                 assert data['replace_rejected_patch'] and 'complete corrected file' in data['edit_guidance']
                 from pydantic import ValidationError
                 with pytest.raises(ValidationError):
@@ -166,8 +166,11 @@ def test_repair_can_replace_a_complete_file_without_bypassing_change_guards(tool
     content='export default function Page(){return <main>Corrected</main>}'
     worker=SourceAgent(tools.ledger,RewriteAgent(content),tools.root,tools.draft,
         workspace_boundary=tools.root.parent,check_runner=check)
-    worker(state)
+    checks=worker(state)
     assert path.read_text()==content
+    state=tools.ledger.observe(state,Observation(revision=state.revision,
+        fingerprint=source_fingerprint(tools.root),checks=checks))
+    state=tools.ledger.reserve_action(state,'frontend')
     with pytest.raises(ValueError,match='unchanged source'):worker(state)
 
 
@@ -182,3 +185,22 @@ def test_fresh_build_evidence_clears_older_tool_rejection(tools):
         'coverage':{'application_behavior':'NOT_TESTED'},'checks':{'results':[]},'error':'fixture check'}
     SourceAgent(tools.ledger,agent,tools.root,tools.draft,workspace_boundary=tools.root.parent,check_runner=check)(state)
     assert agent.data['last_tool_error']=='' and not agent.data['replace_rejected_patch']
+
+
+@pytest.mark.parametrize('passed',[False,True])
+def test_changed_source_is_rechecked_before_using_old_failure_locations(tools,passed):
+    state=configured(tools,'repair_build')
+    path=tools.root/'app/page.tsx';content='export default function Page(){return <main>New source</main>}'
+    path.write_text(content,encoding='utf-8')
+    agent=Agent('Must not be used');calls=[]
+    def check(root,*_):
+        calls.append(source_fingerprint(root))
+        return {'passed':passed,'report':'fresh.json','source_fingerprint':calls[-1],
+            'coverage':{'application_behavior':'NOT_TESTED'},'checks':{'results':[
+                {'name':'typecheck','exit_code':0 if passed else 2,'output':'Fresh compiler evidence','stopped':None}]}}
+    checks=SourceAgent(tools.ledger,agent,tools.root,tools.draft,
+        workspace_boundary=tools.root.parent,check_runner=check)(state)
+    assert agent.data is None and len(calls)==1 and path.read_text()==content
+    assert checks[0].fingerprint==source_fingerprint(tools.root)
+    assert checks[0].exit_code==(0 if passed else 1)
+    assert not any(task.task.owner=='qa' for task in tools.ledger.list())

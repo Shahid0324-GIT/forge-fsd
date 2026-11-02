@@ -272,3 +272,11 @@ generated display condition; independent behavior checks must cover that case.
 After the replay started, the instructions were further clarified to put client
 directives before imports rather than inside a component. The final affected-suite
 rerun passed all 33 tests; the live replay used the preceding instruction wording.
+
+### Increment 5c: recheck changed source before diagnosing it
+
+A failed check's fingerprint must match the current workspace before its diagnostic
+locations are supplied to QA or the builder. Otherwise the worker runs fresh checks
+without a model call or source edit. Tests cover both newly passing and still-failing
+source. Existing recovery tests now record the fresh result as the coordinator does,
+so stale context cannot accidentally exercise a different branch.

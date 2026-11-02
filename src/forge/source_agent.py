@@ -132,6 +132,10 @@ class SourceAgent:
             self.agents.trace_directory=self.ledger.store.path.parent/'model-calls'/self.ledger.job_id
         if repairing:
             if not data['latest_build_failure']:raise ValueError('Repair requires actual build failure evidence, not a guessed correction')
+            if data['latest_build_failure']['fingerprint']!=fingerprint:
+                # Locations from another source snapshot cannot justify an edit.
+                # Recheck first; the coordinator will record this fresh evidence.
+                return build_evidence(tools)
             data['diagnostic_locations']=diagnostic_context(data['latest_build_failure'],source)
             # A prior diagnosis is a hypothesis, not compiler evidence. Replaying it
             # beside each new diagnosis anchored the model on incorrect causes.
