@@ -25,7 +25,7 @@ Activity displays expose recorded handoffs, tool calls, source changes, model in
 
 **Existing dashboard workflow:** uses the earlier typed-planning pipeline, with human plan approval, generation, verification, bounded repairs and separate preview/release controls. It has known planning/model limitations. It does not yet use the newer autonomous coordinator by default.
 
-**New autonomous path:** has agent-authored planning through experimental CLI commands, a durable task/recovery loop and model-driven source tools. Controlled evaluations exercise source repair and independent browser checks. Normal app approval, complete generation and dashboard integration for this path are still being connected.
+**New autonomous path:** has agent-authored planning through the dashboard's **Autonomous planner · proposal only** option and experimental CLI commands, a durable task/recovery loop and model-driven source tools. The dashboard supports proposal inspection, clarification and safe resource-pause resume in the same job. Controlled evaluations exercise source repair and independent browser checks. App approval and complete generation for this path are still being connected.
 
 The intended flow is:
 
@@ -39,7 +39,7 @@ This diagram describes the target integration; the two paths above describe what
 
 ## Verified checkpoints
 
-Latest local controller suite: **292 Python tests passed**. These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy.
+Latest local controller suite: **304 Python tests passed**. These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy.
 
 Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker builds and Chromium:
 
@@ -107,7 +107,9 @@ After setup, double-click **Start-ForgeFSD.cmd**, or run:
 
 Open [http://127.0.0.1:8787](http://127.0.0.1:8787). Describe a small app, inspect the proposed requirements and acceptance checks, then approve the plan before generation. Preview and publishing/deployment have separate approvals.
 
-Run one dashboard process and avoid concurrent CLI/evaluation operations. The dashboard uses the earlier pipeline described above. Closing a tab does not cancel its managed operation; use the dashboard controls to stop work or close the workspace.
+The **Planning workflow** selector defaults to **Existing app workflow**. Choose **Autonomous planner · proposal only** to try the new coordinator, inspect its design and handoffs, answer blocking questions or resume a safe saved pause. This option currently stops before approval and app generation. Proposal validation does not establish correct architecture or working source.
+
+Run one dashboard process and avoid concurrent CLI/evaluation operations. Closing a tab does not cancel its managed operation; use the dashboard controls to stop work or close the workspace. Interrupted dispatches need inspection and cannot be blindly replayed through the resume button.
 
 ## Reproduce the newer agent demonstrations
 
@@ -159,7 +161,7 @@ The earlier pipeline includes limited static, dependency, secret-pattern and pro
 
 ## Remaining work
 
-1. Connect the new coordinator, agent-authored design and source tools to normal approval/dashboard operations.
+1. Connect human approval and source generation to the dashboard's autonomous planning option, with better grounding in actual framework/tool capabilities.
 2. Verify a fresh request-to-app generation run with independent behavior checks and no manual source corrections.
 3. Broaden repair and behavior coverage, including SQLite integrity and persistence after restart through the updated path.
 4. Integrate/revalidate generated-app CI and publishing against that path; database-backed cloud deployment remains separate work.

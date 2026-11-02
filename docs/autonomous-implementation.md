@@ -371,3 +371,37 @@ app-execution path is included in this checkpoint.
 Verification: **42 focused API/planning/pipeline tests passed**, exit 0, covering
 old API behavior, managed-job identity, immutable workflow selection, same-run
 clarification/resume, interrupted-action rejection and proposal tampering.
+
+## Increment 7c: autonomous planning controls in the dashboard
+
+The new-application form offers **Autonomous planner · proposal only**, while the
+existing app workflow remains the default. Autonomous runs show actual intake,
+planner and senior-review activity, support same-run clarification and safe pause
+resume, and open a structured, fingerprint-checked proposal report. The proposal's
+architecture, source responsibilities, acceptance criteria, assumptions and suggested
+tests are presented as unexecuted proposals. There is no approve/build control for
+this mode yet. Legacy approvals and release behavior remain separate.
+
+Verification:
+
+- Full suite: **304 passed**, exit 0; 13 upstream LangSmith deprecation warnings.
+- Dashboard TypeScript check and Vite production build: passed, exit 0.
+- React checklist review: new proposal rendering uses escaped text, typed props,
+  no extra listeners/effects, and explicit labels. Answer input is cleared after a
+  successful submission so later clarification questions do not reuse old answers.
+- Browser -> API -> managed worker -> local 7B -> SQLite tasks -> proposal display
+  was inspected on a real run using a separate database. The planner's context
+  dialog showed the original request, and browser console inspection returned no
+  errors/warnings. The expiring test server was then closed through the UI.
+- Evidence: `artifacts/dashboard-planning-smoke/f3161bbc571c498d86a41d21d18a2257`,
+  including `result.json`, `job.json` and `proposal.jpg`.
+- Job `4e470d35b05a419c850660bf8dbfc5d2` reached `AUTONOMOUS_DRAFT_READY` in one
+  managed operation and **2 actual model calls**. No app was approved or executed;
+  the regular dashboard database/run history was not used.
+
+Content review still found an unnecessary backend for a local counter, an API
+filename outside App Router's handler convention, and only manual suggested tests.
+These remain open model/planning-quality findings. The UI/API integration passed;
+this is not an end-to-end app build or a claim that the proposal is implementation-ready.
+Before connecting approval and generation, ground plans in actual runtime capabilities
+and ensure the execution loop can revise ineffective design decisions safely.
