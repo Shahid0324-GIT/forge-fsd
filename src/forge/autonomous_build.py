@@ -9,18 +9,24 @@ from forge.source_agent import SourceAgent,build_evidence
 from forge.source_checks import run_source_checks
 from forge.tasks import Dependency,Observation,Task,TaskLedger
 from forge.workspace import safe_path,seed_workspace,source_fingerprint
-from forge.workspace_tools import WorkspaceTools,file_hash
+from forge.workspace_tools import PROTECTED,WorkspaceTools,file_hash
 
 
 PROJECT=Path(__file__).resolve().parents[2]
 
 
-def build_resumable(record,store):
+def _runtime_unchanged(root):
+    return root.is_dir() and all(file_hash(safe_path(root,path))==file_hash(safe_path(planning.TEMPLATE,path)) for path in PROTECTED)
+
+
+def build_resumable(record,store,*,workspace_boundary=None):
     if record['status']!='AUTONOMOUS_BUILD_PAUSED':return False
     try:
         event=next(e['payload'] for e in reversed(record['events']) if e['status']=='AUTONOMOUS_BUILD_PAUSED')
         state=TaskLedger(store,record['job_id']).read(event['task_id'])
         approved_review(record['job_id'],store)
+        boundary=Path(workspace_boundary) if workspace_boundary else PROJECT/'workspace'
+        if not _runtime_unchanged(safe_path(boundary,record['job_id'])):return False
         return state.inflight_role is None and state.status in {'paused','completed','needs_refresh'}
     except (ValueError,OSError,KeyError,StopIteration):return False
 
@@ -36,8 +42,11 @@ def build_app(job_id,agents,store,*,resume=False,additional_actions=8,workspace_
     draft=planning.AppDraft.model_validate(review['draft']);ledger=TaskLedger(store,job_id)
     def authorize():
         if approved_review(job_id,store)['fingerprint']!=review['fingerprint']:raise ValueError('Reviewed plan changed during execution')
+        if root.exists() and not _runtime_unchanged(root):
+            raise ValueError('Workspace runtime configuration differs from the approved scaffold')
     if resume:
-        if not build_resumable(record,store):raise ValueError('Inspect interrupted work and authorization before resuming')
+        authorize()
+        if not build_resumable(record,store,workspace_boundary=boundary):raise ValueError('Inspect interrupted work and authorization before resuming')
         pending=next(e['payload'] for e in reversed(record['events']) if e['status']=='AUTONOMOUS_BUILD_PAUSED')
         state=ledger.read(pending['task_id'])
         if state.status=='paused':ledger.resume(state,additional_actions=additional_actions)

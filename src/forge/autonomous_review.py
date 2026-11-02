@@ -37,7 +37,7 @@ def review_snapshot(job_id,store):
     binding={'job_id':job_id,'task_id':state.task.id,'revision':state.revision,'task_version':state.version,
         'draft_sha256':digest,'inputs':state.task.inputs,'model':record['events'][0]['payload']['model'],
         'template_fingerprint':ready['template_fingerprint'],'runtime_capabilities_sha256':ready['runtime_capabilities_sha256'],
-        'scope':'Generate source and run isolated build checks. Application behavior, preview and publication are not approved by this decision.'}
+        'scope':'Generate source and run isolated development checks. A build pass does not establish app behavior. Preview, publishing and deployment require separate approval.'}
     fingerprint=hashlib.sha256(json.dumps(binding,sort_keys=True,separators=(',',':')).encode()).hexdigest()
     return {'fingerprint':fingerprint,'binding':binding,'draft':draft.model_dump(),'report':str(path.resolve())}
 
@@ -67,3 +67,26 @@ def approved_review(job_id,store):
     review=review_snapshot(job_id,store)
     if approved['fingerprint']!=review['fingerprint']:raise ValueError('The plan or runtime changed after approval')
     return review
+
+
+def request_changes(job_id,agents,store,fingerprint,feedback,*,actor):
+    if not isinstance(feedback,str) or not feedback.strip() or len(feedback)>2000:
+        raise ValueError('Describe the requested changes in 1–2000 characters')
+    if not actor:raise ValueError('Record the review actor')
+    with store.connect() as db:
+        db.execute('BEGIN IMMEDIATE')
+        if store.read(job_id)['status']!='AUTONOMOUS_DRAFT_READY':raise ValueError('Only an unapproved proposal can be revised here')
+        review=review_snapshot(job_id,store)
+        if fingerprint!=review['fingerprint']:raise ValueError('Review the current proposal before requesting changes')
+        if agents.model_name!=review['binding']['model']:raise ValueError('Use the saved job model for review changes')
+        ledger=TaskLedger(store,job_id);planner=ledger.read(review['binding']['task_id'])
+        if not planner.task.parent_id:raise ValueError('The saved requirements task is missing')
+        intake=ledger.read(planner.task.parent_id)
+        if intake.task.owner!='requirements' or intake.status!='completed':raise ValueError('Inspect the requirements task before revising this proposal')
+        db.execute('UPDATE jobs SET status=? WHERE id=?',('AUTONOMOUS_REPLANNING',job_id))
+        db.execute('INSERT INTO events(job_id,timestamp,status,payload) VALUES (?,?,?,?)',
+            (job_id,now(),'AUTONOMOUS_REPLANNING',json.dumps({'actor':actor,'feedback':feedback.strip(),
+                'review_fingerprint':fingerprint,'task_id':review['binding']['task_id'],'app_execution':'NOT_RUN'})))
+    inputs={**intake.task.inputs,'human_review_feedback':[*intake.task.inputs.get('human_review_feedback',[]),feedback.strip()]}
+    intake=ledger.revise(intake,intake.task.model_copy(update={'inputs':inputs}))
+    return planning.continue_intake(ledger,intake.task.id,agents)

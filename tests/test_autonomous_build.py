@@ -75,7 +75,7 @@ def test_approved_manifest_drives_multi_role_generation_without_readiness_promot
 def test_resume_checks_current_source_without_regenerating_completed_files(setup):
     store,job,agent,boundary,review=setup;approve(store,job,review)
     paused=build_app(job,agent,store,workspace_boundary=boundary,check_runner=runner(False))
-    assert paused['status']=='AUTONOMOUS_BUILD_PAUSED' and build_resumable(paused,store)
+    assert paused['status']=='AUTONOMOUS_BUILD_PAUSED' and build_resumable(paused,store,workspace_boundary=boundary)
     edits=list(agent.edits);fingerprint=source_fingerprint(boundary/job)
     result=build_app(job,agent,store,resume=True,additional_actions=3,workspace_boundary=boundary,check_runner=runner())
     assert result['status']=='AUTONOMOUS_BUILD_CHECKS_PASSED'
@@ -98,3 +98,13 @@ def test_existing_workspace_is_not_overwritten_and_model_selection_is_bound(setu
     marker=boundary/job/'keep.txt';marker.write_text('existing source')
     with pytest.raises(ValueError,match='untracked workspace'):build_app(job,agent,store,workspace_boundary=boundary,check_runner=runner())
     assert marker.read_text()=='existing source' and not agent.edits
+
+
+def test_resume_cannot_adopt_modified_runtime_configuration(setup):
+    store,job,agent,boundary,review=setup;approve(store,job,review)
+    build_app(job,agent,store,workspace_boundary=boundary,check_runner=runner(False))
+    (boundary/job/'package.json').write_text('{}',encoding='utf-8');before=list(agent.edits)
+    assert not build_resumable(store.read(job),store,workspace_boundary=boundary)
+    with pytest.raises(ValueError,match='runtime configuration'):
+        build_app(job,agent,store,resume=True,workspace_boundary=boundary,check_runner=runner())
+    assert agent.edits==before and store.read(job)['status']=='AUTONOMOUS_BUILD_PAUSED'

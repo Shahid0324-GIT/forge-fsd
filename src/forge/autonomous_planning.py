@@ -54,6 +54,7 @@ from the request, not invented implementation results. Assumptions cannot waive
 requirements. Requirements intake has already established the supported scope. Respect
 the supplied clarification answers and choose sensible defaults for remaining design
 choices. Do not reopen optional scope questions or ask the user to design the internals.
+Apply human_review_feedback as requirements updates without relaxing platform policy.
 Use runtime_capabilities as the actual platform facts. Do not assume test frameworks
 or external services are installed. If you choose HTTP handlers, use the runtime's
 route-handler convention; a source helper is not automatically an HTTP endpoint.
@@ -133,12 +134,12 @@ def continue_draft(ledger,task_id,agents):
             agents.activity=lambda status,payload:ledger.store.event(ledger.job_id,status,payload,update_status=False)
             proposed=AppDraft.model_validate(agents.generate(AppDraft,INSTRUCTION,data,coding=True))
             candidate.write_text(proposed.model_dump_json(indent=2),encoding='utf-8',newline='\n')
-            snapshot=directory/f'draft-{state.actions_used}.json';snapshot.write_bytes(candidate.read_bytes())
+            snapshot=directory/f'draft-{state.task.id}-r{state.revision}-a{state.actions_used}.json';snapshot.write_bytes(candidate.read_bytes())
         finally:agents.activity=previous_activity
         issues=manifest_issues(proposed,directory/'unexecuted-workspace')
         if source_fingerprint(TEMPLATE)!=template_before or capability_fingerprint()!=capabilities_before:
             issues.append('Runtime capabilities or scaffold changed during planning; inspect the current base and propose again.')
-        report=directory/f'check-{state.actions_used}.json'
+        report=directory/f'check-{state.task.id}-r{state.revision}-a{state.actions_used}.json'
         report.write_text(json.dumps({'draft_sha256':fingerprint(),'draft_snapshot':str(snapshot.resolve()),'issues':issues,
             'template_fingerprint':template_before,'runtime_capabilities_sha256':capabilities_before,
             'scope':'Proposal structure and workspace manifest only; business completeness and execution remain unverified.'},indent=2),encoding='utf-8')
@@ -222,7 +223,8 @@ def continue_intake(ledger,task_id,agents):
     def fingerprint():return hashlib.sha256(route.read_bytes() if route.exists() else b'').hexdigest()
     def worker(state):
         data={'application_request':state.task.inputs['original_request'],
-              'human_clarifications':state.task.inputs.get('human_clarifications',[])}
+              'human_clarifications':state.task.inputs.get('human_clarifications',[]),
+              'human_review_feedback':state.task.inputs.get('human_review_feedback',[])}
         if getattr(agents,'trace_directory',None) is None:agents.trace_directory=ledger.store.path.parent/'model-calls'/ledger.job_id
         record_handoff(ledger.store,ledger.job_id,'coordinator','requirements',
             'Establish the business scope before architecture; optional implementation choices are delegated to the planner.',

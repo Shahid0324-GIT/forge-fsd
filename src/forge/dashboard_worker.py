@@ -37,10 +37,19 @@ def pipeline(job_id,agents,store):
 def execute(job_id,action,payload,store,agents):
     from forge.autonomous_planning import uses_autonomous_planning,start_planning,answer_intake,resume_planning
     if uses_autonomous_planning(store.read(job_id)):
+        from forge.autonomous_review import decide_plan,request_changes
+        from forge.autonomous_build import build_app
         if action=='plan':return start_planning(job_id,agents,store)
         if action=='answer':return answer_intake(job_id,payload['answers'],agents,store)
         if action=='resume_planning':return resume_planning(job_id,agents,store)
-        raise ValueError('Autonomous planning currently supports proposals, clarification and resume only; no app execution')
+        if action=='revise_plan':return request_changes(job_id,agents,store,payload['fingerprint'],payload['feedback'],actor='local_dashboard')
+        if action in {'approve','reject'}:
+            if action=='approve' and payload.get('approved') is not True:raise ValueError('Source generation needs explicit approval')
+            record=decide_plan(job_id,store,payload['fingerprint'],approved=action=='approve',actor='local_dashboard')
+            return build_app(job_id,agents,store) if action=='approve' else record
+        if action=='continue':return build_app(job_id,agents,store)
+        if action=='resume_build':return build_app(job_id,agents,store,resume=True)
+        raise ValueError('This autonomous workflow does not yet support preview or publishing')
     if action in {'prepare_release','publish_release','deploy_release','release_status'}:
         from forge.releases import prepare_release,publish_release,deploy_release,refresh_release
         if action=='prepare_release':return prepare_release(job_id,agents,store,payload['repository'])

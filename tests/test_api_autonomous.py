@@ -79,9 +79,9 @@ def test_resume_requires_a_safe_saved_planning_pause(client,monkeypatch,interrup
         assert result['job_id']==job and result['status']=='AUTONOMOUS_DRAFT_READY'
 
 
-@pytest.mark.parametrize('action',['approve','continue','preview_start','publish_release'])
-def test_autonomous_planning_cannot_enter_legacy_execution_pipeline(client,action):
+@pytest.mark.parametrize('action',['preview_start','publish_release'])
+def test_autonomous_jobs_cannot_enter_legacy_release_pipeline(client,action):
     _,app=client;agent=Agent(draft())
     result=plan_app('Build a small interactive page.',agent,app.state.store)
-    with pytest.raises(ValueError,match='no app execution'):
+    with pytest.raises(ValueError,match='preview or publishing'):
         execute(result['job_id'],action,{},app.state.store,agent)

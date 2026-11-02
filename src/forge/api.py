@@ -20,10 +20,12 @@ from forge.builders import PROJECT,build_retryable
 from forge.operations import BusyError,OperationManager
 from forge.persistence import JobStore
 from forge.schemas import ApplicationRequest,Boundary
-from forge.workspace import safe_path
+from forge.workspace import safe_path,source_fingerprint
 from forge.workflow import planning_retryable
 from forge.browser_testing import profile_for,browser_gate
 from forge.autonomous_planning import uses_autonomous_planning,resumable_planning,AppDraft
+from forge.autonomous_review import review_snapshot
+from forge.autonomous_build import build_resumable
 
 
 class NewJob(ApplicationRequest):
@@ -32,13 +34,14 @@ class NewJob(ApplicationRequest):
 
 
 class Action(Boundary):
-    action: Literal['answer','approve','reject','continue','preview_start','preview_stop','preview_status','report','security','retry_plan','retry_build','browser_check','prepare_release','publish_release','deploy_release','release_status','resume_planning']
+    action: Literal['answer','approve','reject','continue','preview_start','preview_stop','preview_status','report','security','retry_plan','retry_build','browser_check','prepare_release','publish_release','deploy_release','release_status','resume_planning','revise_plan','resume_build']
     request_id: str = Field(pattern=r'^[a-f0-9-]{32,36}$')
     expected_sequence: int = Field(ge=1)
     fingerprint: str | None = Field(default=None,pattern=r'^[a-f0-9]{64}$')
     answers: list[str] | None = Field(default=None,min_length=1,max_length=3)
     approved: StrictBool = False
     repository: str | None = Field(default=None,max_length=140)
+    feedback: str | None = Field(default=None,min_length=1,max_length=2000)
 
 
 ALLOWED={
@@ -46,9 +49,10 @@ ALLOWED={
     'browser_check':{'FUNCTIONALLY_VERIFIED','SECURITY_PASSED','PREVIEW_RUNNING','PREVIEW_STOPPED','PREVIEW_FAILED'},
     'retry_build':{'FAILED'},
     'retry_plan':{'FAILED'},
-    'answer':{'AWAITING_CLARIFICATION','AUTONOMOUS_INPUT_NEEDED'},'approve':{'PLAN_REVIEW'},'reject':{'PLAN_REVIEW'},
+    'answer':{'AWAITING_CLARIFICATION','AUTONOMOUS_INPUT_NEEDED'},'approve':{'PLAN_REVIEW','AUTONOMOUS_DRAFT_READY'},'reject':{'PLAN_REVIEW','AUTONOMOUS_DRAFT_READY'},
     'resume_planning':{'AUTONOMOUS_PAUSED'},
-    'continue':{'APPROVED','GENERATED_UNVERIFIED','VERIFICATION_FAILED','FUNCTIONALLY_VERIFIED','SECURITY_BLOCKED','SECURITY_PASSED'},
+    'revise_plan':{'AUTONOMOUS_DRAFT_READY'},'resume_build':{'AUTONOMOUS_BUILD_PAUSED'},
+    'continue':{'APPROVED','GENERATED_UNVERIFIED','VERIFICATION_FAILED','FUNCTIONALLY_VERIFIED','SECURITY_BLOCKED','SECURITY_PASSED','AUTONOMOUS_APPROVED'},
     'preview_start':{'SECURITY_PASSED','PREVIEW_STOPPED','PREVIEW_FAILED'},
     'preview_stop':{'PREVIEW_RUNNING','PREVIEW_STARTING','PREVIEW_FAILED'},
     'preview_status':{'PREVIEW_RUNNING','PREVIEW_STARTING','PREVIEW_STOPPED'},
@@ -112,6 +116,14 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
         job['active_operation']=next(iter(manager.active(job['job_id'])),None)
         job['workflow']='autonomous' if uses_autonomous_planning(job) else 'typed'
         job['planning_resumable']=resumable_planning(job,store)
+        job['build_resumable']=build_resumable(job,store,workspace_boundary=PROJECT/'workspace')
+        if job['workflow']=='autonomous' and job['status']=='AUTONOMOUS_DRAFT_READY':
+            try:job['review_fingerprint']=review_snapshot(job['job_id'],store)['fingerprint']
+            except (ValueError,OSError,KeyError) as exc:job['review_error']=str(exc)
+        if job['status']=='AUTONOMOUS_BUILD_CHECKS_PASSED':
+            passed=next(e['payload'] for e in reversed(job['events']) if e['status']=='AUTONOMOUS_BUILD_CHECKS_PASSED')
+            try:job['build_evidence_current']=(PROJECT/'workspace'/job['job_id']).is_dir() and source_fingerprint(PROJECT/'workspace'/job['job_id'])==passed['source_fingerprint']
+            except (ValueError,OSError):job['build_evidence_current']=False
         job['last_sequence']=job['events'][-1]['sequence'] if job['events'] else 0
         job['generation_retryable']=build_retryable(job)
         job['browser_profile']=profile_for(job)
@@ -202,10 +214,13 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
             if existing[1]!=body.action:raise HTTPException(409,'Request identity already used for another action')
             return {'operation':manager.read(existing[0])}
         if current['status'] not in ALLOWED[body.action]:raise HTTPException(409,'That action is unavailable in the current job state')
-        if uses_autonomous_planning(current) and body.action not in {'answer','resume_planning'}:
-            raise HTTPException(409,'This workflow currently supports planning only; no app execution')
+        autonomous=uses_autonomous_planning(current)
+        if autonomous and body.action not in {'answer','resume_planning','approve','reject','revise_plan','continue','resume_build'}:
+            raise HTTPException(409,'This workflow does not yet support preview or publishing')
         if body.action=='resume_planning' and not resumable_planning(current,store):
             raise HTTPException(409,'Planning needs saved-task inspection before it can resume')
+        if body.action=='resume_build' and not build_resumable(current,store,workspace_boundary=PROJECT/'workspace'):
+            raise HTTPException(409,'Inspect the interrupted build and approval before resuming')
         if body.action=='retry_plan' and not planning_retryable(current):raise HTTPException(409,'Only failed pre-review planning can be retried')
         if body.action=='retry_build' and not build_retryable(current):raise HTTPException(409,'Only an interrupted approved generation can be resumed once')
         if body.action=='browser_check' and not profile_for(current):raise HTTPException(409,'This app has no trusted automated browser profile')
@@ -220,7 +235,18 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
             if body.action!='release_status':
                 if not body.approved:raise HTTPException(422,'Publishing and deployment each need explicit approval')
                 payload['approved']=True
-        if body.action in {'approve','reject'}:
+        if autonomous and body.action in {'approve','reject','revise_plan'}:
+            try:review=review_snapshot(job_id,store)
+            except (ValueError,OSError,KeyError) as exc:raise HTTPException(409,str(exc))
+            if body.fingerprint!=review['fingerprint']:raise HTTPException(409,'Load and review the current proposal before deciding')
+            payload['fingerprint']=body.fingerprint
+            if body.action=='approve':
+                if not body.approved:raise HTTPException(422,'Approve source generation and isolated build checks explicitly')
+                payload['approved']=True
+            if body.action=='revise_plan':
+                if not body.feedback or not body.feedback.strip():raise HTTPException(422,'Describe the requested changes')
+                payload['feedback']=body.feedback.strip()
+        if not autonomous and body.action in {'approve','reject'}:
             review=next(e['payload'] for e in reversed(current['events']) if e['status']=='PLAN_REVIEW')
             if not body.fingerprint or body.fingerprint!=review.get('fingerprint'):
                 raise HTTPException(409,'Review the current requirements and plan before deciding')
@@ -280,8 +306,15 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
         if event['status']=='AUTONOMOUS_DRAFT_READY':
             if hashlib.sha256(raw).hexdigest()!=event['payload'].get('draft_sha256'):
                 raise HTTPException(409,'The saved proposal changed; do not review stale evidence')
-            try:return JSONResponse(AppDraft.model_validate_json(raw).model_dump())
-            except ValueError:raise HTTPException(409,'The saved proposal is no longer valid')
+            try:
+                result=AppDraft.model_validate_json(raw).model_dump()
+                current=record(job_id)
+                latest=next(e for e in reversed(current['events']) if e['status']=='AUTONOMOUS_DRAFT_READY')
+                if current['status']=='AUTONOMOUS_DRAFT_READY' and latest['sequence']==event['sequence']:
+                    review=review_snapshot(job_id,store)
+                    result.update(review_fingerprint=review['fingerprint'],review_scope=review['binding']['scope'])
+                return JSONResponse(result)
+            except (ValueError,OSError,KeyError):raise HTTPException(409,'The saved proposal is no longer valid')
         return JSONResponse(json.loads(raw))
 
     @app.get('/api/jobs/{job_id}/source.zip')

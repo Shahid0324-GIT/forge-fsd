@@ -91,7 +91,7 @@ class OperationManager:
                 time.sleep(.2)
             status='SUCCEEDED' if process.returncode==0 and not reason else 'FAILED'
             if reason:self.cleanup_job(job_id);self.store.event(job_id,'FAILED',{'reason':reason})
-            in_progress={'RECEIVED','REQUIREMENTS','PLANNING','TEST_PLANNING','BUILDING','VERIFYING','REPAIRING','SECURITY_CHECK','PREVIEW_STARTING'}
+            in_progress={'RECEIVED','REQUIREMENTS','PLANNING','TEST_PLANNING','BUILDING','VERIFYING','REPAIRING','SECURITY_CHECK','PREVIEW_STARTING','AUTONOMOUS_BUILDING','AUTONOMOUS_REPLANNING'}
             if status=='FAILED' and self.read(operation_id)['status']=='RUNNING' and self.store.read(job_id)['status'] in in_progress:
                 try:self.cleanup_job(job_id)
                 except Exception:pass
@@ -159,7 +159,7 @@ class OperationManager:
                 warning=cancelled['events'][-1]['payload'].get('cleanup_warning')
                 if warning:raise BusyError('Work stopped, but cleanup needs attention before deleting: '+warning)
             else:self.cleanup_job(job_id)
-            running={'RECEIVED','REQUIREMENTS','REQUIREMENTS_READY','CLARIFICATION_ANSWERED','PLANNING','BUILDING','VERIFYING','REPAIRING','SECURITY_CHECK'}
+            running={'RECEIVED','REQUIREMENTS','REQUIREMENTS_READY','CLARIFICATION_ANSWERED','PLANNING','BUILDING','VERIFYING','REPAIRING','SECURITY_CHECK','AUTONOMOUS_BUILDING','AUTONOMOUS_REPLANNING'}
             preview_stopped=original in {'PREVIEW_RUNNING','PREVIEW_STARTING'} or any(op['action'].startswith('preview_') for op in active)
             restored='PREVIEW_STOPPED' if preview_stopped else 'INTERRUPTED' if active or original in running else original
             self.store.event(job_id,'RUN_DELETED',{'actor':'local_dashboard','recoverable':True},update_status=False)

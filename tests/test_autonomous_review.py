@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from forge import autonomous_planning as planning
-from forge.autonomous_review import approved_review,decide_plan,review_snapshot
+from forge.autonomous_review import approved_review,decide_plan,review_snapshot,request_changes
 from forge.persistence import JobStore
 from forge.tasks import TaskLedger
 from test_autonomous_planning import Agent,draft
@@ -66,3 +66,25 @@ def test_cancelled_job_and_changed_approved_source_cannot_reuse_approval(proposa
     with pytest.raises(ValueError):approved_review(job,store)
     store.event(job,'CANCELLED',{})
     with pytest.raises(ValueError,match='not authorized'):approved_review(job,store)
+
+
+def test_requested_changes_recheck_scope_preserve_history_and_require_new_approval(proposal):
+    store,job,agent=proposal;old=review_snapshot(job,store);saved=Path(old['report']).read_bytes()
+    old_checks=TaskLedger(store,job).read(old['binding']['task_id']).observations[-1].checks[0].report
+    checks_before=Path(old_checks).read_bytes()
+    agent.proposal=draft().model_copy(update={'design':'The updated design includes a reset button.'})
+    result=request_changes(job,agent,store,old['fingerprint'],'Add a Reset button.',actor='test_operator')
+    new=review_snapshot(job,store)
+    assert result['job_id']==job and result['status']=='AUTONOMOUS_DRAFT_READY'
+    assert new['fingerprint']!=old['fingerprint'] and new['binding']['inputs']['original_request']==old['binding']['inputs']['original_request']
+    assert agent.calls[-1][1]['human_review_feedback']==['Add a Reset button.']
+    assert Path(old['report']).read_bytes()==saved and Path(old_checks).read_bytes()==checks_before
+    with pytest.raises(ValueError):decide_plan(job,store,old['fingerprint'],approved=True,actor='test_operator')
+    assert not any(e['status']=='AUTONOMOUS_APPROVED' for e in result['events'])
+
+
+def test_new_scope_in_review_feedback_returns_to_intake_before_planning(proposal):
+    store,job,agent=proposal;review=review_snapshot(job,store);agent.blocked=True
+    result=request_changes(job,agent,store,review['fingerprint'],'Add payment integration.',actor='test_operator')
+    assert result['status']=='AUTONOMOUS_INPUT_NEEDED'
+    assert agent.calls[-1][1]['human_review_feedback']==['Add payment integration.']

@@ -469,3 +469,26 @@ Verification:
 This checkpoint does not yet expose dashboard approval/build controls. App-specific
 behavior tests, normal preview integration and safe technical design amendments remain
 separate work; the live result proves build recovery, not that the counter works.
+
+## Increment 8c: managed review, feedback and build routing
+
+The managed API now accepts explicit consent plus the fingerprint from the loaded
+proposal before dispatching autonomous generation. Approval, decline, request-changes,
+continue-after-approval and saved-build resume remain separate actions. Preview and
+publishing still cannot enter the autonomous workflow through legacy release actions.
+
+Review feedback returns through requirements intake in the same job. Original inputs,
+answers and feedback are retained; out-of-scope changes can ask a blocking question
+before replanning. New snapshots/check reports have unique task/revision names so
+earlier review evidence is not overwritten. Historical proposals cannot supply the
+current decision token. Approval authorizes isolated development checks without
+repeated permission for ordinary repairs; only build checks currently execute.
+
+Workspace runtime files must still match the approved scaffold, including on resume.
+The API marks build evidence stale if current source differs. Unexpected worker exits
+and deletion/restoration recognize autonomous building/replanning states.
+
+Verification: **325 Python tests passed**, exit 0; 13 upstream LangSmith warnings.
+Tests include consent rejection, stale loaded proposals, decline without generation,
+same-job feedback, changed runtime configuration and current-source evidence flags.
+Dashboard controls are a separate following checkpoint.
