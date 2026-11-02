@@ -492,3 +492,31 @@ Verification: **325 Python tests passed**, exit 0; 13 upstream LangSmith warning
 Tests include consent rejection, stale loaded proposals, decline without generation,
 same-job feedback, changed runtime configuration and current-source evidence flags.
 Dashboard controls are a separate following checkpoint.
+
+## Increment 8d: dashboard decisions and saved execution
+
+The experimental autonomous app workflow now exposes proposal consent, Approve & build,
+decline and review feedback in the proposal viewer. Decisions carry the fingerprint of
+the loaded report. Revised proposals reset the checkbox; stale reports cannot authorize
+the current proposal. Accepted approval/feedback returns to the live workspace. Build
+roles, tool activity, saved resume controls and source export are visible there. A build
+pass explicitly leaves app behavior unverified; changed source is marked stale.
+
+An isolated browser-operated counter evaluation verified same-job feedback adding a
+Reset button, no generation before approval, stale-report rejection, fresh consent and
+managed generation. Its first eight build-repair dispatches paused on a missing Next.js
+client boundary after fixing a layout import. The dashboard was restarted against the
+same test database, and Resume saved build retained source and approval. This is an
+internal operator test, not a claim of actual user approval or application correctness.
+Evidence: `artifacts/approval-ui-smoke/d140ba5bf33047a8827aa6da5fde8887`.
+
+The failure also exposed imprecise framework instructions: the model alternated between
+a missing directive and bare, invalid `use client`. Generation/repair instructions now
+give the quoted source statement explicitly, without changing generated source by hand.
+Senior-review context also retains human clarifications and feedback. These are general
+framework/context corrections, not a counter implementation patch.
+
+Verification: **326 Python tests passed**, exit 0, with 13 upstream LangSmith warnings;
+dashboard TypeScript and Vite production build passed, exit 0. Live build recovery is
+recorded separately from these controller checks; independent app behavior, preview and
+release integration remain pending.

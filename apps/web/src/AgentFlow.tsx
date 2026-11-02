@@ -4,6 +4,7 @@ type Props={workflow?:'typed'|'autonomous';events:WorkflowEvent[];busy:boolean;s
 const roles:Record<string,string>={IntakeDecision:'Intake',BusinessBrief:'Requirements',ApiDesign:'API architect',ApiProposal:'API architect',LayoutDesign:'Implementation architect',AcceptanceDesign:'Acceptance planner',api_architect:'API architect',implementation_architect:'Implementation architect',FileOperation:'Builder',RequirementsDocument:'Requirements',AppBrief:'Requirements',AppRequirements:'Requirements',AppImplementationPlan:'Architect',ImplementationPlan:'Architect',NativeAcceptancePlan:'Acceptance planner',ArchitectureReview:'Architecture reviewer',AcceptanceReview:'Acceptance reviewer',AppAcceptancePlan:'QA',architecture_reviewer:'Architecture reviewer',acceptance_reviewer:'Acceptance reviewer',requirements_agent:'Requirements',architect_agent:'Architect',qa:'Test planning & repair',backend_builder:'Backend',frontend_builder:'Frontend',implementation_coordinator:'Build coordinator',verification:'Test runner',ci_agent:'App CI',deployment_agent:'Deployment'};
 const name=(value:string)=>(value==='LayoutProposal'?'Implementation architect':roles[value])??value?.replaceAll('_',' ')??'Agent';
 Object.assign(roles,{AppDraft:'Planner',RecoveryDecision:'Senior reviewer',requirements:'Requirements',planner:'Planner',senior_reviewer:'Senior reviewer'});
+Object.assign(roles,{SourceEdit:'Source builder',RepairFocus:'QA diagnosis',builder:'Builder',frontend:'Frontend',backend:'Backend'});
 export function conciseIssue(message:string):string{
   if(message.includes('Failed to parse')){
     const role=message.includes('AcceptancePlan')?'QA':message.includes('AppBrief')?'Requirements':'Planning';
@@ -16,6 +17,14 @@ const summaries:Record<string,[string,string]>={
   AUTONOMOUS_DRAFT_READY:['Design proposal saved','Review the agent-authored design. No app has been built yet.'],
   AUTONOMOUS_INPUT_NEEDED:['Requirements intake','A blocking business question needs your answer.'],
   AUTONOMOUS_PAUSED:['Planning paused','The saved task can be inspected before continuing.'],
+  AUTONOMOUS_REPLANNING:['Review feedback','Requirements intake is checking the requested changes before a new proposal.'],
+  AUTONOMOUS_APPROVED:['Plan approved','Source generation is authorized; preview and publishing are separate decisions.'],
+  AUTONOMOUS_REJECTED:['Plan declined','Source generation was not authorized.'],
+  AUTONOMOUS_BUILDING:['Implementation','Generating the reviewed source and using actual checks for repairs.'],
+  AUTONOMOUS_BUILD_PAUSED:['Build paused','Source, approval and task history are retained for inspection/resume.'],
+  AUTONOMOUS_BUILD_CHECKS_PASSED:['Build checks passed','TypeScript and production build passed. Application behavior remains unverified.'],
+  TOOL_CALL_STARTED:['Workspace tool','Executing a scoped tool operation.'],
+  TOOL_CALL_COMPLETED:['Workspace tool','A tool returned evidence; inspect its scope before claiming success.'],
   TASK_ACTION_STARTED:['Task dispatch','An agent is working on its assigned task.'],
   TASK_RECOVERY_PLANNED:['Senior review','A recovery strategy was saved for the next attempt.'],
   TASK_PAUSED:['Task paused','Task history and observations are retained.'],
@@ -38,6 +47,7 @@ const summaries:Record<string,[string,string]>={
 
 function describe(event:WorkflowEvent):[string,string]{
   const p=event.payload;
+  if(event.status==='TOOL_CALL_STARTED'||event.status==='TOOL_CALL_COMPLETED')return [p.tool==='check_build'?'Isolated build checks':String(p.tool??'Workspace tool').replaceAll('_',' '),String(p.summary??'A scoped tool call was recorded.')];
   if(event.status==='TASK_ACTION_STARTED')return [name(p.task_state?.inflight_role??p.owner),String(p.summary??'Task dispatched.')];
   if(event.status==='PLANNING_QUALITY_REVIEW')return [name(p.reviewer),p.issues?.length?p.issues.join(' '):p.summary];
   if(event.status==='AGENT_HANDOFF')return [`${name(p.sender)} → ${name(p.recipient)}`,String(p.summary??'Saved context supplied to the next role.')];
@@ -52,17 +62,18 @@ function describe(event:WorkflowEvent):[string,string]{
 
 export default function AgentFlow({workflow,events,busy,status,onContext}:Props){
   const autonomous=workflow==='autonomous';
-  const routes=autonomous?[['Requirements',['requirements']],['Planner',['planner']],['Senior review',['senior_reviewer']]] as const:steps;
+  const routes=autonomous?[['Requirements',['requirements']],['Planner',['planner']],['Implementation',['builder','frontend','backend','qa']],['Senior review',['senior_reviewer']],['Build checks',['verification']]] as const:steps;
+  const routeRole=(event:WorkflowEvent)=>event.status==='TOOL_CALL_STARTED'&&event.payload.tool==='check_build'?'verification':event.status==='TASK_ACTION_STARTED'?event.payload.task_state?.inflight_role:event.status==='AGENT_HANDOFF'?event.payload.recipient:'';
   const visible=events.filter(e=>e.status in summaries||['PLANNING_QUALITY_REVIEW','AGENT_HANDOFF','AGENT_CALL_STARTED','AGENT_CALL_COMPLETED','AGENT_CALL_FAILED','AGENT_VALIDATION_FAILED','FAILED','VERIFICATION_FAILED','SECURITY_BLOCKED','INTERRUPTED','CANCELLED'].includes(e.status));
   const recent=visible.slice(-8).reverse();
-  const active=autonomous?events.filter(e=>e.status==='TASK_ACTION_STARTED').at(-1):events.filter(e=>steps.some(([,statuses])=>(statuses as readonly string[]).includes(e.status))).at(-1);
+  const active=autonomous?events.filter(e=>e.status==='TASK_ACTION_STARTED'||e.status==='TOOL_CALL_STARTED'&&e.payload.tool==='check_build').at(-1):events.filter(e=>steps.some(([,statuses])=>(statuses as readonly string[]).includes(e.status))).at(-1);
   const failed=['FAILED','VERIFICATION_FAILED','SECURITY_BLOCKED','INTERRUPTED'].includes(status);
   return <section className="panel agent-flow" aria-labelledby="agent-flow-title">
     <div className="panel-title"><div><span className="eyebrow">YOUR TEAM IN ACTION</span><h2 id="agent-flow-title">Follow the work as it happens.</h2></div><span className={`flow-state ${busy?'is-live':''}`} role="status"><span/>{busy?'Working':failed?'Needs attention':status==='PLAN_REVIEW'?'Awaiting your review':'Saved progress'}</span></div>
     <p className="flow-intro">Live actions, decisions and saved handoffs from your agent team.</p>
     <ol className="agent-route" aria-label="Agent workflow">{routes.map(([label,statuses])=>{
-      const visited=events.some(e=>(statuses as readonly string[]).includes(autonomous?(e.status==='TASK_ACTION_STARTED'?e.payload.task_state?.inflight_role:e.status==='AGENT_HANDOFF'?e.payload.recipient:''):e.status));
-      const current=active&&(statuses as readonly string[]).includes(autonomous?active.payload.task_state?.inflight_role:active.status);
+      const visited=events.some(e=>(statuses as readonly string[]).includes(autonomous?routeRole(e):e.status));
+      const current=active&&(statuses as readonly string[]).includes(autonomous?routeRole(active):active.status);
       return <li key={label} className={current?(busy?'route-active':failed?'route-attention':'route-current'):visited?'route-visited':''}><span/>{label}{current&&<small>{busy?'Active':failed?'Paused':'Latest'}</small>}</li>;
     })}</ol>
     <div className="flow-updates" role="log" aria-label="Recent agent activity" aria-live="polite" aria-relevant="additions text">

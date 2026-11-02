@@ -25,7 +25,7 @@ Activity displays expose recorded handoffs, tool calls, source changes, model in
 
 **Existing dashboard workflow:** uses the earlier typed-planning pipeline, with human plan approval, generation, verification, bounded repairs and separate preview/release controls. It has known planning/model limitations. It does not yet use the newer autonomous coordinator by default.
 
-**New autonomous path:** has agent-authored planning through the dashboard's **Autonomous planner · proposal only** option and experimental CLI commands, a durable task/recovery loop and model-driven source tools. The dashboard supports proposal inspection, clarification and safe resource-pause resume in the same job. Controlled evaluations exercise source repair and independent browser checks. App approval and complete generation for this path are still being connected.
+**New autonomous path:** choose **Autonomous app workflow · experimental** in the dashboard. Agents clarify the request and propose their design. You can approve, decline or request changes; approval then starts delegated source generation, repair and isolated build checks. Saved resource pauses resume in the same job. Independent app-specific behavior checks, preview and release integration remain pending for this path. Controlled repair evaluations already exercise independent browser checks.
 
 The intended flow is:
 
@@ -39,7 +39,7 @@ This diagram describes the target integration; the two paths above describe what
 
 ## Verified checkpoints
 
-Latest local controller suite: **305 Python tests passed**. These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy.
+Latest local controller suite: **326 Python tests passed**. These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy. Dashboard TypeScript and production build also pass.
 
 Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker builds and Chromium:
 
@@ -48,6 +48,7 @@ Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker b
 | Previously failing calculator fixture | Model repairs reached passing TypeScript and production build. Its application behavior remains unverified. |
 | Counter repair fixture | Initial component-contract failure; model repairs reached passing build and 2/2 browser assertions, including repeated increments by one. |
 | Formatter repair fixture | Initial build passed but both browser assertions failed on lowercase output; one model repair reached passing build and 2/2 assertions. |
+| Fresh counter planning and generation | Internal evaluation approved an agent-authored proposal; model-generated source reached passing TypeScript and production builds in 14 model calls. Behavior was not tested. |
 
 The counter and formatter start from **deliberately faulty, controller-authored test fixtures**. They evaluate repair, not autonomous generation from a fresh request. Their frozen browser assertions run in a separate container and cannot be edited by the builder. All source corrections after fixture setup came from model tool calls.
 
@@ -107,7 +108,9 @@ After setup, double-click **Start-ForgeFSD.cmd**, or run:
 
 Open [http://127.0.0.1:8787](http://127.0.0.1:8787). Describe a small app, inspect the proposed requirements and acceptance checks, then approve the plan before generation. Preview and publishing/deployment have separate approvals.
 
-The **Planning workflow** selector defaults to **Existing app workflow**. Choose **Autonomous planner · proposal only** to try the new coordinator, inspect its design and handoffs, answer blocking questions or resume a safe saved pause. This option currently stops before approval and app generation. Proposal validation does not establish correct architecture or working source.
+The **Planning workflow** selector defaults to **Existing app workflow**. Choose **Autonomous app workflow · experimental**, open **Review design proposal**, and inspect the design before checking consent and choosing **Approve & build**. **Request changes** returns feedback through requirements intake and creates a new review snapshot; earlier consent cannot authorize a revised proposal. **Decline plan** stops before generation.
+
+Routine source repairs run without repeated approval. **Resume saved build** grants eight additional dispatches while retaining completed source and the original approval; interrupted in-flight work still needs inspection. A **Build checks passed** result covers TypeScript and the production build only. It does not establish correct app behavior or readiness for preview/deployment. Changed source is shown as stale evidence.
 
 Run one dashboard process and avoid concurrent CLI/evaluation operations. Closing a tab does not cancel its managed operation; use the dashboard controls to stop work or close the workspace. Interrupted dispatches need inspection and cannot be blindly replayed through the resume button.
 
@@ -161,8 +164,8 @@ The earlier pipeline includes limited static, dependency, secret-pattern and pro
 
 ## Remaining work
 
-1. Connect human approval and source generation to the dashboard's autonomous planning option, including safe design revision when execution reveals a problem.
-2. Verify a fresh request-to-app generation run with independent behavior checks and no manual source corrections.
+1. Add independent app-specific behavior checks to approved autonomous generation, then verify a fresh request-to-app run without manual source corrections.
+2. Support safe technical design revision when execution reveals a manifest problem, retaining human review for changes to the requested scope.
 3. Broaden repair and behavior coverage, including SQLite integrity and persistence after restart through the updated path.
 4. Integrate/revalidate generated-app CI and publishing against that path; database-backed cloud deployment remains separate work.
 5. Prepare a repeatable assignment walkthrough. Larger UI redesigns, new packages, complex apps and additional deployment targets are deferred.
@@ -174,6 +177,7 @@ Current scope is small landing pages, stateless SPAs and supported single-user S
 | Location | Purpose |
 | --- | --- |
 | `src/forge/autonomous_planning.py` | Intake and agent-authored design proposals |
+| `src/forge/autonomous_review.py`, `autonomous_build.py` | Immutable plan decisions, approved generation and saved build recovery |
 | `src/forge/tasks.py`, `coordinator.py`, `senior_review.py` | Durable delegation, revisions, recovery and review |
 | `src/forge/source_agent.py`, `workspace_tools.py` | Model-proposed source edits and scoped tools |
 | `src/forge/source_checks.py`, `repair_fixture_browser.py` | Isolated build checks and controlled browser evaluations |
