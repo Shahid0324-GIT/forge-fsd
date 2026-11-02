@@ -3,7 +3,7 @@ import json
 import pytest
 
 from forge.source_agent import SourceAgent,build_evidence,diagnostic_context,REPAIR_INSTRUCTION
-from forge.tasks import CheckEvidence,Observation,TaskConflict
+from forge.tasks import CheckEvidence,Observation,TaskConflict,RecoveryPlan
 from forge.workspace import source_fingerprint
 from forge.workspace_tools import file_hash
 from test_workspace_tools import tools
@@ -131,6 +131,26 @@ def test_framework_findings_reach_diagnosis_with_actual_source_location():
     failure={'checks':[{'summary':"app/page.tsx(1,1): INVALID_MODULE_DIRECTIVE: Quote the directive"}]}
     location=diagnostic_context(failure,source)[0]
     assert location['code']=='INVALID_MODULE_DIRECTIVE' and location['line_text']=='use client;'
+
+
+@pytest.mark.parametrize('fresh',[False,True])
+def test_only_review_for_current_observations_reaches_qa_and_builder(tools,fresh):
+    state=configured(tools,'repair_build')
+    plan=RecoveryPlan(diagnosis='Current failure',strategy='Correct the current source expression',action='retry',owner='frontend')
+    state=tools.ledger.recover(state,plan,{'frontend'})
+    if not fresh:
+        state=tools.ledger.observe(state,Observation(revision=state.revision,
+            fingerprint=source_fingerprint(tools.root),error='Another unsuccessful attempt'))
+    state=tools.ledger.reserve_action(state,'frontend');seen=[]
+    class ReviewingBuilder(Agent):
+        def generate(self,schema,instruction,data,**kwargs):
+            seen.append(data.get('fresh_review'))
+            return super().generate(schema,instruction,data,**kwargs)
+    def check(root,*_):return {'passed':True,'report':'check.json','source_fingerprint':source_fingerprint(root),
+        'coverage':{'application_behavior':'NOT_TESTED'},'checks':{'results':[]}}
+    SourceAgent(tools.ledger,ReviewingBuilder('export default function Page(){return null}'),tools.root,tools.draft,
+        workspace_boundary=tools.root.parent,check_runner=check)(state)
+    assert len(seen)==2 and all(bool(value)==fresh for value in seen)
 
 
 def test_builder_can_correct_another_owned_module_when_qa_target_is_wrong(tools):

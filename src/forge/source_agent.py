@@ -72,6 +72,8 @@ hypothesis from another model: independently verify it and correct it if wrong.
 You may select ANY allowed target owned by your role, even if QA selected another file.
 Choose the file that actually owns the correction. Never repeat a no-op in the wrong
 module merely to follow QA's recommendation.
+fresh_review, when present, was requested for this exact source/evidence snapshot.
+Consider its strategy alongside the compiler and source; it is advisory, not proof.
 Read the selected file and other files' actual exports and props before editing.
 Resolve relative imports from the directory of the importing file, not the app root.
 Next.js supplies app/layout.tsx automatically; pages must not invent a layout import.
@@ -170,6 +172,9 @@ class SourceAgent:
                 data['edit_guidance']='The preceding local patch failed. Return one complete corrected file with write_file instead of repeating a patch.'
             for key in ('recent_failures','recovery_strategy','previous_build'):
                 data.pop(key,None)
+            if state.recovery and state.reviewed_observations==len(state.observations):
+                data['fresh_review']={'source_fingerprint':fingerprint,'strategy':state.recovery.model_dump(),
+                    'scope':'Advisory strategy for this observation set only; verify it against current source and checks.'}
             focus=self._focus(state,data,targets)
             data['repair_focus']=focus.model_dump()
             # Repair is a source/debugging task, not another architecture proposal.
