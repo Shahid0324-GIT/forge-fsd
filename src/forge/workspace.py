@@ -18,6 +18,11 @@ class FileOperation(Boundary):
     content: str = Field(min_length=1, max_length=24000)
 
 
+def is_test_source(relative):
+    path=PurePosixPath(relative)
+    return any(part in {'tests','__tests__'} for part in path.parts) or bool(re.search(r'\.(?:test|spec)\.[cm]?[jt]sx?$',path.name))
+
+
 def safe_path(root: Path, relative: str):
     parts = relative.split("/")
     if "\\" in relative or ":" in relative or PurePosixPath(relative).is_absolute() or any(p in {"", ".", ".."} for p in parts):

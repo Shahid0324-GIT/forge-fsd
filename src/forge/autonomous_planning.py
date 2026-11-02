@@ -13,7 +13,7 @@ from forge.senior_review import SeniorReviewer
 from forge.contracts import IntakeDecision
 from forge.planning import INTAKE_INSTRUCTION,HELP_RESPONSES
 from forge.tasks import CheckEvidence,Dependency,Envelope,Task,TaskLedger
-from forge.workspace import safe_path
+from forge.workspace import safe_path,is_test_source
 
 
 class DraftFile(Envelope):
@@ -68,7 +68,7 @@ def manifest_issues(draft,root):
             issues.append(f'{file.path}: unsupported or protected source path')
         if file.path.casefold() in seen:issues.append(f'{file.path}: duplicate file or conflicting ownership')
         seen.add(file.path.casefold())
-        if path.parts[0]=='tests' and file.owner!='qa':issues.append(f'{file.path}: independent test files belong to QA')
+        if is_test_source(file.path) and file.owner!='qa':issues.append(f'{file.path}: independent test files belong to QA')
     if 'app/page.tsx' not in {f.path for f in draft.files}:
         issues.append('The Next.js runtime needs the home entry app/page.tsx; no business layout or API is prescribed.')
     return issues

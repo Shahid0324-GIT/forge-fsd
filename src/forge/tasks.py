@@ -110,6 +110,13 @@ class TaskLedger:
     def list(self):
         with self.store.connect() as db:return list(self._states(db).values())
 
+    def assert_active(self,state,db=None):
+        current=self._states(db)[state.task.id] if db is not None else self.read(state.task.id)
+        if (current.version!=state.version or current.revision!=state.revision
+            or current.status!='running' or current.task.owner!=state.task.owner):
+            raise TaskConflict('Tool request belongs to a stale or inactive task')
+        return current
+
     def _save(self,db,state,event,summary):
         db.execute('INSERT INTO events(job_id,timestamp,status,payload) VALUES (?,?,?,?)',
             (self.job_id,now(),event,json.dumps({'task_id':state.task.id,'parent_task_id':state.task.parent_id,

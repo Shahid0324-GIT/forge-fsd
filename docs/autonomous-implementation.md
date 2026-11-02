@@ -132,3 +132,39 @@ small SPA through generate -> inspect -> repair -> retest. QA must use the origi
 requirements and available tooling, not just accept a draft's testing claims. Then
 connect the verified path to the existing dashboard controls. Keep UI redesign,
 Tailwind/new dependencies, complex apps and additional deployment targets deferred.
+
+## Increment 4: scoped workspace tools and real isolated build checks
+
+`workspace_tools.py` exposes typed `list_files`, `read_file`, `write_file` and
+`check_build` requests. The controller binds a workspace, app-authored manifest and
+active task; the model cannot supply another root, owner or shell command. Reads and
+edits are recorded as actual tool spans. Writes require the latest file hash, enforce
+task/QA ownership, protect runtime/package configuration and preserve the previous
+source before mutation. Stale task revisions cannot perform tool operations.
+
+The capability description reports declared app dependencies and the checks actually
+implemented. It does not claim Jest, browser interaction or persistence coverage.
+Pure client helpers under `lib` remain permitted; the tool does not impose the old
+assumption that every `lib` module is server-only. Nested test paths require QA ownership.
+
+`source_checks.py` and a controller-owned Node runner perform TypeScript and production
+build checks without requiring task-manager routes, an API or a database. Execution
+uses the existing dependency image by immutable ID, readonly source, no network,
+non-root/resource limits and only the specific build harness mount. Source/image
+lockfiles, final source and harness fingerprints are checked; missing evidence or
+cleanup failures cannot pass. Containers use the existing verification cleanup labels.
+This tool does not mark application behavior, browser checks or readiness as passed.
+
+Verification:
+
+- Full suite: **258 passed**, exit 0; 13 upstream LangSmith deprecation warnings.
+- `.venv\Scripts\python.exe scripts/evaluate_workspace_tools.py`: exit 0.
+- Actual Docker service: 29.8.2; existing image
+  `sha256:50af5949229f75b3b1165845a38fb8a5206157845112e632a8940e8da1e6232d`.
+- Evidence: `artifacts/tool-evaluation/01928df02fec4440808091f906a1d5eb`.
+  A deliberately invalid static fixture failed TypeScript; its corrected version
+  passed TypeScript and production build. Both containers and the disposable fixture
+  were cleaned up. There were no model calls or downloads in this tool verification.
+
+This is a verified tool increment, not an autonomous repair or generated-app success
+claim. Model-driven file generation and independent behavior checks remain next.
