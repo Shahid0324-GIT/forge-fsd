@@ -1,0 +1,151 @@
+import hashlib
+import json
+
+import pytest
+
+from forge.coordinator import TaskCoordinator
+from forge.persistence import JobStore
+from forge.senior_review import SeniorReviewer
+from forge.tasks import CheckEvidence,Observation,RecoveryPlan,Task,TaskLedger
+
+
+FP='a'*64
+
+
+@pytest.fixture
+def ledger(tmp_path):
+    store=JobStore(tmp_path/'jobs.sqlite3')
+    return TaskLedger(store,store.create({'description':'Build a small app'}))
+
+
+def evidence(passed=True,fp=FP):
+    return [CheckEvidence(check='functional',exit_code=0 if passed else 1,fingerprint=fp,
+                          report='functional.json',summary='Actual check observation')]
+
+
+def retry(_failed,_child):
+    return RecoveryPlan(diagnosis='The current approach did not resolve the failure',
+        strategy='Inspect the interface and use the actual check output to correct it',action='retry',owner='builder')
+
+
+def create(ledger,limit=12):
+    return ledger.create(Task(owner='builder',goal='Implement requested behavior',required_checks=['functional']),action_limit=limit)
+
+
+def test_recovery_continues_beyond_old_two_attempt_cap_and_reviews_stalls(ledger):
+    attempts=[];reviews=[]
+    def worker(state):
+        attempts.append(state)
+        return evidence(passed=len(attempts)==5)
+    def reviewer(failed,child):
+        reviews.append((failed,child));return retry(failed,child)
+    task=create(ledger)
+    result=TaskCoordinator(ledger,{'builder':worker},reviewer,lambda:FP).run(task.task.id)
+    assert result.status=='completed' and len(attempts)==5
+    assert len(reviews)==3 and result.actions_used==8
+    assert all(child.task.parent_id==task.task.id for _,child in reviews)
+    assert all(child.task.owner=='senior_reviewer' for _,child in reviews)
+    assert all(t.status=='completed' for t in ledger.list())
+    assert ledger.store.read(ledger.job_id)['status']=='RECEIVED'
+
+
+def test_reviewer_reassigns_design_problem_to_planner(ledger):
+    seen=[]
+    def builder(state):seen.append(state.task.owner);return evidence(False)
+    def planner(state):
+        seen.append(state.task.owner)
+        assert state.recovery.strategy=='Reconcile the shared response contract'
+        return evidence()
+    def reviewer(failed,child):
+        return RecoveryPlan(diagnosis='Builder cannot change an upstream interface',
+            strategy='Reconcile the shared response contract',action='reassign',owner='planner')
+    task=create(ledger)
+    result=TaskCoordinator(ledger,{'builder':builder,'planner':planner},reviewer,lambda:FP).run(task.task.id)
+    assert seen==['builder','builder','planner'] and result.status=='completed'
+
+
+def test_exhaustion_pauses_and_explicit_resume_keeps_attempt_history(ledger):
+    task=create(ledger,limit=3)
+    engine=TaskCoordinator(ledger,{'builder':lambda _:evidence(False)},retry,lambda:FP)
+    paused=engine.run(task.task.id)
+    assert paused.status=='paused' and paused.actions_used==3 and paused.recovery
+    assert len(paused.observations)==2
+    resumed=ledger.resume(paused,additional_actions=1)
+    complete=TaskCoordinator(ledger,{'builder':lambda _:evidence()},retry,lambda:FP).run(resumed.task.id)
+    assert complete.status=='completed' and len(complete.observations)==3
+
+
+def test_invalid_reviewer_output_retries_then_pauses_without_weakening_checks(ledger):
+    def invalid(*_):return {'passed':True,'required_checks':[]}
+    task=create(ledger,limit=5)
+    result=TaskCoordinator(ledger,{'builder':lambda _:evidence(False)},invalid,lambda:FP).run(task.task.id)
+    assert result.status=='paused' and result.actions_used==5
+    assert result.task.required_checks==['functional'] and result.review_error
+    assert len(ledger.list())==4  # parent plus three actual review tasks
+    assert all(t.status=='paused' for t in ledger.list())
+
+
+def test_interrupted_action_is_not_dispatched_again(ledger):
+    task=ledger.reserve_action(ledger.start(create(ledger)),'builder');calls=[]
+    result=TaskCoordinator(ledger,{'builder':lambda _:calls.append(1)},retry,lambda:FP).run(task.task.id)
+    assert not calls and result.status=='paused' and result.inflight_role=='builder'
+
+
+def test_changed_artifacts_require_fresh_checks_even_after_completion(ledger):
+    fingerprint=[FP];calls=[]
+    def worker(_):calls.append(1);return evidence(fp=fingerprint[0])
+    task=create(ledger)
+    engine=TaskCoordinator(ledger,{'builder':worker},retry,lambda:fingerprint[0])
+    first=engine.run(task.task.id)
+    fingerprint[0]='b'*64
+    second=engine.run(task.task.id)
+    assert second.status=='completed' and second.revision==first.revision+1 and len(calls)==2
+    assert second.observations[-1].fingerprint==fingerprint[0]
+
+
+def test_stale_worker_check_does_not_mark_task_complete(ledger):
+    task=create(ledger,limit=2)
+    result=TaskCoordinator(ledger,{'builder':lambda _:evidence(fp='b'*64)},retry,lambda:FP).run(task.task.id)
+    assert result.status=='paused'
+    assert all('Rejected worker evidence' in item.error for item in result.observations)
+
+
+def test_reviewer_requests_concrete_input_without_erasing_failed_work(ledger):
+    def missing(*_):return RecoveryPlan(diagnosis='Required service credentials are unavailable',
+        strategy='Wait for the approved service configuration',action='request_input',owner='builder',
+        question='Which supported deployment target should this app use?')
+    task=ledger.create(Task(owner='builder',goal='Resolve the missing approved service configuration',
+        required_checks=['functional'],allow_review_questions=True))
+    result=TaskCoordinator(ledger,{'builder':lambda _:evidence(False)},missing,lambda:FP).run(task.task.id)
+    assert result.status=='paused' and result.pause_reason.endswith('?')
+    assert len(result.observations)==2
+
+
+def test_senior_model_handoff_uses_real_child_identity_and_restores_context(ledger):
+    task=ledger.start(create(ledger))
+    task=ledger.observe(task,Observation(revision=1,fingerprint=FP,checks=evidence(False)))
+    child=ledger.create(Task(parent_id=task.task.id,owner='senior_reviewer',goal='Diagnose this failure',required_checks=['proposal']))
+    class Agent:
+        invocation_context={'actor':'coordinator','task_id':task.task.id}
+        activity=None
+        def generate(self,schema,instruction,data,**_):
+            assert data['original_goal']==task.task.goal
+            assert data['recent_observations'][0]['checks'][0]['exit_code']==1
+            assert self.invocation_context['task_id']==child.task.id
+            assert self.invocation_context['parent_task_id']==task.task.id
+            return schema.model_validate(retry(None,None).model_dump())
+    agent=Agent();previous=agent.invocation_context.copy()
+    assert SeniorReviewer(agent,ledger,{'builder'})(task,child).action=='retry'
+    assert agent.invocation_context==previous and agent.activity is None
+    handoff=ledger.store.read(ledger.job_id)['events'][-1]['payload']
+    assert handoff['task_id']==child.task.id and handoff['parent_task_id']==task.task.id
+
+
+def test_review_report_fingerprint_matches_persisted_bytes(ledger):
+    task=create(ledger,limit=3)
+    TaskCoordinator(ledger,{'builder':lambda _:evidence(False)},retry,lambda:FP).run(task.task.id)
+    child=next(t for t in ledger.list() if t.task.parent_id==task.task.id)
+    check=child.observations[-1].checks[0]
+    from pathlib import Path
+    assert hashlib.sha256(Path(check.report).read_bytes()).hexdigest()==check.fingerprint
+    assert json.loads(Path(check.report).read_text())['scope'].startswith('Recovery proposal validation only')

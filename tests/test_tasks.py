@@ -123,5 +123,7 @@ def test_review_can_reassign_but_cannot_claim_success_or_remove_checks(ledger):
     assert state.task.owner=='planner' and state.status=='running'
     assert state.task.required_checks==['build','functional']
     with pytest.raises(ValidationError):RecoveryPlan.model_validate({**plan.model_dump(),'passed':True})
+    with pytest.raises(ValidationError,match='Questions require request_input'):
+        RecoveryPlan.model_validate({**plan.model_dump(),'question':'Choose an internal type name?'})
     with pytest.raises(ValueError,match='unavailable role'):
         ledger.recover(state,plan.model_copy(update={'owner':'unrestricted_shell'}),{'builder','planner'})

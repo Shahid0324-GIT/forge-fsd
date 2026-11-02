@@ -4,7 +4,7 @@ import json
 from uuid import uuid4
 
 
-def record_handoff(store, job_id, sender, recipient, summary, context, *, agents=None):
+def record_handoff(store, job_id, sender, recipient, summary, context, *, agents=None,task_id=None,parent_task_id=None):
     # This is the supplied context, not a model's assertion that it remembers it.
     raw = json.dumps(context, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
     if len(raw.encode('utf-8')) > 160000:
@@ -13,9 +13,10 @@ def record_handoff(store, job_id, sender, recipient, summary, context, *, agents
     directory.mkdir(parents=True, exist_ok=True)
     handoff_id=uuid4().hex
     scope=context.get('file','')
-    task_id=hashlib.sha256(f'{job_id}:{recipient}:{scope}'.encode()).hexdigest()[:24]
+    assigned_task_id=task_id
+    task_id=assigned_task_id or hashlib.sha256(f'{job_id}:{recipient}:{scope}'.encode()).hexdigest()[:24]
     previous=getattr(agents,'invocation_context',{}) if agents is not None else {}
-    parent=previous.get('task_id') if previous.get('actor')==sender else None
+    parent=parent_task_id if assigned_task_id is not None else previous.get('task_id') if previous.get('actor')==sender else None
     path = directory / (handoff_id + '.json')
     identity={'version':1,'job_id':job_id,'handoff_id':handoff_id,'task_id':task_id,'parent_task_id':parent,
               'sender':sender,'recipient':recipient,'summary':summary,'file':scope,

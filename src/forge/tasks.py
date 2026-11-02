@@ -25,6 +25,7 @@ class Task(Envelope):
     inputs: dict[str,JsonValue] = Field(default_factory=dict)
     dependencies: list[Dependency] = Field(default_factory=list,max_length=20)
     required_checks: list[str] = Field(min_length=1,max_length=30)
+    allow_review_questions: bool = False
 
     @model_validator(mode='after')
     def unique_references(self):
@@ -61,11 +62,12 @@ class RecoveryPlan(Envelope):
     strategy: str = Field(min_length=1,max_length=3000)
     action: Literal['retry','reassign','request_input']
     owner: str = Field(min_length=1,max_length=80)
-    question: str = Field(default='',max_length=1000)
+    question: str = Field(default='',max_length=1000,description='Empty for retry/reassign. A concrete blocking question only for request_input.')
 
     @model_validator(mode='after')
     def actionable_question(self):
         if self.action=='request_input' and not self.question.strip():raise ValueError('Input requests need a concrete question')
+        if self.action!='request_input' and self.question:raise ValueError('Questions require request_input; retry/reassign must not ask unnecessary user questions')
         return self
 
 
@@ -81,6 +83,7 @@ class TaskState(Envelope):
     no_progress: int = 0
     reviewed_observations: int = -1
     recovery: RecoveryPlan | None = None
+    review_error: str = ''
     pause_reason: str = ''
 
 
@@ -186,12 +189,21 @@ class TaskLedger:
         def mutate(current,_):
             if current.status!='running':raise TaskConflict('Task is not running')
             if plan.owner not in roles:raise ValueError('Reviewer selected an unavailable role')
+            if plan.action=='request_input' and not current.task.allow_review_questions:
+                raise ValueError('This technical task does not delegate user-question authority to the reviewer')
             if plan.action=='retry' and plan.owner!=current.task.owner:raise ValueError('Changing ownership requires a reassign action')
             current.recovery=plan;current.reviewed_observations=len(current.observations)
+            current.review_error=''
             current.inflight_role=None
             if plan.action=='reassign':current.task.owner=plan.owner
             if plan.action=='request_input':current.status='paused';current.pause_reason=plan.question
         return self.update(state.task.id,state.version,'TASK_RECOVERY_PLANNED','Senior review supplied a recovery strategy, not a passing result.',mutate)
+
+    def review_failed(self,state,error):
+        def mutate(current,_):
+            if current.status!='running':raise TaskConflict('Task is not running')
+            current.inflight_role=None;current.review_error=error[:4000]
+        return self.update(state.task.id,state.version,'TASK_REVIEW_FAILED',error[:4000],mutate)
 
     def pause(self,state,reason,*,action_finished=False):
         def mutate(current,_):
@@ -218,7 +230,7 @@ class TaskLedger:
             self._dependencies(task,states)
             current.task=task;current.revision+=1;current.version+=1;current.status='queued'
             current.inflight_role=None
-            current.no_progress=0;current.recovery=None;current.pause_reason=''
+            current.no_progress=0;current.recovery=None;current.review_error='';current.pause_reason=''
             self._save(db,current,'TASK_REVISED','Inputs revised; previous evidence does not complete this revision.')
             changed={current.task.id}
             pending=True
@@ -227,7 +239,7 @@ class TaskLedger:
                 for descendant in states.values():
                     if descendant.task.id not in changed and any(d.task_id in changed for d in descendant.task.dependencies):
                         descendant.revision+=1;descendant.version+=1;descendant.status='needs_refresh'
-                        descendant.no_progress=0;descendant.recovery=None;descendant.pause_reason='Upstream inputs changed; refresh the task and dependency revisions.'
+                        descendant.no_progress=0;descendant.recovery=None;descendant.review_error='';descendant.pause_reason='Upstream inputs changed; refresh the task and dependency revisions.'
                         descendant.inflight_role=None
                         self._save(db,descendant,'TASK_INVALIDATED',descendant.pause_reason)
                         changed.add(descendant.task.id);pending=True
