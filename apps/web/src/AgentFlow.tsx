@@ -5,6 +5,7 @@ const roles:Record<string,string>={IntakeDecision:'Intake',BusinessBrief:'Requir
 const name=(value:string)=>(value==='LayoutProposal'?'Implementation architect':roles[value])??value?.replaceAll('_',' ')??'Agent';
 Object.assign(roles,{AppDraft:'Planner',RecoveryDecision:'Senior reviewer',requirements:'Requirements',planner:'Planner',senior_reviewer:'Senior reviewer'});
 Object.assign(roles,{SourceEdit:'Source builder',RepairFocus:'QA diagnosis',builder:'Builder',frontend:'Frontend',backend:'Backend'});
+Object.assign(roles,{AcceptanceSuite:'Acceptance QA',acceptance_qa:'Acceptance QA'});
 export function conciseIssue(message:string):string{
   if(message.includes('Failed to parse')){
     const role=message.includes('AcceptancePlan')?'QA':message.includes('AppBrief')?'Requirements':'Planning';
@@ -23,6 +24,11 @@ const summaries:Record<string,[string,string]>={
   AUTONOMOUS_BUILDING:['Implementation','Generating the reviewed source and using actual checks for repairs.'],
   AUTONOMOUS_BUILD_PAUSED:['Build paused','Source, approval and task history are retained for inspection/resume.'],
   AUTONOMOUS_BUILD_CHECKS_PASSED:['Build checks passed','TypeScript and production build passed. Application behavior remains unverified.'],
+  AUTONOMOUS_TESTING:['App checks','Defining independent assertions and checking actual behavior against them.'],
+  AUTONOMOUS_ACCEPTANCE_FROZEN:['Assertions frozen','Requirements-derived checks are saved outside the app source. They have not passed by proposal alone.'],
+  AUTONOMOUS_TEST_PAUSED:['App checks paused','Source, assertions and recovery evidence are retained.'],
+  AUTONOMOUS_CHECKS_BLOCKED:['Coverage needs attention','Some approved criteria require checks beyond the current browser protocol.'],
+  AUTONOMOUS_APP_CHECKS_PASSED:['Selected app checks passed','Build and frozen browser assertions passed for the saved source. Preview and release are separate.'],
   TOOL_CALL_STARTED:['Workspace tool','Executing a scoped tool operation.'],
   TOOL_CALL_COMPLETED:['Workspace tool','A tool returned evidence; inspect its scope before claiming success.'],
   TASK_ACTION_STARTED:['Task dispatch','An agent is working on its assigned task.'],
@@ -47,7 +53,7 @@ const summaries:Record<string,[string,string]>={
 
 function describe(event:WorkflowEvent):[string,string]{
   const p=event.payload;
-  if(event.status==='TOOL_CALL_STARTED'||event.status==='TOOL_CALL_COMPLETED')return [p.tool==='check_build'?'Isolated build checks':String(p.tool??'Workspace tool').replaceAll('_',' '),String(p.summary??'A scoped tool call was recorded.')];
+  if(event.status==='TOOL_CALL_STARTED'||event.status==='TOOL_CALL_COMPLETED')return [p.tool==='check_build'?'Isolated verification':String(p.tool??'Workspace tool').replaceAll('_',' '),String(p.summary??'A scoped tool call was recorded.')];
   if(event.status==='TASK_ACTION_STARTED')return [name(p.task_state?.inflight_role??p.owner),String(p.summary??'Task dispatched.')];
   if(event.status==='PLANNING_QUALITY_REVIEW')return [name(p.reviewer),p.issues?.length?p.issues.join(' '):p.summary];
   if(event.status==='AGENT_HANDOFF')return [`${name(p.sender)} → ${name(p.recipient)}`,String(p.summary??'Saved context supplied to the next role.')];
@@ -62,8 +68,8 @@ function describe(event:WorkflowEvent):[string,string]{
 
 export default function AgentFlow({workflow,events,busy,status,onContext}:Props){
   const autonomous=workflow==='autonomous';
-  const routes=autonomous?[['Requirements',['requirements']],['Planner',['planner']],['Implementation',['builder','frontend','backend','qa']],['Senior review',['senior_reviewer']],['Build checks',['verification']]] as const:steps;
-  const routeRole=(event:WorkflowEvent)=>event.status==='TOOL_CALL_STARTED'&&event.payload.tool==='check_build'?'verification':event.status==='TASK_ACTION_STARTED'?event.payload.task_state?.inflight_role:event.status==='AGENT_HANDOFF'?event.payload.recipient:'';
+  const routes=autonomous?[['Requirements',['requirements']],['Planner',['planner']],['Implementation',['builder','frontend','backend','qa']],['Senior review',['senior_reviewer']],['Acceptance QA',['acceptance_qa']],['Verification',['verification']]] as const:steps;
+  const routeRole=(event:WorkflowEvent)=>event.status==='TOOL_CALL_STARTED'&&event.payload.tool==='check_build'?'verification':event.status==='TASK_ACTION_STARTED'?(event.payload.task_state?.task?.inputs?.stage==='acceptance_plan'?'acceptance_qa':event.payload.task_state?.inflight_role):event.status==='AGENT_HANDOFF'?event.payload.recipient:'';
   const visible=events.filter(e=>e.status in summaries||['PLANNING_QUALITY_REVIEW','AGENT_HANDOFF','AGENT_CALL_STARTED','AGENT_CALL_COMPLETED','AGENT_CALL_FAILED','AGENT_VALIDATION_FAILED','FAILED','VERIFICATION_FAILED','SECURITY_BLOCKED','INTERRUPTED','CANCELLED'].includes(e.status));
   const recent=visible.slice(-8).reverse();
   const active=autonomous?events.filter(e=>e.status==='TASK_ACTION_STARTED'||e.status==='TOOL_CALL_STARTED'&&e.payload.tool==='check_build').at(-1):events.filter(e=>steps.some(([,statuses])=>(statuses as readonly string[]).includes(e.status))).at(-1);

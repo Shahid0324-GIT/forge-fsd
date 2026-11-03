@@ -4,6 +4,7 @@ This is not a human approval or a user app release. The fixed counter request, i
 workspace and explicit evaluation actor keep this separate from normal dashboard jobs.
 """
 import json
+import argparse
 import re
 import shutil
 from pathlib import Path
@@ -13,12 +14,16 @@ from forge.agents import OllamaAgents
 from forge.autonomous_build import build_app
 from forge.autonomous_planning import plan_app
 from forge.autonomous_review import decide_plan,review_snapshot
+from forge.autonomous_testing import test_app
 from forge.persistence import JobStore
 from forge.source_checks import PROJECT
 from forge.workspace import source_fingerprint
 
 
 def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--app-checks',action='store_true',help='Run independent requirements-derived browser checks after generation/build.')
+    args=parser.parse_args()
     directory=PROJECT/'artifacts/approved-build-evaluation'/uuid4().hex;directory.mkdir(parents=True)
     store=JobStore(directory/'jobs.sqlite3');agents=OllamaAgents('qwen2.5-coder:7b')
     agents.trace_directory=directory/'model-calls';boundary=PROJECT/'workspace/.approved-fixtures'
@@ -35,7 +40,11 @@ def main():
         (directory/'review.json').write_text(json.dumps(review,indent=2),encoding='utf-8')
         decide_plan(job,store,review['fingerprint'],approved=True,actor='internal_evaluation')
         record=build_app(job,agents,store,workspace_boundary=boundary)
-        summary.update(status=record['status'],passed=record['status']=='AUTONOMOUS_BUILD_CHECKS_PASSED')
+        if args.app_checks and record['status']=='AUTONOMOUS_BUILD_CHECKS_PASSED':
+            record=test_app(job,agents,store,workspace_boundary=boundary)
+        expected='AUTONOMOUS_APP_CHECKS_PASSED' if args.app_checks else 'AUTONOMOUS_BUILD_CHECKS_PASSED'
+        summary.update(status=record['status'],passed=record['status']==expected)
+        if args.app_checks:summary['application_behavior']='SELECTED_REQUIREMENTS_BROWSER_CHECKS' if summary['passed'] else 'NOT_VERIFIED'
         if summary['passed']:summary['final_report']=record['events'][-1]['payload']['report']
     except Exception as exc:summary['error']=f'{type(exc).__name__}: {exc}'
     finally:

@@ -39,6 +39,10 @@ def execute(job_id,action,payload,store,agents):
     if uses_autonomous_planning(store.read(job_id)):
         from forge.autonomous_review import decide_plan,request_changes
         from forge.autonomous_build import build_app
+        from forge.autonomous_testing import test_app
+        def build_and_test(**options):
+            result=build_app(job_id,agents,store,**options)
+            return test_app(job_id,agents,store) if result['status']=='AUTONOMOUS_BUILD_CHECKS_PASSED' else result
         if action=='plan':return start_planning(job_id,agents,store)
         if action=='answer':return answer_intake(job_id,payload['answers'],agents,store)
         if action=='resume_planning':return resume_planning(job_id,agents,store)
@@ -46,9 +50,11 @@ def execute(job_id,action,payload,store,agents):
         if action in {'approve','reject'}:
             if action=='approve' and payload.get('approved') is not True:raise ValueError('Source generation needs explicit approval')
             record=decide_plan(job_id,store,payload['fingerprint'],approved=action=='approve',actor='local_dashboard')
-            return build_app(job_id,agents,store) if action=='approve' else record
-        if action=='continue':return build_app(job_id,agents,store)
-        if action=='resume_build':return build_app(job_id,agents,store,resume=True)
+            return build_and_test() if action=='approve' else record
+        if action=='continue':return build_and_test()
+        if action=='resume_build':return build_and_test(resume=True)
+        if action=='test_app':return test_app(job_id,agents,store)
+        if action=='resume_tests':return test_app(job_id,agents,store,resume=True)
         raise ValueError('This autonomous workflow does not yet support preview or publishing')
     if action in {'prepare_release','publish_release','deploy_release','release_status'}:
         from forge.releases import prepare_release,publish_release,deploy_release,refresh_release

@@ -1,4 +1,5 @@
 from pathlib import Path
+import hashlib
 from uuid import uuid4
 
 import pytest
@@ -90,3 +91,40 @@ def test_changed_source_is_not_presented_as_current_build_evidence(client,tmp_pa
     assert browser.get('/api/jobs/'+job).json()['build_evidence_current'] is True
     path.write_text('changed after verification')
     assert browser.get('/api/jobs/'+job).json()['build_evidence_current'] is False
+
+
+def test_managed_approval_continues_from_build_to_independent_qa(client,monkeypatch):
+    import forge.autonomous_build as build
+    import forge.autonomous_testing as testing
+    browser,app=client;session(browser);job,agent,token,_=prepare(browser,app);calls=[]
+    def generated(job_id,*_):
+        app.state.store.event(job_id,'AUTONOMOUS_BUILD_CHECKS_PASSED',{'source_fingerprint':'a'*64})
+        return app.state.store.read(job_id)
+    def checked(job_id,*_):
+        assert app.state.store.read(job_id)['status']=='AUTONOMOUS_BUILD_CHECKS_PASSED'
+        calls.append(job_id);app.state.store.event(job_id,'AUTONOMOUS_APP_CHECKS_PASSED',{'scope':'selected fixture checks'})
+        return app.state.store.read(job_id)
+    monkeypatch.setattr(build,'build_app',generated);monkeypatch.setattr(testing,'test_app',checked)
+    result=execute(job,'approve',{'fingerprint':token,'approved':True},app.state.store,agent)
+    assert result['status']=='AUTONOMOUS_APP_CHECKS_PASSED' and calls==[job]
+    with pytest.raises(ValueError,match='preview or publishing'):
+        execute(job,'preview_start',{},app.state.store,agent)
+
+
+def test_test_resume_requires_a_saved_safe_qa_task(client,monkeypatch):
+    browser,app=client;headers=session(browser);calls=fake_submit(app,monkeypatch)
+    job,_,_,_=prepare(browser,app)
+    app.state.store.event(job,'AUTONOMOUS_TEST_PAUSED',{'task_id':'missing','reason':'Interrupted fixture'})
+    assert send(browser,headers,job,'resume_tests').status_code==409 and not calls
+
+
+def test_frozen_contract_report_rejects_changed_bytes(client,tmp_path):
+    browser,app=client;session(browser);job,_,_,_=prepare(browser,app)
+    path=tmp_path/'artifacts/contract.json';path.parent.mkdir(exist_ok=True)
+    path.write_text('{"suite": {}}',encoding='utf-8')
+    app.state.store.event(job,'AUTONOMOUS_ACCEPTANCE_FROZEN',{'report':str(path),
+        'contract_fingerprint':hashlib.sha256(path.read_bytes()).hexdigest()},update_status=False)
+    sequence=app.state.store.read(job)['events'][-1]['sequence']
+    assert browser.get(f'/api/jobs/{job}/reports/{sequence}').status_code==200
+    path.write_text('{}',encoding='utf-8')
+    assert browser.get(f'/api/jobs/{job}/reports/{sequence}').status_code==409

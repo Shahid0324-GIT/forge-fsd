@@ -11,7 +11,7 @@ export default function AutonomousDecision({fingerprint,controls}:{fingerprint:s
   const [feedback,setFeedback]=useState('');
   return <section aria-labelledby="autonomous-decision-title">
     <h3 id="autonomous-decision-title">Your decision</h3>
-    <p>Approval starts source generation and automatic repair. This checkpoint checks TypeScript and the production build; app behavior remains unverified.</p>
+    <p>Approval starts source generation, automatic repair and isolated build checks, followed by independent requirements-derived browser checks. Missing coverage remains visible.</p>
     {!controls.enabled&&<p className="hint">Load the current proposal or wait for active work to finish before deciding.</p>}
     <label className="consent"><input type="checkbox" checked={consent} disabled={!controls.enabled} onChange={event=>setConsent(event.target.checked)}/> I approve source generation and isolated development checks for this plan.</label>
     <div className="decision-actions">

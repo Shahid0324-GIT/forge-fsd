@@ -26,6 +26,7 @@ from forge.browser_testing import profile_for,browser_gate
 from forge.autonomous_planning import uses_autonomous_planning,resumable_planning,AppDraft
 from forge.autonomous_review import review_snapshot
 from forge.autonomous_build import build_resumable
+from forge.autonomous_testing import tests_resumable,evidence_current
 
 
 class NewJob(ApplicationRequest):
@@ -34,7 +35,7 @@ class NewJob(ApplicationRequest):
 
 
 class Action(Boundary):
-    action: Literal['answer','approve','reject','continue','preview_start','preview_stop','preview_status','report','security','retry_plan','retry_build','browser_check','prepare_release','publish_release','deploy_release','release_status','resume_planning','revise_plan','resume_build']
+    action: Literal['answer','approve','reject','continue','preview_start','preview_stop','preview_status','report','security','retry_plan','retry_build','browser_check','prepare_release','publish_release','deploy_release','release_status','resume_planning','revise_plan','resume_build','test_app','resume_tests']
     request_id: str = Field(pattern=r'^[a-f0-9-]{32,36}$')
     expected_sequence: int = Field(ge=1)
     fingerprint: str | None = Field(default=None,pattern=r'^[a-f0-9]{64}$')
@@ -52,6 +53,7 @@ ALLOWED={
     'answer':{'AWAITING_CLARIFICATION','AUTONOMOUS_INPUT_NEEDED'},'approve':{'PLAN_REVIEW','AUTONOMOUS_DRAFT_READY'},'reject':{'PLAN_REVIEW','AUTONOMOUS_DRAFT_READY'},
     'resume_planning':{'AUTONOMOUS_PAUSED'},
     'revise_plan':{'AUTONOMOUS_DRAFT_READY'},'resume_build':{'AUTONOMOUS_BUILD_PAUSED'},
+    'test_app':{'AUTONOMOUS_BUILD_CHECKS_PASSED'},'resume_tests':{'AUTONOMOUS_TEST_PAUSED'},
     'continue':{'APPROVED','GENERATED_UNVERIFIED','VERIFICATION_FAILED','FUNCTIONALLY_VERIFIED','SECURITY_BLOCKED','SECURITY_PASSED','AUTONOMOUS_APPROVED'},
     'preview_start':{'SECURITY_PASSED','PREVIEW_STOPPED','PREVIEW_FAILED'},
     'preview_stop':{'PREVIEW_RUNNING','PREVIEW_STARTING','PREVIEW_FAILED'},
@@ -117,6 +119,8 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
         job['workflow']='autonomous' if uses_autonomous_planning(job) else 'typed'
         job['planning_resumable']=resumable_planning(job,store)
         job['build_resumable']=build_resumable(job,store,workspace_boundary=PROJECT/'workspace')
+        job['tests_resumable']=tests_resumable(job,store,workspace_boundary=PROJECT/'workspace')
+        if job['status']=='AUTONOMOUS_APP_CHECKS_PASSED':job['app_evidence_current']=evidence_current(job,store,workspace_boundary=PROJECT/'workspace')
         if job['workflow']=='autonomous' and job['status']=='AUTONOMOUS_DRAFT_READY':
             try:job['review_fingerprint']=review_snapshot(job['job_id'],store)['fingerprint']
             except (ValueError,OSError,KeyError) as exc:job['review_error']=str(exc)
@@ -215,12 +219,14 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
             return {'operation':manager.read(existing[0])}
         if current['status'] not in ALLOWED[body.action]:raise HTTPException(409,'That action is unavailable in the current job state')
         autonomous=uses_autonomous_planning(current)
-        if autonomous and body.action not in {'answer','resume_planning','approve','reject','revise_plan','continue','resume_build'}:
+        if autonomous and body.action not in {'answer','resume_planning','approve','reject','revise_plan','continue','resume_build','test_app','resume_tests'}:
             raise HTTPException(409,'This workflow does not yet support preview or publishing')
         if body.action=='resume_planning' and not resumable_planning(current,store):
             raise HTTPException(409,'Planning needs saved-task inspection before it can resume')
         if body.action=='resume_build' and not build_resumable(current,store,workspace_boundary=PROJECT/'workspace'):
             raise HTTPException(409,'Inspect the interrupted build and approval before resuming')
+        if body.action=='resume_tests' and not tests_resumable(current,store,workspace_boundary=PROJECT/'workspace'):
+            raise HTTPException(409,'Inspect the interrupted QA work and frozen assertions before resuming')
         if body.action=='retry_plan' and not planning_retryable(current):raise HTTPException(409,'Only failed pre-review planning can be retried')
         if body.action=='retry_build' and not build_retryable(current):raise HTTPException(409,'Only an interrupted approved generation can be resumed once')
         if body.action=='browser_check' and not profile_for(current):raise HTTPException(409,'This app has no trusted automated browser profile')
@@ -303,6 +309,9 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
             try:return JSONResponse(read_handoff(path,event['payload']))
             except (ValueError,KeyError):raise HTTPException(409,'Saved handoff failed its context/identity check')
         raw=path.read_bytes()
+        if event['status'] in {'AUTONOMOUS_ACCEPTANCE_FROZEN','AUTONOMOUS_APP_CHECKS_PASSED'}:
+            expected=event['payload'].get('contract_fingerprint') if event['status']=='AUTONOMOUS_ACCEPTANCE_FROZEN' else event['payload'].get('report_sha256')
+            if hashlib.sha256(raw).hexdigest()!=expected:raise HTTPException(409,'Saved app-check evidence changed; do not use it as a current result')
         if event['status']=='AUTONOMOUS_DRAFT_READY':
             if hashlib.sha256(raw).hexdigest()!=event['payload'].get('draft_sha256'):
                 raise HTTPException(409,'The saved proposal changed; do not review stale evidence')
