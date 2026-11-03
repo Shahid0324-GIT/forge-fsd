@@ -60,6 +60,25 @@ def test_duplicate_dispatch_cannot_replace_a_frozen_contract(context):
     assert suite_path(ledger,state).read_bytes()==original
 
 
+def test_retry_receives_the_rejected_proposal_and_exact_conflicting_criterion(context):
+    ledger,state,review,agent=context
+    normal_generate=agent.generate
+    def conflicting(schema,instruction,data,**kwargs):
+        data=proposal();data['uncovered']=[{'criterion':2,'reason':'Mistaken duplicate claim'}]
+        return schema.model_validate(data)
+    agent.generate=conflicting
+    with pytest.raises(ValueError,match=r'\[2\]') as failed:acceptance_worker(ledger,state,agent,review,lambda:None)
+    assert not suite_path(ledger,state).exists()
+    from forge.autonomous_acceptance import suite_fingerprint
+    state=ledger.observe(state,Observation(revision=state.revision,fingerprint=suite_fingerprint(ledger,state),error=str(failed.value)))
+    state=ledger.reserve_action(state,'qa');agent.generate=normal_generate
+    checks=acceptance_worker(ledger,state,agent,review,lambda:None)
+    assert agent.data['previous_proposal']['uncovered'][0]['criterion']==2
+    assert '[2]' in agent.data['protocol_errors'][0]
+    assert len(list(suite_path(ledger,state).parent.glob('proposal-*.json')))==2
+    assert checks[0].exit_code==0
+
+
 @pytest.mark.parametrize('change',['bytes','review','unfinished','revision'])
 def test_stale_changed_or_unfinished_contract_cannot_supply_acceptance_evidence(context,change):
     ledger,_,review,_=context;state,contract=freeze(context)

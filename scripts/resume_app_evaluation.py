@@ -36,15 +36,17 @@ def main():
     directory=base/('resume-'+uuid4().hex);directory.mkdir()
     summary={'job_id':job,'passed':False,'human_approval':'NOT_CLAIMED','cleanup_errors':[],
         'scope':'Resume of an internal model-generated app evaluation; frozen assertions retained.'}
-    before=next(e['payload']['contract_fingerprint'] for e in reversed(record['events']) if e['status']=='AUTONOMOUS_ACCEPTANCE_FROZEN')
+    before=next((e['payload']['contract_fingerprint'] for e in reversed(record['events']) if e['status']=='AUTONOMOUS_ACCEPTANCE_FROZEN'),None)
+    after=None
     agents=OllamaAgents(job_model(record));agents.trace_directory=directory/'model-calls'
     print('Evidence: '+str(directory),flush=True)
     try:
         shutil.copytree(archive,root)
         record=test_app(job,agents,store,resume=True,additional_actions=args.actions,workspace_boundary=boundary)
         summary.update(status=record['status'],passed=record['status']=='AUTONOMOUS_APP_CHECKS_PASSED')
-        after=next(e['payload']['contract_fingerprint'] for e in reversed(record['events']) if e['status']=='AUTONOMOUS_ACCEPTANCE_FROZEN')
-        summary['frozen_contract_unchanged']=before==after
+        after=next((e['payload']['contract_fingerprint'] for e in reversed(record['events']) if e['status']=='AUTONOMOUS_ACCEPTANCE_FROZEN'),None)
+        summary['contract_preexisted']=before is not None
+        summary['frozen_contract_unchanged']=before==after if before else None
         if summary['passed']:summary['final_report']=record['events'][-1]['payload']['report']
     except Exception as exc:summary['error']=f'{type(exc).__name__}: {exc}'
     finally:
@@ -54,7 +56,7 @@ def main():
                 shutil.copytree(root,directory/'source');summary['source_fingerprint']=source_fingerprint(directory/'source');shutil.rmtree(root)
             except Exception as exc:summary['cleanup_errors'].append(str(exc))
         summary['model_calls']=len(list((directory/'model-calls').glob('*.json')))
-        summary['passed']=bool(summary['passed'] and summary.get('frozen_contract_unchanged') and not summary['cleanup_errors'])
+        summary['passed']=bool(summary['passed'] and after and (before is None or before==after) and not summary['cleanup_errors'])
         (directory/'job.json').write_text(json.dumps(store.read(job),indent=2),encoding='utf-8')
         (directory/'result.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
         if 'source_fingerprint' in summary and not summary['cleanup_errors']:

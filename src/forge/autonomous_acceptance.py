@@ -28,7 +28,7 @@ Target=Annotated[RoleTarget | TextTarget,Field(discriminator='by')]
 
 
 class Visit(Envelope):
-    action: Literal['visit']
+    action: Literal['visit'] = Field(description='Navigate to an app path. Repeated visits in one scenario reload within the same browser session, preserving its storage.')
     path: str = Field(default='/',pattern=r'^/(?:[a-zA-Z0-9_?&=.%+~\-][a-zA-Z0-9/_?&=.%+~\-]*)?$',max_length=300)
 
 
@@ -117,9 +117,12 @@ def validate_coverage(suite,criterion_count):
     if len(set(names))!=len(names):raise ValueError('Scenario IDs must be unique')
     covered={index for case in suite.scenarios for index in case.criteria}
     missing=[item.criterion for item in suite.uncovered]
-    if len(set(missing))!=len(missing) or covered.intersection(missing):raise ValueError('A criterion cannot be both covered and uncovered')
+    if len(set(missing))!=len(missing):raise ValueError('Uncovered criterion indices must be unique')
+    overlap=covered.intersection(missing)
+    if overlap:raise ValueError(f'Criteria {sorted(overlap)} are both covered and uncovered. Reference each only in scenarios OR uncovered, never both; preserve real assertions.')
     if covered|set(missing)!=set(range(1,criterion_count+1)):
-        raise ValueError('Every approved criterion must be referenced by a scenario or explicitly marked uncovered; indices are one-based')
+        expected=set(range(1,criterion_count+1));actual=covered|set(missing)
+        raise ValueError(f'Every criterion needs a scenario or uncovered reason. Missing: {sorted(expected-actual)}; invalid indices: {sorted(actual-expected)}. Indices are one-based.')
 
 
 INSTRUCTION='''You are the independent acceptance QA agent. Derive executable browser
@@ -140,6 +143,9 @@ targets from the approved behavior. Builders can align accessible controls durin
 One assertion may cover multiple criteria; a visible value assertion can also prove a
 display requirement. Mark uncovered only for genuinely unavailable checks or conflicts,
 not because the design leaves routine UI implementation choices to the builder.
+Only a NEW SCENARIO creates a fresh browser session. A second visit / within one
+scenario reloads while preserving that session's storage; use it for reload and
+no-saved-state checks. Do not mark reload behavior unsupported.
 State exact expected numbers/text from the requirements. Exercise repeated actions,
 invalid input and state transitions when applicable. Reference all approved criteria
 using one-based indices. If a criterion cannot be demonstrated with these browser
@@ -159,14 +165,40 @@ def suite_fingerprint(ledger,state):
     return hashlib.sha256(path.read_bytes() if path.is_file() else b'').hexdigest()
 
 
+def proposal_context(ledger,state,review):
+    directory=suite_path(ledger,state).parent
+    proposals=list(directory.glob(f'proposal-{state.task.id}-r{state.revision}-a*.json'))
+    previous=None
+    if proposals:
+        path=max(proposals,key=lambda item:int(item.stem.rsplit('-a',1)[1]))
+        if path.stat().st_size>100000:raise ValueError('QA proposal exceeds context budget')
+        previous=json.loads(path.read_text(encoding='utf-8'))
+    else:
+        # Recover a pre-proposal-persistence trial using its controller invocation trace.
+        call=next((e['payload'] for e in reversed(ledger.store.read(ledger.job_id)['events'])
+            if e['status']=='AGENT_CALL_COMPLETED' and e['payload'].get('schema')=='AcceptanceSuite'
+            and e['payload'].get('task_id')==state.task.id and e['payload'].get('report')),None)
+        if call:
+            path=Path(call['report']).resolve()
+            if path.is_relative_to(ledger.store.path.parent.resolve()) and path.stat().st_size<=160000:
+                trace=json.loads(path.read_text(encoding='utf-8'))
+                if trace.get('job_id')==ledger.job_id and not trace.get('output_truncated'):
+                    try:previous=AcceptanceSuite.model_validate_json(trace['output']).model_dump()
+                    except (ValueError,KeyError):pass
+    data={**review['binding']['inputs'],'approved_design':review['draft'],'review_fingerprint':review['fingerprint'],
+        'previous_proposal':previous,'protocol_errors':[o.error for o in state.observations[-2:] if o.error],
+        'correction_instruction':'Correct the precise protocol errors in the previous proposal. Return the complete contract without dropping valid assertions.'}
+    if state.recovery and state.reviewed_observations==len(state.observations):data['fresh_review']=state.recovery.model_dump()
+    if len(json.dumps(data,separators=(',',':')))>22000:raise ValueError('QA context exceeds budget; split the verification scope rather than dropping requirements')
+    return data
+
+
 def acceptance_worker(ledger,state,agents,review,authorize):
     authorize();ledger.assert_active(state)
     if state.task.owner!='qa' or state.task.inputs.get('review_fingerprint')!=review['fingerprint']:
         raise ValueError('QA task must belong to the approved review')
     if agents.model_name!=review['binding']['model']:raise ValueError('Use the approved model for acceptance QA')
-    data={**review['binding']['inputs'],'approved_design':review['draft'],
-        'review_fingerprint':review['fingerprint'],
-        'protocol_errors':[o.error for o in state.observations[-2:] if o.error]}
+    data=proposal_context(ledger,state,review)
     previous_context=getattr(agents,'invocation_context',{});previous_activity=getattr(agents,'activity',None)
     if getattr(agents,'trace_directory',None) is None:agents.trace_directory=ledger.store.path.parent/'model-calls'/ledger.job_id
     try:
@@ -175,6 +207,10 @@ def acceptance_worker(ledger,state,agents,review,authorize):
             agents=agents,task_id=state.task.id,parent_task_id=state.task.parent_id)
         agents.activity=lambda status,payload:ledger.store.event(ledger.job_id,status,payload,update_status=False)
         suite=AcceptanceSuite.model_validate(agents.generate(AcceptanceSuite,INSTRUCTION,data,coding=True))
+        authorize();ledger.assert_active(state)
+        proposal=suite_path(ledger,state).parent/f'proposal-{state.task.id}-r{state.revision}-a{state.actions_used}.json'
+        proposal.parent.mkdir(parents=True,exist_ok=True)
+        with proposal.open('x',encoding='utf-8',newline='\n') as output:output.write(suite.model_dump_json(indent=2))
         validate_coverage(suite,len(review['draft']['acceptance_criteria']))
         authorize();ledger.assert_active(state)
         packet={'version':1,'job_id':ledger.job_id,'task_id':state.task.id,'revision':state.revision,

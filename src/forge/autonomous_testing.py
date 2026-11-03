@@ -5,7 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from forge.acceptance_browser import harness_fingerprint,passed_report,run_acceptance_browser
-from forge.autonomous_acceptance import acceptance_worker,load_acceptance,suite_fingerprint
+from forge.autonomous_acceptance import acceptance_worker,load_acceptance,suite_fingerprint,proposal_context
 from forge.autonomous_build import PROJECT,_runtime_unchanged
 from forge.autonomous_planning import AppDraft
 from forge.autonomous_review import approved_review
@@ -76,7 +76,7 @@ def test_app(job_id,agents,store,*,resume=False,additional_actions=8,workspace_b
     qa=child('acceptance_plan','qa','Define independent executable assertions from the approved request.',{},
         [Dependency(task_id=review['binding']['task_id'],revision=review['binding']['revision'])],['acceptance_contract'])
     qa=TaskCoordinator(ledger,{'qa':lambda state:acceptance_worker(ledger,state,agents,review,authorize)},
-        SeniorReviewer(agents,ledger,{'qa'},context_loader=lambda _: {**context,'approved_design':review['draft']}),
+        SeniorReviewer(agents,ledger,{'qa'},context_loader=lambda current:proposal_context(ledger,current,review)),
         lambda:suite_fingerprint(ledger,ledger.read(qa.task.id))).run(qa.task.id)
     if qa.status!='completed':return pause(qa)
     contract=load_acceptance(ledger,qa,review)
