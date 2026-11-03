@@ -4,7 +4,7 @@ A local-first proof of concept for agent-assisted full-stack development, built 
 
 The assignment explores how agents can gather requirements, plan an application, delegate work, inspect real test results, review failures and iterate. Generated apps use **Next.js, React and TypeScript**, with **SQLite** for supported local persistence workflows. Docker isolates application execution from the controller.
 
-**Status — 2 November 2026:** the core components and local dashboard are implemented. A newer autonomous coordinator is being integrated incrementally. It is **not yet a single, fully verified request-to-deployment workflow through the dashboard**. The distinctions below are intentional.
+**Status — 3 November 2026:** the core components and local dashboard are implemented. A newer autonomous coordinator is being integrated incrementally. It is **not yet a single, fully verified request-to-deployment workflow through the dashboard**. The distinctions below are intentional.
 
 ## What is built
 
@@ -15,7 +15,7 @@ The assignment explores how agents can gather requirements, plan an application,
 | Agents and subagents | Planner, builder, QA diagnosis and senior-review roles with recorded handoffs and model calls. These are separate role invocations using the same local model, not separately trained models. |
 | Source tools | Scoped reads, complete-file writes and exact-text patches, guarded by ownership and file/workspace hashes. Models cannot select arbitrary host paths or shell commands. |
 | Repair | Real failure evidence, QA diagnosis, senior-review escalation, alternative edit strategies and resumable resource pauses. Changed source is rechecked before old diagnostics can justify edits. |
-| Verification | Isolated TypeScript and production builds. The earlier app workflow also has approved HTTP scenarios and applicable SQLite/restart checks. Browser coverage is explicit and profile-specific. |
+| Verification | Isolated TypeScript and production builds. The earlier app workflow also has approved HTTP scenarios and applicable SQLite/restart checks. The autonomous path now freezes requirements-derived browser assertions outside app source, then executes them separately and feeds failures into repair. Coverage is explicit; database restart is not part of this browser protocol. |
 | Dashboard | Local FastAPI API with React/Vite UI, live activity summaries, context inspection, plan approval, reports, source export, preview controls, run deletion/trash and dark mode. |
 | Generated-app release | CI/deployment roles prepare policy-controlled release bundles. GitHub publishing and stateless Vercel deployment require separate approvals and credentials. |
 
@@ -25,7 +25,7 @@ Activity displays expose recorded handoffs, tool calls, source changes, model in
 
 **Existing dashboard workflow:** uses the earlier typed-planning pipeline, with human plan approval, generation, verification, bounded repairs and separate preview/release controls. It has known planning/model limitations. It does not yet use the newer autonomous coordinator by default.
 
-**New autonomous path:** choose **Autonomous app workflow · experimental** in the dashboard. Agents clarify the request and propose their design. You can approve, decline or request changes; approval then starts delegated source generation, repair and isolated build checks. Saved resource pauses resume in the same job. Independent app-specific behavior checks, preview and release integration remain pending for this path. Controlled repair evaluations already exercise independent browser checks.
+**New autonomous path:** choose **Autonomous app workflow · experimental** in the dashboard. Agents clarify the request and propose their design. You can approve, decline or request changes; approval then starts delegated source generation, build checks, independent acceptance QA and repair against frozen browser assertions. QA receives the approved requirements/design without generated source. Saved build and QA resource pauses resume in the same job. Unsupported criteria block a complete app-check pass. Preview and release integration remain pending for this path.
 
 The intended flow is:
 
@@ -39,7 +39,7 @@ This diagram describes the target integration; the two paths above describe what
 
 ## Verified checkpoints
 
-Latest local controller suite: **333 Python tests passed**. These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy. Three static framework diagnostic tests also pass. Dashboard TypeScript and production build passed at the preceding UI checkpoint.
+Latest local controller suite: **390 Python tests passed**. These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy. Nine Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
 
 Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker builds and Chromium:
 
@@ -51,6 +51,7 @@ Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker b
 | Fresh counter planning and generation | Internal evaluation approved an agent-authored proposal; model-generated source reached passing TypeScript and production builds in 14 model calls. Behavior was not tested. |
 | Dashboard counter with review feedback | Consent, same-job revision and restart/resume worked. Generation remained paused after repeated client-directive repair failures; no working-app claim. |
 | Next.js client-boundary repair fixture | After the repair-loop fixes, the same 7B model corrected the directive and moved metadata to the server layout. Real build and 4/4 frozen browser assertions passed in 8 model calls. |
+| Fresh counter with independent QA | Reviewed model-generated source eventually passed build and 2/2 requirements-derived browser scenarios, including reload reset. This recovered evaluation required coverage re-evaluation and several saved repair resumes; it was not a one-shot success. No manual app-source corrections. |
 
 The counter and formatter start from **deliberately faulty, controller-authored test fixtures**. They evaluate repair, not autonomous generation from a fresh request. Their frozen browser assertions run in a separate container and cannot be edited by the builder. All source corrections after fixture setup came from model tool calls.
 
@@ -112,7 +113,7 @@ Open [http://127.0.0.1:8787](http://127.0.0.1:8787). Describe a small app, inspe
 
 The **Planning workflow** selector defaults to **Existing app workflow**. Choose **Autonomous app workflow · experimental**, open **Review design proposal**, and inspect the design before checking consent and choosing **Approve & build**. **Request changes** returns feedback through requirements intake and creates a new review snapshot; earlier consent cannot authorize a revised proposal. **Decline plan** stops before generation.
 
-Routine source repairs run without repeated approval. **Resume saved build** grants eight additional dispatches while retaining completed source and the original approval; interrupted in-flight work still needs inspection. A **Build checks passed** result covers TypeScript and the production build only. It does not establish correct app behavior or readiness for preview/deployment. Changed source is shown as stale evidence.
+Routine source repairs run without repeated approval. **Resume saved build** grants eight additional dispatches while retaining completed source and the original approval; interrupted in-flight work still needs inspection. A **Build checks passed** result covers TypeScript and the production build only. It does not establish correct app behavior or readiness for preview/deployment. Independent QA follows a successful build automatically. Older build-only runs can use **Check app behavior**. **Resume app checks** retains frozen assertions and saved source. A **Selected app checks passed** result covers those assertions only; changed source, contracts or evidence are marked stale. Unsupported requirements remain visible as blocked coverage. **Re-evaluate test coverage** creates a separate QA revision and preserves the previous contract; fresh app checks are required before a new pass.
 
 Run one dashboard process and avoid concurrent CLI/evaluation operations. Closing a tab does not cancel its managed operation; use the dashboard controls to stop work or close the workspace. Interrupted dispatches need inspection and cannot be blindly replayed through the resume button.
 
@@ -145,13 +146,33 @@ Inspect interrupted dispatch outcomes before claiming they are reconciled. Resou
 
 These use real local inference, Docker builds and browser interactions. The scripts save initial failures, task/model/tool traces, final source and reports under `artifacts/repair-regressions/`, then remove disposable fixture workspaces, containers and networks. They publish no host preview ports or cloud deployments. A failed or paused evaluation exits nonzero; inspect the saved evidence rather than treating a pause as success.
 
+### Independent acceptance QA and runner calibration
+
+```powershell
+.\.venv\Scripts\python.exe scripts/evaluate_acceptance_protocol.py
+.\.venv\Scripts\python.exe scripts/evaluate_approved_build.py --app-checks
+```
+
+The first command uses fixed correct/incorrect fixtures to check that the runner accepts
+valid behavior and rejects faulty behavior. The second uses actual local-model planning,
+an explicit internal evaluation approval, generated source and requirements-derived QA.
+Neither command claims actual human approval, a preview or deployment. Artifacts and
+source archives are saved locally; disposable workspaces/resources are cleaned up.
+
+QA produces a bounded data-only browser contract using semantic roles, labels and visible
+text. Arbitrary JavaScript/selectors and external navigation are unsupported. Contracts are
+frozen outside the app workspace and cannot be edited by builders. Coverage references are
+QA proposals, not proof that every requirement was interpreted correctly; reports expose
+scenarios and uncovered criteria for inspection. The current protocol does not verify
+SQLite persistence after restart, security or cloud deployment.
+
 ## Run automated tests
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m pip check
 npm --prefix apps/web run build
-node --test tests/framework-diagnostics.test.mjs
+node --test tests/framework-diagnostics.test.mjs tests/browser-protocol.test.mjs tests/browser-diagnostics.test.mjs
 ```
 
 Python tests and dashboard checks are separate from the live model evaluations. Runtime artifacts, historical runs, model weights, generated workspaces and local environment files are excluded from Git. A fresh clone does not include previous run evidence; use the reproduction commands to create new evidence.
@@ -170,7 +191,7 @@ The earlier pipeline includes limited static, dependency, secret-pattern and pro
 
 ## Remaining work
 
-1. Add independent app-specific behavior checks to approved autonomous generation, then verify a fresh request-to-app run without manual source corrections.
+1. Verify and broaden fresh dashboard request-to-app demonstrations using the new independent QA path, without manual source corrections.
 2. Support safe technical design revision when execution reveals a manifest problem, retaining human review for changes to the requested scope.
 3. Broaden repair and behavior coverage, including SQLite integrity and persistence after restart through the updated path.
 4. Integrate/revalidate generated-app CI and publishing against that path; database-backed cloud deployment remains separate work.
@@ -184,6 +205,7 @@ Current scope is small landing pages, stateless SPAs and supported single-user S
 | --- | --- |
 | `src/forge/autonomous_planning.py` | Intake and agent-authored design proposals |
 | `src/forge/autonomous_review.py`, `autonomous_build.py` | Immutable plan decisions, approved generation and saved build recovery |
+| `src/forge/autonomous_acceptance.py`, `autonomous_testing.py`, `acceptance_browser.py` | Frozen independent QA contracts, app-check repair and isolated browser execution |
 | `src/forge/tasks.py`, `coordinator.py`, `senior_review.py` | Durable delegation, revisions, recovery and review |
 | `src/forge/source_agent.py`, `workspace_tools.py` | Model-proposed source edits and scoped tools |
 | `src/forge/source_checks.py`, `repair_fixture_browser.py` | Isolated build checks and controlled browser evaluations |

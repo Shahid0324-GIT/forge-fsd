@@ -613,3 +613,131 @@ The model selected `lib/format.ts` and patched the transformation; final build a
 Source fingerprint:
 `e4004ee7a36b5b3abf3c66207144e3860755b785dd86a4710d56099f3921bf9f`.
 No manual source corrections, dependency changes or model downloads were used.
+
+
+## Increment 10: independent app acceptance contracts and repair integration
+
+The autonomous workflow now defines browser assertions from the approved request,
+clarifications, human feedback and design. Acceptance QA receives no generated source
+or builder diagnosis. It produces a data-only contract with semantic targets and actual
+assertions, referencing each approved criterion or explicitly marking it uncovered.
+Coverage references are model proposals, not an independent semantic correctness oracle.
+
+Contracts are frozen outside the generated workspace, bound to the review/model and a
+completed QA task revision. Builders can read the contract for repairs but cannot write
+it. A fixed Playwright interpreter executes the actions in a separate container; app
+source is mounted only in the app container. Both use an internal network with no
+published host ports. External navigation and arbitrary JavaScript/selectors are not
+part of the protocol. Visibility is required for text/value assertions.
+
+The existing generation/build stage is followed by acceptance QA in the managed worker.
+Actual browser failures enter the existing source/QA-diagnosis/senior-review loop.
+Resume retains the frozen contract, rechecks source and does not regenerate completed
+files. Unsupported coverage blocks promotion rather than substituting superficial
+assertions. Success is `AUTONOMOUS_APP_CHECKS_PASSED`, covering selected assertions;
+no READY, security, restart-persistence, preview or release claim is added.
+
+Source, contract, completed verification revision, combined report, nested build/browser
+reports, harness fingerprints and image IDs are checked for current evidence. Dashboard
+controls expose app-check resume, unsupported criteria, frozen contracts and stale passes.
+The new workflow remains experimental; the older typed workflow is unchanged.
+
+### Calibration and failure findings
+
+- The generic runner accepted a fixed correct counter and rejected an increment-by-two
+  counter at the expected assertion. Both apps first passed real builds. Calibration:
+  `artifacts/acceptance-calibration/be9b368e63f84abbb606d0d3e07131bb`.
+- An initial local-model trial froze `role: text`, which the initial target schema had
+  incorrectly allowed. That trial was stopped and preserved unchanged at
+  `artifacts/approved-build-evaluation/fed2870bf20e4831958d5702a92ca890`.
+  Role targets now have an explicit supported enum, so invalid role names cannot be
+  frozen. This is tool-protocol validation, not a business-app-specific correction.
+- Cancellation exposed a preview resource lookup accepting a status string and missing
+  orphan browser-network cleanup. Lookup now accepts actual preview resource records;
+  cleanup finds networks by job/role labels and validates ownership/name before removal.
+  Restart reconciles owned resources without replaying lost dispatches; cleanup failures
+  remain visible. Interrupted work still requires inspection before resume.
+
+The frozen test driver, assertion protocol and model context are separate from source
+ownership. No new dependencies/models or external security-service signup were used.
+
+A second trial (`8e39c0c282594e0aa604cd2c1ea47abf`) reached explicit blocked coverage,
+not a pass. Its auto-approved proposal had expanded “No saved data” into browser
+persistence, and QA also marked a routine display requirement unsupported. This trial
+is not counted as meeting the original request. Planning/QA guidance now explicitly
+preserves exclusions and distinguishes missing markup details from unavailable test
+capabilities. The evaluation supports `--review-feedback`, exercising the existing
+request-changes boundary before internal approval. Approval remains a real review
+responsibility; automated coverage-index validation cannot prove semantic fidelity.
+
+The reviewed trial `dc7e0ed9b5894994ae44eb9fcf53bf9e` exercised saved QA pauses and
+source-preserving resumes, with the original frozen contract unchanged. It exposed two
+further issues: advisory compiler hints from a passing build were presented before
+actual browser failures, and a textbox was paired with a DOM-text assertion. Debugging
+context is now reconstructed from actual controller execution reports; passing checks
+and obsolete advisory summaries do not outrank current failures. The advisory parser
+also accounts for erased type-only imports. Text and form-value assertions now have
+separate target capabilities, so incompatible role/action combinations are rejected
+before freezing. These are generic protocol/context fixes; no generated app source was
+manually corrected. The old trial/contracts remain preserved as failed evaluations.
+
+### Generic recovery and context corrections
+
+Rejected QA proposals are saved outside the generated workspace. Corrections receive
+that proposal and precise conflicting or missing criterion indices rather than
+starting again without the failed context. A focused coverage-review task evaluates
+claimed unsupported requirements against the actual browser capabilities. It receives
+the original requirements and proposed coverage, never generated source. Genuine
+unsupported coverage remains blocked. Deliberate re-evaluation creates a new QA
+revision and preserves earlier frozen contracts; builders cannot revise assertions.
+
+Browser failures now include the actual target match count, visibility, observed
+text or form value, and a bounded accessibility snapshot. Missing targets are distinct
+from value mismatches. This gives QA, builders and senior review concrete observations
+rather than a timeout to speculate about. Checks and expected values are unchanged.
+
+The internally reviewed counter evaluation `3f838feda4734021a5b01eb56762b3f7`
+exercised these recovery paths. Its first contract incorrectly claimed reload testing
+was unsupported. Re-evaluation preserved that contract and created revision 2 with
+checks for initial zero, repeated increments by one and reset after page reload.
+Saved source and revision-2 assertions were retained across subsequent repair pauses.
+All app-source changes came through the local model's scoped edit tools. Operator
+resumes restored byte-identical archived source and did not manually correct it.
+These internal evaluations do not claim human approval or deployment readiness.
+
+### Verified recovery checkpoint — 3 November 2026
+
+The same internally reviewed counter finally reached `AUTONOMOUS_APP_CHECKS_PASSED`.
+Both requirements-derived browser scenarios passed: initial zero with repeated increments
+to one, two and three; then increments followed by a page reload resetting to zero.
+TypeScript and production build also passed. The last resume used two model calls to
+identify and correct the observed `Counter: 0` versus `0` text mismatch. The frozen
+revision-2 assertions and earlier revision-1 contract remained unchanged.
+
+This was a recovered evaluation across implementation fixes, coverage re-evaluation
+and explicit resource-budget resumes, totaling 45 model calls across its saved attempts.
+It is not evidence of one-shot reliability. Earlier failed trials remain archived.
+
+- Final result: `artifacts/approved-build-evaluation/3f838feda4734021a5b01eb56762b3f7/resume-9f704939b1ee4a5a9d87506c680fcc01/result.json`.
+- Final model-generated source fingerprint: `8b5b05d1e873466f438416ed53386d217db1d1a976f749478196051b697a49c7`.
+- Combined, build and browser results passed for that source. Contract and harness
+  fingerprints remained current; source was unchanged during verification. App image:
+  `sha256:50af5949229f75b3b1165845a38fb8a5206157845112e632a8940e8da1e6232d`.
+  Browser image: `sha256:fcc6a8a92698ef11fa73f933bfdf5c778f2609dda960b2c172312a1d2f30e58c`.
+- Cleanup reported no errors. No evaluation-labelled containers or networks remained.
+  Archived source and reports were retained; disposable workspaces were removed.
+- An isolated dashboard using the evaluation database and a byte-identical source copy
+  displayed the current pass and its limitations. Browser warning/error logs were empty.
+  `dashboard-app-checks.png` records that view. The Close workspace control completed,
+  the server exited with code 0 and the temporary source copy was removed. This verifies
+  presentation/shutdown of the existing result, not browser-initiated generation.
+- `.venv\Scripts\python.exe -m pytest -q`: **390 passed**, exit 0; 13 upstream
+  LangSmith asyncio deprecation warnings.
+- `node --test tests/framework-diagnostics.test.mjs tests/browser-protocol.test.mjs tests/browser-diagnostics.test.mjs`:
+  **9 passed**, exit 0.
+- `npm --prefix apps/web run build`: TypeScript check and production build passed,
+  exit 0.
+
+Next increments remain fresh dashboard-led generation, safe technical amendments,
+SQLite restart/integrity checks, then preview and generated-app CI/release integration.
+This checkpoint adds no security, cloud deployment or unrestricted-app guarantee.
