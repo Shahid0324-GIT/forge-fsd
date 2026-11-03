@@ -12,10 +12,11 @@ The assignment explores how agents can gather requirements, plan an application,
 | --- | --- |
 | Requirements and planning | Local-model intake, clarification and reviewable application proposals. The newer planner lets agents choose app-specific structure and types within workspace/tool boundaries. |
 | Task coordination | LangGraph orchestration, persistent task ownership/revisions, dependency invalidation and saved observations in SQLite. |
-| Agents and subagents | Planner, builder, QA diagnosis and senior-review roles with recorded handoffs and model calls. These are separate role invocations using the same local model, not separately trained models. |
+| Agents and subagents | Planner, builder, QA diagnosis, test-quality, requirements-scope and senior-review roles with recorded handoffs and model calls. These are separate role invocations using the same local model, not separately trained models. |
 | Source tools | Scoped reads, complete-file writes and exact-text patches, guarded by ownership and file/workspace hashes. Models cannot select arbitrary host paths or shell commands. |
 | Repair | Real failure evidence, QA diagnosis, senior-review escalation, alternative edit strategies and resumable resource pauses. Changed source is rechecked before old diagnostics can justify edits. |
 | Verification | Isolated TypeScript and production builds. The earlier app workflow also has approved HTTP scenarios and applicable SQLite/restart checks. The autonomous path now freezes requirements-derived browser assertions outside app source, then executes them separately and feeds failures into repair. Coverage is explicit; database restart is not part of this browser protocol. |
+| Test quality | New suites must observe action results and challenge reload behavior with meaningful state. A separate critic reviews covered requirements; requirements-scope review separates grounded blockers from optional suggestions. Reviews are bound to the exact proposal and revision. Model judgments remain fallible. |
 | Dashboard | Local FastAPI API with React/Vite UI, live activity summaries, context inspection, plan approval, reports, source export, preview controls, run deletion/trash and dark mode. |
 | Generated-app release | CI/deployment roles prepare policy-controlled release bundles. GitHub publishing and stateless Vercel deployment require separate approvals and credentials. |
 
@@ -25,7 +26,7 @@ Activity displays expose recorded handoffs, tool calls, source changes, model in
 
 **Existing dashboard workflow:** uses the earlier typed-planning pipeline, with human plan approval, generation, verification, bounded repairs and separate preview/release controls. It has known planning/model limitations. It does not yet use the newer autonomous coordinator by default.
 
-**New autonomous path:** choose **Autonomous app workflow · experimental** in the dashboard. Agents clarify the request and propose their design. You can approve, decline or request changes; approval then starts delegated source generation, build checks, independent acceptance QA and repair against frozen browser assertions. QA receives the approved requirements/design without generated source. Saved build and QA resource pauses resume in the same job. Unsupported criteria block a complete app-check pass. Preview and release integration remain pending for this path.
+**New autonomous path:** choose **Autonomous app workflow · experimental** in the dashboard. Agents clarify the request and propose their design. You can approve, decline or request changes; approval then starts delegated source generation, build checks, independent acceptance QA and repair against frozen browser assertions. QA receives the approved requirements/design without generated source. Its proposed suite now passes structural checks and separate test-quality/scope review before freezing. Saved build and QA resource pauses resume in the same job. Unsupported criteria block a complete app-check pass. Preview and release integration remain pending for this path.
 
 The intended flow is:
 
@@ -39,7 +40,7 @@ This diagram describes the target integration; the two paths above describe what
 
 ## Verified checkpoints
 
-Latest local controller suite: **398 Python tests passed**. These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy. Eleven Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
+Latest local controller suite: **427 Python tests passed**. These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy. Eleven Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
 
 Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker builds and Chromium:
 
@@ -194,7 +195,7 @@ The earlier pipeline includes limited static, dependency, secret-pattern and pro
 
 ## Remaining work
 
-1. Strengthen QA scenario quality (including reload with nonempty state), then broaden dashboard-led demonstrations beyond the verified character-counter case.
+1. Broaden test-quality calibration and dashboard-led SQLite demonstrations. New-suite structural checks and independent test/scope review are implemented; semantic completeness is not guaranteed.
 2. Support safe technical design revision when execution reveals a manifest problem, retaining human review for changes to the requested scope.
 3. Broaden repair and behavior coverage, including SQLite integrity and persistence after restart through the updated path.
 4. Integrate/revalidate generated-app CI and publishing against that path; database-backed cloud deployment remains separate work.
