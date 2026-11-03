@@ -87,6 +87,26 @@ def test_candidate_changed_outside_ledger_is_not_forwarded_on_resume(tmp_path):
     assert agent.calls[-1][1]['recent_failures']==[]
 
 
+def test_answered_question_cannot_be_repeated_and_correction_receives_actual_answer(tmp_path):
+    question='Which measurement unit should the app use?'
+    class Repeating(Agent):
+        def generate(self,schema,instruction,data,**kwargs):
+            if schema is IntakeDecision:
+                self.calls.append((schema,data))
+                if data['protocol_errors']:
+                    assert 'already answered' in data['protocol_errors'][-1]
+                    assert 'Celsius' in data['protocol_errors'][-1]
+                    return schema.model_validate({'intent':'build'})
+                return schema.model_validate({'intent':'clarify','blocking_reason':'Need a unit','questions':[question]})
+            return super().generate(schema,instruction,data,**kwargs)
+    agent=Repeating(draft());store=JobStore(tmp_path/'jobs.sqlite3')
+    first=plan_app('Build a small measurement display.',agent,store)
+    result=answer_intake(first['job_id'],['Celsius'],agent,store)
+    assert result['status']=='AUTONOMOUS_DRAFT_READY' and result['job_id']==first['job_id']
+    assert sum(e['status']=='AUTONOMOUS_INPUT_NEEDED' for e in result['events'])==1
+    assert len([data for schema,data in agent.calls if schema is IntakeDecision])==3
+
+
 def test_genuine_questions_do_not_enable_app_generation(tmp_path):
     agent=Agent(draft(),blocked=True)
     result=plan_app('Build a page with a payment integration.',agent,JobStore(tmp_path/'jobs.sqlite3'))

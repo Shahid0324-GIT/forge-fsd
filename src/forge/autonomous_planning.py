@@ -233,7 +233,9 @@ def continue_intake(ledger,task_id,agents):
     def worker(state):
         data={'application_request':state.task.inputs['original_request'],
               'human_clarifications':state.task.inputs.get('human_clarifications',[]),
-              'human_review_feedback':state.task.inputs.get('human_review_feedback',[])}
+              'human_review_feedback':state.task.inputs.get('human_review_feedback',[]),
+              'protocol_errors':[o.error for o in state.observations if o.revision==state.revision and o.error][-2:]}
+        if state.recovery and state.reviewed_observations==len(state.observations):data['fresh_review']=state.recovery.model_dump()
         if getattr(agents,'trace_directory',None) is None:agents.trace_directory=ledger.store.path.parent/'model-calls'/ledger.job_id
         record_handoff(ledger.store,ledger.job_id,'coordinator','requirements',
             'Establish the business scope before architecture; optional implementation choices are delegated to the planner.',
@@ -243,6 +245,12 @@ def continue_intake(ledger,task_id,agents):
             agents.activity=lambda status,payload:ledger.store.event(ledger.job_id,status,payload,update_status=False)
             decision=agents.generate(IntakeDecision,INTAKE_INSTRUCTION,data)
         finally:agents.activity=previous_activity
+        if decision.root.intent=='clarify':
+            normalized=lambda text:' '.join(text.casefold().split()).rstrip('?.!')
+            answered={normalized(item['question']):item for item in data['human_clarifications']
+                if isinstance(item,dict) and item.get('question') and item.get('answer','').strip()}
+            duplicates=[answered[normalized(question)] for question in decision.root.questions if normalized(question) in answered]
+            if duplicates:raise ValueError('Intake repeated an already answered question. Use these user decisions instead of asking again: '+json.dumps(duplicates))
         route.write_text(decision.model_dump_json(indent=2),encoding='utf-8',newline='\n')
         snapshot=directory/f'intake-{state.actions_used}.json';snapshot.write_bytes(route.read_bytes())
         return [CheckEvidence(check='intake_schema',exit_code=0,fingerprint=fingerprint(),report=str(snapshot.resolve()),

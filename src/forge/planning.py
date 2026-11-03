@@ -16,6 +16,12 @@ generation -> isolated tests/repairs -> approved preview -> separately approved 
 and deployment. Forge currently has no live weather, general web search, or unrestricted
 execution tools. Do not invent live information, app status, or fetched sources.
 A clear app request should produce only {"intent":"build"}.'''
+INTAKE_INSTRUCTION+=''' Supplied clarification questions are historical prompts, not
+requests to implement every alternative mentioned in them. The associated user answer
+is the decision. Human review feedback corrects earlier proposals and may quote a
+rejected behavior; a rejection is not a request for that behavior. Preserve the original
+goal and apply the user's corrections. Never ask an already answered question again.
+Use supplied protocol_errors to correct the routing decision instead of repeating it.'''
 
 HELP_RESPONSES={
     'workflow':'Forge gathers requirements, designs the app and acceptance checks, asks for plan approval, generates source, then runs isolated checks and bounded repairs. Preview and publishing/deployment have separate approvals.',

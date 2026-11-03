@@ -897,3 +897,22 @@ Reviewer/scope regressions: **16 passed**, exit 0. Separate app-result tests con
 changed reviewer evidence/task invalidates a pass: **2 passed**, exit 0. Dashboard
 TypeScript and production build passed with the new activity labels. Full-suite and
 SQLite workflow results are recorded separately below when completed.
+
+Full regression checkpoint for increments 14–15:
+`.venv\Scripts\python.exe -m pytest -q --tb=short`: **427 passed**, exit 0,
+with 13 upstream LangSmith warnings. `npm --prefix apps/web run build` passed
+TypeScript checking and production compilation, exit 0. The separate SQLite dashboard
+trial is not included in the calibration/regression result and does not yet imply a
+working SQLite app.
+
+## Increment 16: prevent answered clarification loops
+
+The SQLite planning trial repeated an identical persistence question after the operator
+answered it. Intake now rejects a repeated answered question (normalizing case, whitespace
+and terminal punctuation) before persisting another question. Its next attempt receives
+the actual rejected question/answer pair as a protocol error. Intake also receives only
+current-revision errors and fresh senior advice, so a model can correct routing instead
+of losing that feedback. Instructions distinguish historical question alternatives and
+quoted rejected proposals from actual user decisions. No app/domain names are used in
+the guard. Existing genuine-clarification and review flows remain supported. Planning/
+review selection: **30 passed**, exit 0; no generated app was changed by this increment.
