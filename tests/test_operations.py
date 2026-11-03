@@ -38,6 +38,30 @@ def test_cleanup_finds_orphan_browser_networks_by_owned_labels(tmp_path,monkeypa
     assert ['docker','network','rm','other'] not in calls
 
 
+def test_restart_reconciles_owned_resources_without_replaying_work(tmp_path,monkeypatch):
+    store=JobStore(tmp_path/'jobs.db');job=store.create();OperationManager(store)
+    with store.connect() as db:
+        db.execute("INSERT INTO operations(id,job_id,request_id,action,status,started_at) VALUES (?,?,?,?,?,?)",
+            (uuid4().hex,job,uuid4().hex,'resume_tests','RUNNING','2026-11-03T00:00:00Z'))
+    cleaned=[];monkeypatch.setattr(OperationManager,'cleanup_job',lambda self,current:cleaned.append(current))
+    manager=OperationManager(store)
+    assert cleaned==[job] and not manager.active() and store.read(job)['status']=='INTERRUPTED'
+
+
+def test_failed_owned_resource_cleanup_is_visible_on_cancellation(tmp_path,monkeypatch):
+    import forge.operations as module
+    store=JobStore(tmp_path/'jobs.db');job=store.create();manager=OperationManager(store)
+    def run(args,**_):
+        if args[1:3]==['network','ls']:return SimpleNamespace(returncode=0,stdout='owned',stderr='')
+        if args[1:3]==['network','rm']:return SimpleNamespace(returncode=1,stdout='',stderr='Denied')
+        return SimpleNamespace(returncode=0,stdout='',stderr='')
+    monkeypatch.setattr(module.subprocess,'run',run)
+    monkeypatch.setattr(module.subprocess,'check_output',lambda *args,**kwargs:json.dumps([{
+        'Name':'forge-browser-net-'+'a'*12,'Labels':{'forge.job':job,'forge.role':'browser_verification'}}]))
+    result=manager.cancel(job)
+    assert result['status']=='CANCELLED' and 'Denied' in result['events'][-1]['payload']['cleanup_warning']
+
+
 def test_operation_deduplication_and_global_worker_lock(tmp_path,monkeypatch):
     store,job,manager=manager_fixture(tmp_path,monkeypatch)
     sequence=store.read(job)['events'][-1]['sequence'];request=uuid4().hex

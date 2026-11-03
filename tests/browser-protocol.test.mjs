@@ -24,3 +24,9 @@ test('semantic locators, values and assertions are interpreted without executing
   assert.deepEqual(actions,['-2.5']);
   await assert.rejects(executeStep(page,{action:'evaluate',target,code:'throw Error()'},base),/Unsupported browser action/);
 });
+
+test('hidden matching text cannot satisfy a visible-text assertion',async()=>{
+  const page={getByText:()=>({waitFor:async()=>{throw new Error('Element is hidden');},
+    innerText:async()=>{throw new Error('Hidden text must not be accepted');}})};
+  await assert.rejects(executeStep(page,{action:'assert_text',target:{by:'text',value:'Correct'},value:'Correct'},base),/Element is hidden/);
+});
