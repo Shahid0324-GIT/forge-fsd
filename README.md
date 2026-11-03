@@ -39,7 +39,7 @@ This diagram describes the target integration; the two paths above describe what
 
 ## Verified checkpoints
 
-Latest local controller suite: **390 Python tests passed**. These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy. Nine Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
+Latest local controller suite: **397 Python tests passed**. These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy. Nine Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
 
 Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker builds and Chromium:
 
@@ -56,6 +56,8 @@ Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker b
 The counter and formatter start from **deliberately faulty, controller-authored test fixtures**. They evaluate repair, not autonomous generation from a fresh request. Their frozen browser assertions run in a separate container and cannot be edited by the builder. All source corrections after fixture setup came from model tool calls.
 
 Results are tied to source/harness fingerprints and immutable image IDs. These small evaluations do not establish general coding reliability, unrestricted app support or production security. Detailed evidence and limitations are in [implementation checkpoints](docs/autonomous-implementation.md).
+
+Handoffs validate task revisions and source fingerprints. Changed source is rechecked before senior review; review results are rejected if artifacts change during generation. QA-to-builder handoffs revalidate the task, approval, runtime and source after diagnosis returns. Regression tests exercise these races and reopening a saved pause. Historical records remain available for audit without being treated as current repair evidence.
 
 ## Requirements
 

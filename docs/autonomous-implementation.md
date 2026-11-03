@@ -760,3 +760,16 @@ protected runtime and source snapshot after diagnosis returns. Changed source tr
 fresh verification instead of forwarding expired source or repair advice. Changed
 requirements, approval or runtime stop the handoff before the builder is invoked.
 Parameterized regression cases reproduce all four changes during the QA model call.
+
+Validation for increment 11:
+
+- New regression cases reproduced both senior-review gaps and all four QA handoff
+  races before the fixes. The upstream requirement-revision case passed unchanged.
+- Coordinator/task/acceptance integration selection: **54 passed**, exit 0.
+- Source-agent/scoped-tool selection: **47 passed**, exit 0.
+- `.venv\Scripts\python.exe -m pytest -q --tb=short`: **397 passed**, exit 0,
+  with 13 upstream LangSmith asyncio deprecation warnings. No external model,
+  Docker app run or cloud service was required for these deterministic regressions.
+- No frontend or dependency changes; the preceding dashboard build checkpoint remains
+  the latest frontend validation. Actual live-model timing and a fresh dashboard-led
+  generation remain separate E2E work.
