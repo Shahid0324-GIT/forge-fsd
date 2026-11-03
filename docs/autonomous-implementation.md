@@ -1206,3 +1206,17 @@ handling instead of escalating an old HTTP 413 to another code-review call. Only
 known provider access/size/quota error format is recognized; ordinary tool/compiler
 failures remain reviewable. Coordinator/provider selection: **36 passed**, exit 0,
 including a saved-history replay, with the existing 13 upstream warnings.
+
+## Increment 29: budget source completion separately from planning
+
+The scoped helper request passed the request-size gate but returned `finish_reason=length`
+with no visible source under the 3,000-token completion budget. Groq raw-source calls
+now use the provider's `low` reasoning effort; planning/review retain `medium`. Actual
+requested/effective settings remain in traces. No larger model/context/dependency was
+installed, and the output budget was not silently increased. Incomplete source still
+cannot be written, but is now a typed resource pause instead of an app-repair failure.
+Known saved pre-typed incomplete-source errors can retry the worker on resume.
+
+Provider/source-completion/coordinator selection: **49 passed**, exit 0, with the existing
+13 warnings. The preceding complete context/resource regression was **502 passed**,
+exit 0, in 299.05 seconds. Live re-execution is recorded separately.

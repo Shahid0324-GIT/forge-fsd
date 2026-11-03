@@ -8,4 +8,5 @@ class ProviderResourceError(RuntimeError):
 
 def legacy_resource_failure(error):
     """Recognize saved pre-typed provider errors without reclassifying app failures."""
-    return bool(re.match(r'^(?:RuntimeError:\s*)?Groq API returned HTTP (?:401|403|413|429)(?:[;\s]|$)',error))
+    return bool(re.match(r'^(?:RuntimeError:\s*)?Groq API returned HTTP (?:401|403|413|429)(?:[;\s]|$)',error)
+        or re.match(r'^ValueError: Source response did not complete normally(?:[.;\s]|$)',error))

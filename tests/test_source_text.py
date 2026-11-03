@@ -5,6 +5,7 @@ import pytest
 
 from forge.agents import OllamaAgents
 from forge.source_text import decode_source
+from forge.provider_errors import ProviderResourceError
 
 
 @pytest.mark.parametrize('fenced',[False,True])
@@ -53,6 +54,6 @@ def test_raw_source_is_traced_and_keeps_real_call_identity(tmp_path):
 @pytest.mark.parametrize('reason',['length',None])
 def test_provider_truncation_cannot_be_accepted_as_source(tmp_path,reason):
     worker=agent(tmp_path,Model('export const partial=',reason))
-    with pytest.raises(ValueError,match='did not complete'):worker.generate_source('Implement',{})
+    with pytest.raises(ProviderResourceError,match='did not complete'):worker.generate_source('Implement',{})
     trace=json.loads(next(worker.trace_directory.glob('*.json')).read_text())
     assert trace['outcome']=='ERROR' and 'did not complete' in trace['validation_error']

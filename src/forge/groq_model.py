@@ -4,6 +4,7 @@ import json
 import os
 import re
 from pathlib import Path
+from typing import Literal
 import time
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -40,12 +41,13 @@ class GroqChat(BaseChatModel):
     temperature: float=0
     num_predict: int=1600
     num_ctx: int=4096  # Existing worker option; the provider owns its context window.
+    reasoning_effort: Literal['low','medium','high']='medium'
 
     @property
     def _llm_type(self):return 'forge-groq'
 
     @property
-    def _identifying_params(self):return {'model_name':self.model_name,'temperature':self.temperature,'num_predict':self.num_predict}
+    def _identifying_params(self):return {'model_name':self.model_name,'temperature':self.temperature,'num_predict':self.num_predict,'reasoning_effort':self.reasoning_effort}
 
     def _post(self,payload):
         connection=http.client.HTTPSConnection('api.groq.com',timeout=120)
@@ -66,7 +68,7 @@ class GroqChat(BaseChatModel):
             if message.type not in roles or not isinstance(message.content,str):raise ValueError('Groq adapter accepts text chat messages only')
             wire.append({'role':roles[message.type],'content':message.content})
         payload={'model':self.model_name,'messages':wire,'temperature':self.temperature,
-            'max_completion_tokens':self.num_predict,'reasoning_effort':'medium','include_reasoning':False}
+            'max_completion_tokens':self.num_predict,'reasoning_effort':self.reasoning_effort,'include_reasoning':False}
         if stop:payload['stop']=stop
         if kwargs.get('response_schema') is not None:
             payload['response_format']={'type':'json_schema','json_schema':{'name':kwargs['schema_name'],
@@ -95,7 +97,8 @@ class GroqChat(BaseChatModel):
             if not isinstance(content,str):raise ValueError('Missing text completion')
             message=AIMessage(content=content,response_metadata={'model':self.model_name,'provider':'groq',
                 'done_reason':choice['finish_reason'],'request_id':result.get('id'),
-                'max_completion_tokens':self.num_predict,'response_format':'json_schema_best_effort' if 'response_format' in payload else 'text'},
+                'max_completion_tokens':self.num_predict,'reasoning_effort':self.reasoning_effort,
+                'response_format':'json_schema_best_effort' if 'response_format' in payload else 'text'},
                 usage_metadata={'input_tokens':usage.get('prompt_tokens',0),'output_tokens':usage.get('completion_tokens',0),
                     'total_tokens':usage.get('total_tokens',0)})
         except (ValueError,KeyError,IndexError,TypeError):raise ValueError('Groq returned an invalid chat response') from None

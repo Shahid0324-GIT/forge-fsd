@@ -121,11 +121,12 @@ def test_provider_limit_during_review_pauses_parent_and_review_child(ledger):
     assert child.status=='paused' and child.inflight_role is None and not child.observations
 
 
-def test_legacy_capacity_error_history_retries_worker_without_stale_senior_escalation(ledger):
+@pytest.mark.parametrize('error',['RuntimeError: Groq API returned HTTP 413','ValueError: Source response did not complete normally'])
+def test_legacy_capacity_error_history_retries_worker_without_stale_senior_escalation(ledger,error):
     task=ledger.start(create(ledger))
     for _ in range(2):
         task=ledger.reserve_action(task,'builder')
-        task=ledger.observe(task,Observation(revision=task.revision,fingerprint=FP,error='RuntimeError: Groq API returned HTTP 413'))
+        task=ledger.observe(task,Observation(revision=task.revision,fingerprint=FP,error=error))
     def reviewer(*_):raise AssertionError('A quota response is not an app diagnosis')
     result=TaskCoordinator(ledger,{'builder':lambda _:evidence()},reviewer,lambda:FP).run(task.task.id)
     assert result.status=='completed' and result.actions_used==3 and len(result.observations)==3
