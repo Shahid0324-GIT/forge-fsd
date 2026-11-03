@@ -956,3 +956,22 @@ It reports Node **24.22.2** and installed SQLite type-declaration SHA-256
 `9ba17a5bdbeb17c5584000b1ae4b3552116f2151f6c04830c070ef36bf4cecec`.
 Source/tool/build regressions: **57 passed**, exit 0. The last full checkpoint before
 these changes was **430 passed**, with the existing 13 upstream warnings.
+
+## Increment 19: source-text transport independent of structured metadata
+
+Several normally completed JSON source responses ended mid-JSX, including the first
+quoted attribute. A parser comparison reused the archived task context: the historical
+source had five syntax diagnostics; raw-source generation had none. The initial probe
+is `artifacts/source-transport-evaluation/1bfad11a0caf4d0e8c1936fdd0ec173b/result.json`.
+The new adapter repeated that syntax result at
+`artifacts/source-transport-evaluation/055cf23563034354991b7e3a11f2ca6b/result.json`.
+These are syntax-only comparisons, not full app passes or proof of a universal cause.
+
+The adapter returns one raw source body without JSON grammar constraints, retaining
+model-call identity, input/output traces, disabled cloud tracing and completion checks.
+It rejects empty, oversized, incomplete-fenced or multiple-file responses rather than
+truncating them. Structured planning/QA protocols remain unchanged. The scoped writer
+still owns path and hash validation; this increment does not yet connect the adapter
+to app writes. Adapter/decoder/existing-agent selection: **20 passed**, exit 0.
+`scripts/evaluate_source_transport.py <archived-model-call.json>` replays an archived
+TSX source proposal without executing either candidate as app code.
