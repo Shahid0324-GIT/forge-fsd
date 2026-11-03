@@ -27,6 +27,7 @@ from forge.autonomous_planning import uses_autonomous_planning,resumable_plannin
 from forge.autonomous_review import review_snapshot
 from forge.autonomous_build import build_resumable
 from forge.autonomous_testing import tests_resumable,evidence_current
+from forge.groq_model import GROQ_MODEL,groq_configured
 
 
 class NewJob(ApplicationRequest):
@@ -150,7 +151,8 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
 
     @app.get('/api/session')
     def session():
-        response=JSONResponse({'csrf':csrf,'model':'qwen2.5-coder:3b','mode':'local','supported_app':'Small single-user apps (experimental)'})
+        response=JSONResponse({'csrf':csrf,'model':'qwen2.5-coder:3b','mode':'local','supported_app':'Small single-user apps (experimental)',
+            'groq_configured':groq_configured()})
         response.set_cookie('forge_session',cookie,httponly=True,samesite='strict',path='/')
         return response
 
@@ -194,6 +196,9 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
 
     @app.post('/api/jobs',status_code=202)
     def new_job(body:NewJob):
+        if body.model==GROQ_MODEL:
+            if body.workflow!='autonomous':raise HTTPException(422,'Groq is enabled for the autonomous app workflow only')
+            if not groq_configured():raise HTTPException(422,'Configure GROQ_API_KEY in .env.local, then refresh the dashboard')
         with manager.lock:
             with store.connect() as db:
                 existing=db.execute('SELECT id,job_id,action FROM operations WHERE request_id=?',(body.request_id,)).fetchone()

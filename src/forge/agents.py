@@ -33,6 +33,11 @@ def validation_summary(error):
 class OllamaAgents:
     def __init__(self, model=DEFAULT_MODEL):
         self.model_name=model
+        if model=='groq:openai/gpt-oss-120b':
+            from forge.groq_model import GroqChat,groq_key
+            groq_key()  # Fail before starting a call; never store credentials in traces.
+            self.model=GroqChat()
+            return
         self.model = init_chat_model(
             model, model_provider="ollama", base_url="http://127.0.0.1:11434",
             temperature=0, num_ctx=4096, num_predict=1600,

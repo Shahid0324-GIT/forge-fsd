@@ -1107,3 +1107,32 @@ backend-only build errors, without weakening final global compilation.
 Routing/coordinator/build/acceptance integration: **42 passed**, exit 0, with the
 existing 13 upstream warnings. Tests cover stale source/revision, ambiguous failures,
 unregistered workers, source changes during routing and exhausted budgets.
+
+## Increment 25: explicit hosted inference through the same agent protocol
+
+New autonomous jobs may select `groq:openai/gpt-oss-120b`. The adapter implements
+LangChain's chat-model interface using standard-library HTTPS; no SDK, lockfile or
+dependency change was introduced. Structured responses use Groq's best-effort JSON
+schema mode and are validated locally. Raw source retains the existing completion,
+ownership, hash, compilation and QA gates. There are no provider-managed tools or
+silent provider fallbacks. Existing Ollama jobs retain their original model binding.
+
+Credentials are read from the controller environment or ignored `.env.local`, never
+placed in prompts/model state or returned by the dashboard. Requests use the fixed
+Groq HTTPS host. The adapter suppresses reasoning output and stores only response
+content, usage and selected provider metadata. HTTP failures do not echo provider
+response bodies. A 429 can wait once for a numeric Retry-After of at most 60 seconds;
+continued failures remain ordinary saved operation failures. Provider limits can
+still block a free-tier run. Requests are not silently downgraded to another model.
+
+The model selector is disabled until local credentials are configured and the new
+autonomous workflow is chosen. Hosted data transmission is disclosed in the selector
+view/sidebar; publishing/deployment consent is unchanged. An isolated empty dashboard
+confirmed the unavailable-option/setup guidance without executing hosted inference:
+`artifacts/provider-dashboard-evaluation/4ca028ae80ec450a9aad9214338fdc85/provider-setup.png`.
+
+Provider/API/source transport selection: **34 passed**, exit 0. Full integration suite:
+**490 passed**, exit 0, in 274.91 seconds, with the existing 13 upstream warnings.
+Dashboard TypeScript and production build passed. These provider tests use mocked
+network responses. **Live Groq connectivity, model quality and a new end-to-end app
+remain pending the user's API-key setup.** No hosted success is claimed yet.

@@ -8,10 +8,14 @@ from uuid import uuid4
 
 def begin_call(agent, schema, messages, attempt, coding):
     context=dict(getattr(agent,'invocation_context',{}))
+    options={'num_ctx':8192 if coding else 4096,'num_predict':3000 if coding else 1600,'temperature':0}
+    if getattr(agent,'model_name','')=='groq:openai/gpt-oss-120b':
+        options={'max_completion_tokens':3000 if coding else 1600,'temperature':0,
+            'reasoning_effort':'medium','include_reasoning':False,'context_window':'provider-managed'}
     return {'version':1, **context, 'call_id':uuid4().hex,
             'model':getattr(agent,'model_name','unknown'), 'schema':schema.__name__, 'attempt':attempt,
             'started_at':datetime.now(timezone.utc).isoformat(),
-            'requested_options':{'num_ctx':8192 if coding else 4096,'num_predict':3000 if coding else 1600,'temperature':0},
+            'requested_options':options,
             'messages':list(messages), 'response_schema':schema.model_json_schema(),
             'input_sha256':hashlib.sha256(json.dumps(messages,separators=(',',':')).encode()).hexdigest(),
             '_timer':perf_counter()}

@@ -3,7 +3,7 @@ import re
 from typing import Literal,Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator,JsonValue
-from forge.models import LocalModel,DEFAULT_MODEL
+from forge.models import AgentModel,DEFAULT_MODEL
 from forge.contracts import DataContract, AppDesign
 
 
@@ -21,7 +21,7 @@ class AcceptanceReview(Boundary):
 
 class ApplicationRequest(Boundary):
     description: str = Field(min_length=10, max_length=4000)
-    model: LocalModel = DEFAULT_MODEL
+    model: AgentModel = DEFAULT_MODEL
 
 
 class AppField(Boundary):

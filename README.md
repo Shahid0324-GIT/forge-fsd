@@ -2,6 +2,10 @@
 
 A local-first proof of concept for agent-assisted full-stack development, built with **Python, LangGraph, LangChain and Ollama**.
 
+New autonomous jobs can also opt into **Groq GPT-OSS 120B**. The controller remains
+local; hosted inference sends requirements, source context and diagnostics to Groq.
+Ollama remains the default and existing jobs retain their saved model.
+
 The assignment explores how agents can gather requirements, plan an application, delegate work, inspect real test results, review failures and iterate. Generated apps use **Next.js, React and TypeScript**, with **SQLite** for supported local persistence workflows. Docker isolates application execution from the controller.
 
 **Status — 3 November 2026:** the core components and local dashboard are implemented. A newer autonomous coordinator is being integrated incrementally. It is **not yet a single, fully verified request-to-deployment workflow through the dashboard**. The distinctions below are intentional.
@@ -40,7 +44,7 @@ This diagram describes the target integration; the two paths above describe what
 
 ## Verified checkpoints
 
-Latest local controller suite: **458 Python tests passed** (13 upstream deprecation warnings). These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy. Eleven Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
+Latest local controller suite: **490 Python tests passed** (13 upstream deprecation warnings). These use fake agents, temporary databases and mocked external services; they do not establish model accuracy. Groq integration is covered with mocked responses; live hosted inference is pending credential setup. Eleven Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
 
 Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker builds and Chromium:
 
@@ -105,6 +109,19 @@ If the required model is absent, install it explicitly; this is a model download
 ```powershell
 ollama pull qwen2.5-coder:7b
 ```
+
+### Optional Groq setup
+
+Create an API key in [Groq Console](https://console.groq.com/keys), copy
+[.env.example](.env.example) to `.env.local` and replace the placeholder locally.
+Never commit or paste the key into chat. Alternatively set `GROQ_API_KEY` in the
+controller's environment. No extra package, model download or lockfile change is needed.
+
+Refresh the dashboard, choose **Autonomous app workflow · experimental**, then
+**Hosted · Groq GPT-OSS 120B**. This is an explicit choice for a new job; saved Ollama
+jobs are not silently switched. Groq availability, account rate limits and credits
+apply. The adapter uses best-effort JSON-schema output plus the same local Pydantic
+validation and source/build/QA gates; provider output alone is not a pass.
 
 ## Run the dashboard
 
