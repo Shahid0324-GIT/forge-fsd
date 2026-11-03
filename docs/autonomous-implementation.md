@@ -934,3 +934,25 @@ server-client design question and retained a payment-capability question for the
 No app was generated/executed in that calibration. Planning/review selection:
 **32 passed**, exit 0. The preceding full checkpoint for increment 16 was **428 passed**;
 the complete suite for this integration is recorded after it finishes.
+
+## Increment 18: give implementers supported-runtime knowledge
+
+The SQLite build paused after repeatedly proposing unavailable Prisma imports. Planning
+had named native Node SQLite, but source-tool context listed npm dependencies without
+its API reference. Builders and senior review now share bounded implementation facts:
+Next.js server HTTP/client boundaries and, for SQLite apps, `node:sqlite`/`DatabaseSync`,
+prepared reads/writes, bound parameters and the controller's `SQLITE_PATH`. This supplies
+supported alternatives without adding packages, prescribing business types or changing
+generated app source. Stateless apps do not receive SQLite-specific guidance. Tool and
+runtime permissions remain unchanged. Generation also excludes recovery advice once
+newer observations supersede the reviewed evidence.
+
+`scripts/check_runtime_reference.py` checks these native APIs offline in the existing
+immutable dependency image. It creates a temporary file database, uses bound statements,
+reads rows, closes/reopens the database, then removes the probe container. This is not a
+generated-app database test. The recorded probe passed, exit 0:
+`artifacts/runtime-reference-evaluation/9cb38e29179b45179402581009a89cb6/report.json`.
+It reports Node **24.22.2** and installed SQLite type-declaration SHA-256
+`9ba17a5bdbeb17c5584000b1ae4b3552116f2151f6c04830c070ef36bf4cecec`.
+Source/tool/build regressions: **57 passed**, exit 0. The last full checkpoint before
+these changes was **430 passed**, with the existing 13 upstream warnings.

@@ -5,6 +5,7 @@ from forge import autonomous_planning as planning
 from forge.autonomous_review import approved_review
 from forge.coordinator import TaskCoordinator
 from forge.senior_review import SeniorReviewer
+from forge.runtime_reference import runtime_references
 from forge.source_agent import SourceAgent,build_evidence
 from forge.source_checks import run_source_checks
 from forge.tasks import Dependency,Observation,Task,TaskLedger
@@ -69,6 +70,7 @@ def build_app(job_id,agents,store,*,resume=False,additional_actions=8,workspace_
         for role in {file.owner for file in draft.files}}
     def reviewer_for(roles):return SeniorReviewer(agents,ledger,set(roles),context_loader=lambda state:{
         **context,'source_fingerprint':source_fingerprint(root),'approved_design':draft.model_dump(),
+        'runtime_references':runtime_references(draft.database),
         'current_source':{file.path:safe_path(root,file.path).read_text(encoding='utf-8')
             for file in draft.files if safe_path(root,file.path).is_file()}},capabilities={role:capabilities[role] for role in roles})
     writer=SourceAgent(ledger,agents,root,draft,workspace_boundary=boundary,check_runner=check_runner,authorization=authorize)

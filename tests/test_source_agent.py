@@ -58,6 +58,28 @@ def test_model_proposes_actual_owned_write_with_original_goal_and_live_source(to
     assert tools.ledger.read(state.task.id).status=='running'
 
 
+@pytest.mark.parametrize('database',['none','sqlite'])
+def test_generation_receives_actual_runtime_reference_without_adding_dependencies(tools,database):
+    state=configured(tools);draft=tools.draft.model_copy(update={'database':database})
+    agent=Agent('export default function Page(){return null}')
+    SourceAgent(tools.ledger,agent,tools.root,draft,workspace_boundary=tools.root.parent)(state)
+    references=agent.data['capabilities']['runtime_references']
+    assert bool(references.get('sqlite'))==(database=='sqlite')
+    if database=='sqlite':
+        assert references['sqlite']['module']=='node:sqlite' and references['sqlite']['export']=='DatabaseSync'
+        assert 'SQLITE_PATH' in references['sqlite']['path']
+    assert not agent.data['capabilities']['package_installation']
+
+
+def test_generation_does_not_replay_review_advice_after_another_observation(tools):
+    state=configured(tools)
+    state=tools.ledger.recover(state,RecoveryPlan(diagnosis='Earlier failure',strategy='Earlier hypothesis',action='retry',owner='frontend'),{'frontend'})
+    state=tools.ledger.observe(state,Observation(revision=state.revision,fingerprint=source_fingerprint(tools.root),error='A newer tool failure'))
+    state=tools.ledger.reserve_action(state,'frontend');agent=Agent('export default function Page(){return null}')
+    SourceAgent(tools.ledger,agent,tools.root,tools.draft,workspace_boundary=tools.root.parent)(state)
+    assert agent.data['recovery_strategy'] is None
+
+
 def test_missing_original_context_prevents_ungrounded_generation(tools):
     agent=Agent('unused')
     with pytest.raises(ValueError,match='original user request'):

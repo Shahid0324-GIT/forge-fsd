@@ -13,6 +13,7 @@ from forge.autonomous_planning import AppDraft
 from forge.autonomous_review import approved_review
 from forge.coordinator import TaskCoordinator
 from forge.senior_review import SeniorReviewer
+from forge.runtime_reference import runtime_references
 from forge.source_agent import SourceAgent,build_evidence
 from forge.source_checks import run_source_checks,harness_fingerprint as build_harness_fingerprint
 from forge.tasks import Dependency,Observation,Task,TaskLedger
@@ -139,6 +140,7 @@ def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,additional_
             return build_evidence(WorkspaceTools(ledger,current,root,draft,workspace_boundary=boundary,check_runner=verify,authorization=authorize))
         return worker(current)
     reviewer=SeniorReviewer(agents,ledger,owners,context_loader=lambda _: {**context,'acceptance_contract':contract['suite'],
+        'runtime_references':runtime_references(draft.database),
         'source_fingerprint':source_fingerprint(root),'current_source':{file.path:safe_path(root,file.path).read_text(encoding='utf-8')
             for file in draft.files if safe_path(root,file.path).is_file()}},capabilities={role:'Edits only owned app source; never frozen acceptance assertions.' for role in owners})
     state=TaskCoordinator(ledger,{role:verify_or_repair for role in owners},reviewer,lambda:source_fingerprint(root)).run(state.task.id)

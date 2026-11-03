@@ -161,7 +161,7 @@ class SourceAgent:
                 and any(c.check=='isolated_build' and c.exit_code!=0 for c in o.checks)),None),
             'attempt':state.actions_used,'stalled_attempts':state.no_progress,'repair_mode':repairing,
             'previous_build':state.task.inputs.get('build_failure'),
-            'recovery_strategy':state.recovery.model_dump() if state.recovery else None}
+            'recovery_strategy':state.recovery.model_dump() if state.recovery and state.reviewed_observations==len(state.observations) else None}
         if len(json.dumps(data,separators=(',',':')))>22000:
             raise ValueError('Complete source/interface context exceeds this worker budget; split the task instead of silently dropping contracts')
         if getattr(self.agents,'trace_directory',None) is None:

@@ -9,6 +9,7 @@ from pydantic import Field,RootModel
 
 from forge.autonomous_planning import AppDraft,manifest_issues
 from forge.check_context import observed_context
+from forge.runtime_reference import runtime_references
 from forge.source_checks import run_source_checks
 from forge.tasks import Envelope,TaskConflict
 from forge.workspace import is_test_source,safe_path,source_fingerprint,unsupported_imports
@@ -94,6 +95,7 @@ class WorkspaceTools:
         package=safe_path(self.root,'package.json')
         declared=json.loads(package.read_text(encoding='utf-8')) if package.is_file() else {}
         return {'schema':ToolCall.model_json_schema(),'owner':self.state.task.owner,
+            'runtime_references':runtime_references(self.draft.database),
             'owned_files':[path for path,owner in self.owners.items() if owner==self.state.task.owner],
             'declared_app_dependencies':declared.get('dependencies',{}),
             'declared_dev_dependencies':declared.get('devDependencies',{}),
