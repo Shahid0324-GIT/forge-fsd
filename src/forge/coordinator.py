@@ -12,6 +12,7 @@ from langgraph.graph import END,START,StateGraph
 from langsmith import tracing_context
 
 from forge.tasks import CheckEvidence,Observation,RecoveryPlan,Task,TaskConflict
+from forge.provider_errors import ProviderResourceError
 
 
 class LoopState(TypedDict,total=False):
@@ -97,6 +98,9 @@ class TaskCoordinator:
         checks=[];error=''
         try:checks=self.workers[current.task.owner](dispatched)
         except TaskConflict:raise
+        except ProviderResourceError as exc:
+            self.ledger.pause(dispatched,str(exc),action_finished=True)
+            return {}
         except Exception as exc:error=f'{type(exc).__name__}: {exc}'[:4000]
         try:
             fingerprint=self.fingerprint()
@@ -132,6 +136,10 @@ class TaskCoordinator:
             if plan.owner not in self.workers:raise ValueError('Reviewer selected an unavailable worker')
             if plan.action=='request_input' and not current.task.allow_review_questions:raise ValueError('User-question authority was not delegated for this review')
             if plan.action=='retry' and plan.owner!=current.task.owner:raise ValueError('Ownership changes require reassign')
+        except ProviderResourceError as exc:
+            self.ledger.pause(child,str(exc),action_finished=True)
+            self.ledger.pause(dispatched,str(exc),action_finished=True)
+            return {}
         except Exception as exc:error=f'{type(exc).__name__}: {exc}'[:4000]
         directory=self.ledger.store.path.parent/'task-reviews'/self.ledger.job_id
         directory.mkdir(parents=True,exist_ok=True);report=directory/(uuid4().hex+'.json')

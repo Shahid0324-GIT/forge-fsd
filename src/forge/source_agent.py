@@ -11,6 +11,7 @@ from forge.check_context import observed_context,summarize_checks
 from forge.handoffs import record_handoff
 from forge.import_reference import relative_import_reference
 from forge.cycle_context import rejected_state_context,failure_obligations
+from forge.provider_errors import ProviderResourceError
 from forge.tasks import CheckEvidence,Envelope,Observation,Task
 from forge.workspace import source_fingerprint
 from forge.workspace_tools import ReplaceText,WorkspaceTools,WriteFile,file_hash
@@ -333,13 +334,14 @@ class SourceAgent:
             inputs={'failed_task':state.task.id,'input_revision':state.revision},required_checks=['repair_focus']),action_limit=1)
         child=self.ledger.reserve_action(self.ledger.start(child),'qa')
         previous_context=getattr(self.agents,'invocation_context',{});previous_activity=getattr(self.agents,'activity',None)
-        focus=None;error=''
+        focus=None;error='';resource_error=None
         try:
             record_handoff(self.ledger.store,self.ledger.job_id,state.task.owner,'qa',
                 'Diagnose the actual failure and delegate one concrete repair target to the builder.',data,
                 agents=self.agents,task_id=child.task.id,parent_task_id=state.task.id)
             self.agents.activity=lambda status,payload:self.ledger.store.event(self.ledger.job_id,status,payload,update_status=False)
             focus=schema.model_validate(self.agents.generate(schema,FOCUS_INSTRUCTION,data,coding=True))
+        except ProviderResourceError as exc:resource_error=exc;error=str(exc)
         except Exception as exc:error=f'{type(exc).__name__}: {exc}'[:2000]
         finally:self.agents.invocation_context=previous_context;self.agents.activity=previous_activity
         directory=self.ledger.store.path.parent/'repair-focus'/self.ledger.job_id;directory.mkdir(parents=True,exist_ok=True)
@@ -351,6 +353,7 @@ class SourceAgent:
             checks=[CheckEvidence(check='repair_focus',exit_code=int(bool(error)),fingerprint=fingerprint,report=str(report.resolve()),summary=error or 'Focused repair proposal validated; no app checks passed by assertion.')]))
         if error:
             self.ledger.pause(child,'Diagnosis needs correction; parent retains evidence.')
+            if resource_error:raise resource_error
             raise ValueError(error)
         return focus
 

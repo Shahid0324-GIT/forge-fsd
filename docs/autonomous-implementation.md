@@ -1160,3 +1160,18 @@ capability bottleneck without attributing every previous issue to the local mode
 Both-model API, schema-echo rejection and source-transport selection: **30 passed**,
 exit 0, with the existing 13 warnings. Dashboard TypeScript and production build passed.
 Fresh hosted app generation and independent acceptance remain the next live evaluation.
+
+## Increment 27: provider capacity is a saved resource pause
+
+The fresh hosted build reached database-helper generation, then consumed several
+attempts on HTTP 413/429 responses. Those are provider capacity failures, not compiler
+evidence. Groq access/size/rate-limit failures now retain a typed resource error.
+Worker and senior-review dispatches pause immediately, clearing in-flight ownership
+without fabricating an app observation or requesting more coding retries. QA diagnosis
+preserves that resource type after saving its child report. Existing actions/history
+are retained for explicit resume. Error summaries can include numeric token limits,
+but never echo provider bodies, credentials, account IDs or source.
+
+Coordinator/provider/source-agent selection: **63 passed**, exit 0, with the existing
+13 warnings. Full regression before this increment was **493 passed**, exit 0, in
+246.41 seconds. Source-context selection is a separate following increment.

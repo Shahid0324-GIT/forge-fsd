@@ -6,6 +6,7 @@ from forge.source_agent import SourceAgent,build_evidence,diagnostic_context,REP
 from forge.tasks import CheckEvidence,Observation,TaskConflict,RecoveryPlan
 from forge.workspace import source_fingerprint
 from forge.workspace_tools import file_hash
+from forge.provider_errors import ProviderResourceError
 from test_workspace_tools import tools
 
 
@@ -85,6 +86,16 @@ def test_missing_original_context_prevents_ungrounded_generation(tools):
     with pytest.raises(ValueError,match='original user request'):
         SourceAgent(tools.ledger,agent,tools.root,tools.draft,workspace_boundary=tools.root.parent)(tools.state)
     assert agent.data is None
+
+
+def test_diagnosis_provider_limit_keeps_its_resource_type_and_cannot_write(tools):
+    state=configured(tools,'repair_build')
+    class Limited(Agent):
+        def generate(self,*args,**kwargs):raise ProviderResourceError('Provider token limit')
+    with pytest.raises(ProviderResourceError):
+        SourceAgent(tools.ledger,Limited('unused'),tools.root,tools.draft,workspace_boundary=tools.root.parent)(state)
+    assert not (tools.root/'app/page.tsx').exists()
+    assert all(child.status=='paused' for child in tools.ledger.list() if child.task.parent_id==state.task.id)
 
 
 def test_repair_handoff_includes_snapshot_import_facts_for_missing_module(tools):

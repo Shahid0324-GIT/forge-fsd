@@ -81,6 +81,14 @@ def test_one_bounded_rate_wait_preserves_the_request(monkeypatch):
     provider.GroqChat().invoke([('human','Test')]);assert waits==[2] and calls[0]==calls[1]
 
 
+def test_request_limit_reports_only_numeric_capacity_not_provider_body(monkeypatch):
+    from forge.provider_errors import ProviderResourceError
+    monkeypatch.setattr(provider.GroqChat,'_post',lambda *_:(413,None,b'private-account Limit 6000, Requested 7400 private-test-secret'))
+    with pytest.raises(ProviderResourceError) as error:provider.GroqChat().invoke([('human','Test')])
+    assert '6000' in str(error.value) and '7400' in str(error.value)
+    assert 'private' not in str(error.value)
+
+
 def test_https_destination_is_fixed_and_headers_never_become_model_input(monkeypatch):
     calls=[];monkeypatch.setenv('GROQ_API_KEY','private-test-secret')
     class Reply:

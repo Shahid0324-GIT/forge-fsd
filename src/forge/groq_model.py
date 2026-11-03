@@ -2,6 +2,7 @@
 import http.client
 import json
 import os
+import re
 from pathlib import Path
 import time
 
@@ -9,6 +10,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration,ChatResult
 from langchain_core.runnables import RunnableLambda
+from forge.provider_errors import ProviderResourceError
 
 
 GROQ_MODEL='groq:openai/gpt-oss-120b'
@@ -77,6 +79,15 @@ class GroqChat(BaseChatModel):
             if 0<delay<=60:
                 time.sleep(delay);status,retry,raw=self._post(payload)
         if status!=200:
+            if status in {401,403,413,429}:
+                detail=''
+                if status==413:
+                    # Only numeric limits are retained; never echo provider bodies,
+                    # account IDs, source, or credentials into failure summaries.
+                    limits=re.search(rb'Limit\s+(\d+).*?Requested\s+(\d+)',raw,re.I|re.S)
+                    if limits:detail=f' (token limit {int(limits[1])}, requested {int(limits[2])})'
+                reason={401:'credential rejected',403:'model access denied',413:'request too large',429:'rate limit reached'}[status]
+                raise ProviderResourceError(f'Groq HTTP {status}: {reason}{detail}. Provider resource pause; no app defect inferred.')
             suffix='; rate limit reached, wait and resume the saved operation' if status==429 else ''
             raise RuntimeError(f'Groq API returned HTTP {status}{suffix}')
         try:

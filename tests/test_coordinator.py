@@ -7,6 +7,7 @@ from forge.coordinator import TaskCoordinator
 from forge.persistence import JobStore
 from forge.senior_review import SeniorReviewer
 from forge.tasks import CheckEvidence,Dependency,Observation,RecoveryPlan,Task,TaskLedger
+from forge.provider_errors import ProviderResourceError
 
 
 FP='a'*64
@@ -98,6 +99,26 @@ def test_owner_handoff_does_not_extend_an_exhausted_budget(ledger):
     result=TaskCoordinator(ledger,{'builder':builder,'backend':lambda _:calls.append('backend')},retry,lambda:FP,
         owner_router=lambda state:'backend' if state.observations else None).run(task.task.id)
     assert result.status=='paused' and result.actions_used==1 and calls==['builder']
+
+
+def test_provider_resource_failure_pauses_without_app_observation_or_repair_review(ledger):
+    task=create(ledger);calls=[]
+    def worker(_):calls.append(1);raise ProviderResourceError('Provider request exceeds token limit')
+    result=TaskCoordinator(ledger,{'builder':worker},retry,lambda:FP).run(task.task.id)
+    assert result.status=='paused' and result.inflight_role is None
+    assert result.actions_used==1 and not result.observations and len(ledger.list())==1 and calls==[1]
+    resumed=ledger.resume(result)
+    result=TaskCoordinator(ledger,{'builder':lambda _:evidence()},retry,lambda:FP).run(resumed.task.id)
+    assert result.status=='completed' and result.actions_used==2
+
+
+def test_provider_limit_during_review_pauses_parent_and_review_child(ledger):
+    task=create(ledger)
+    def reviewer(*_):raise ProviderResourceError('Provider rate limit')
+    result=TaskCoordinator(ledger,{'builder':lambda _:evidence(False)},reviewer,lambda:FP).run(task.task.id)
+    assert result.status=='paused' and result.actions_used==3 and len(result.observations)==2
+    child=next(state for state in ledger.list() if state.task.parent_id==task.task.id)
+    assert child.status=='paused' and child.inflight_role is None and not child.observations
 
 
 def test_exhaustion_pauses_and_explicit_resume_keeps_attempt_history(ledger):
