@@ -8,6 +8,7 @@ from uuid import uuid4
 from pydantic import Field,RootModel
 
 from forge.autonomous_planning import AppDraft,manifest_issues
+from forge.check_context import observed_context
 from forge.source_checks import run_source_checks
 from forge.tasks import Envelope,TaskConflict
 from forge.workspace import is_test_source,safe_path,source_fingerprint,unsupported_imports
@@ -182,7 +183,8 @@ class WorkspaceTools:
                 failed=next((o for o in reversed(self.state.observations) if o.revision==self.state.revision
                     and o.fingerprint==candidate and any(c.exit_code!=0 for c in o.checks)),None)
                 if failed:
-                    reason='; '.join(c.summary for c in failed.checks if c.exit_code!=0)[:900]
+                    canonical=observed_context(failed,self.ledger.store.path.parent)
+                    reason='; '.join(c['summary'] for c in canonical['checks'] if c['exit_code']!=0)[:900]
                     raise ValueError('Repair cycle rejected: this would restore an already failed workspace '+candidate+
                         '. No source was written. Address both the current failure and this earlier failure: '+reason)
             packet.update(phase='prepared',before_content=before)

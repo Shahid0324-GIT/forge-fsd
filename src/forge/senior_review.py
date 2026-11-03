@@ -5,6 +5,7 @@ from typing import Annotated,Literal,Union
 from pydantic import Field,RootModel,create_model
 
 from forge.handoffs import record_handoff
+from forge.check_context import observed_context
 from forge.tasks import RecoveryPlan
 
 
@@ -62,8 +63,9 @@ class SeniorReviewer:
         latest=next((o for o in reversed(history) if o.checks and o.fingerprint==current_fingerprint),None)
         # Preserve old details in reports, not alongside the current debugging input.
         # The small model otherwise copies a previously suggested diagnosis verbatim.
-        observations=[o for o in observations if o['fingerprint']==current_fingerprint]
-        data={'current_evidence':latest.model_dump() if latest else None,
+        observations=[{'fingerprint':o['fingerprint'],'checks':[{'check':c['check'],'exit_code':c['exit_code'],'report':c['report']} for c in o['checks']]}
+            for o in observations if o['fingerprint']==current_fingerprint]
+        data={'current_evidence':observed_context(latest,self.ledger.store.path.parent) if latest else None,
             'latest_tool_error':history[-1].error if history else '',
             'original_goal':failed.task.goal,'current_owner':failed.task.owner,
             'input_revision':failed.revision,'required_checks':failed.task.required_checks,

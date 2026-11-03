@@ -7,6 +7,7 @@ from typing import Annotated,Literal,Union
 from pydantic import Field,RootModel,create_model
 
 from forge.autonomous_planning import AppDraft
+from forge.check_context import observed_context,summarize_checks
 from forge.handoffs import record_handoff
 from forge.tasks import CheckEvidence,Envelope,Observation,Task
 from forge.workspace import source_fingerprint
@@ -159,6 +160,9 @@ class SourceAgent:
                 # Locations from another source snapshot cannot justify an edit.
                 # Recheck first; the coordinator will record this fresh evidence.
                 return build_evidence(tools)
+            observed=next(o for o in reversed(state.observations) if o.revision==state.revision
+                and any(c.check=='isolated_build' and c.exit_code!=0 for c in o.checks))
+            data['latest_build_failure']=observed_context(observed,self.ledger.store.path.parent)
             data['diagnostic_locations']=diagnostic_context(data['latest_build_failure'],source)
             # A prior diagnosis is a hypothesis, not compiler evidence. Replaying it
             # beside each new diagnosis anchored the model on incorrect causes.
@@ -248,11 +252,7 @@ def build_evidence(tools):
     outcome=tools.execute({'tool':'check_build'})
     if not outcome['ok']:raise ValueError(outcome['error'])
     data=outcome['data']
-    failed=[row for row in data['checks'] if row['exit_code']!=0 or row.get('stopped')]
-    build_failed=any(row['name'] in {'typecheck','production_build'} for row in failed)
-    diagnostic='\n'.join(f"{row['file']}({row['line']},{row['column']}): {row['code']}: {row['message']}"
-        for row in data.get('source_diagnostics',[]) if build_failed)
-    summary=(diagnostic+'\n' if diagnostic else '')+'\n'.join(f"{row['name']} (exit {row['exit_code']}): {row['output']}" for row in (failed or data['checks']))
+    summary=summarize_checks(data['checks'],data.get('source_diagnostics',[]),data.get('error'))
     return [CheckEvidence(check='isolated_build',exit_code=0 if data['passed'] else 1,
         fingerprint=data['source_fingerprint'],report=data['report'],
         summary=(summary or str(data.get('error') or 'Build report was incomplete'))[:2000])]
