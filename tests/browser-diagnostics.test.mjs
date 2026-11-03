@@ -14,4 +14,17 @@ test('text and control values are reported separately without rewriting expectat
   const evidence=await inspectFailure(page,{action:'assert_value',target:{by:'label',value:'Count'},value:'1'},()=>({
     count:async()=>1,isVisible:async()=>true,innerText:async()=>'',inputValue:async()=>'01'}));
   assert.equal(evidence.actual_text,'');assert.equal(evidence.actual_value,'01');assert.equal(evidence.expected,'1');
+  assert.equal(evidence.kind,'value_mismatch');
+});
+test('visible text mismatch identifies rendered text without blaming the event handler',async()=>{
+  const evidence=await inspectFailure(page,{action:'assert_text',target:{by:'role',value:'status'},value:'Ready'},()=>({
+    count:async()=>1,isVisible:async()=>true,innerText:async()=>'State: Ready',inputValue:async()=>{throw Error('not an input');}}));
+  assert.equal(evidence.kind,'text_mismatch');assert.equal(evidence.actual_text,'State: Ready');
+  assert.equal(evidence.expected,'Ready');assert.equal(evidence.comparison,'exact_normalized_visible_text');
+  assert.match(evidence.guidance,/rendered text/);assert.match(evidence.guidance,/state|handler/);
+});
+test('whitespace-normalized text that matches is not labelled a text mismatch',async()=>{
+  const evidence=await inspectFailure(page,{action:'assert_text',target:{by:'role',value:'status'},value:'Ready now'},()=>({
+    count:async()=>1,isVisible:async()=>true,innerText:async()=>' Ready\n now ',inputValue:async()=>null}));
+  assert.equal(evidence.kind,'assertion_or_action_failure');
 });

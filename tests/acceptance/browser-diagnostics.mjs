@@ -17,6 +17,15 @@ export async function inspectFailure(page,step,locate){
         result.kind=result.visible?'assertion_or_action_failure':'hidden_target';
         result.actual_text=await locator.innerText().catch(()=>null);
         result.actual_value=await locator.inputValue().catch(()=>null);
+        const normalized=text=>text.replace(/\s+/g,' ').trim();
+        if(result.visible && step.action==='assert_text' && typeof result.actual_text==='string'
+          && normalized(result.actual_text)!==normalized(step.value)){
+          result.kind='text_mismatch';result.comparison='exact_normalized_visible_text';
+          result.guidance='The target exists and is visible. Its rendered text differs from the expected text. Inspect the JSX content and which element carries the target role before changing state arithmetic or event handlers. Extra labels or prefixes are part of innerText; aria-label does not replace rendered text. Preserve frozen assertions.';
+        }else if(result.visible && step.action==='assert_value' && result.actual_value!==null && result.actual_value!==step.value){
+          result.kind='value_mismatch';result.comparison='exact_input_value';
+          result.guidance='The visible input value differs from the expected value. Inspect the controlled value and input updates; visible labels and surrounding text are not the input value. Preserve frozen assertions.';
+        }
       }
     }catch(error){result.inspection_error=String(error).slice(0,500);}
   }

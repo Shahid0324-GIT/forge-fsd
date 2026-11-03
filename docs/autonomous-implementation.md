@@ -785,3 +785,17 @@ revision and fingerprint. Historical snapshots remain intact, and same-revision
 failed-manifest recovery still receives its candidate. An externally replaced candidate
 is omitted. Planning/review regressions: **29 passed**, exit 0, including both newly
 failing freshness assertions after the fix. Live dashboard evaluation continues separately.
+
+## Increment 13: distinguish rendered-text and control-value failures
+
+The dashboard evaluation built successfully after a model-authored client-directive
+repair, then stalled on a visible-text mismatch. Both QA and senior review described
+the observed extra label but repeatedly recommended changing input handlers instead.
+The browser diagnostics now classify `text_mismatch` and `value_mismatch` separately,
+using the fixed interpreter's actual comparison semantics. They explain rendered text,
+input values and accessible names without changing targets, expected values or waits.
+QA and senior-review guidance uses those facts before speculating about state logic.
+Changes were made only after the managed operation paused. The original contract and
+paused source fingerprints were saved before resuming. Node regressions: **11 passed**;
+browser/source/coordinator Python selection: **51 passed**, both exit 0. The model must
+still demonstrate any effective source repair in execution; advice alone is not a pass.

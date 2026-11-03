@@ -29,6 +29,10 @@ diagnostic against current_source before recommending any symbol or import chang
 If source no longer contains a previously broken symbol, that diagnosis is obsolete.
 For a cycle, propose a correction addressing both failures instead of undoing the
 latest edit and restoring a known failing workspace.'''
+INSTRUCTION+=''' Browser failure_context.kind=text_mismatch identifies different rendered
+text on an existing visible target. Inspect actual_text versus expected and the JSX
+before blaming arithmetic or event handlers. Extra label text is part of innerText;
+an accessible name does not replace that text. Never alter frozen expectations.'''
 
 
 class SeniorReviewer:

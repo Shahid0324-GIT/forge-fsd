@@ -69,6 +69,10 @@ timeout. kind=missing_target with match_count=0 means the requested semantic tar
 was absent. Compare the accessibility snapshot and source markup to the frozen target.
 Do not guess slow performance, increase immutable test timeouts, or change numeric
 state types merely because a UI target is missing. Propose an owned app-source fix.'''
+FOCUS_INSTRUCTION+=''' For kind=text_mismatch, compare actual_text with expected and
+inspect the rendered JSX for that target. An extra label or prefix is a presentation
+mismatch; it does not by itself demonstrate broken state arithmetic or input handlers.
+kind=value_mismatch refers to an input's value, not its surrounding visible text.'''
 
 
 REPAIR_INSTRUCTION='''Repair the selected existing file so the supplied real compiler,
