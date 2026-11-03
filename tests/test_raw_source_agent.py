@@ -55,8 +55,8 @@ def test_cycle_body_receives_separate_actions_for_current_and_rejected_failures(
     assert {row['source_state'] for row in agent.obligations}=={'current','rejected_candidate'}
     assert 'repair_focus' not in context and 'selected_change' not in context
     assert 'app/page.tsx' not in context['source']
-    assert context['context_omitted'][0]['file']=='app/page.tsx'
-    assert len(context['context_omitted'][0]['sha256'])==64
+    omitted=next(item for item in context['context_omitted'] if item['file']=='app/page.tsx')
+    assert len(omitted['sha256'])==64
     assert all('source_excerpt' not in row for row in context['diagnostic_locations'] if row['file']=='app/page.tsx')
 
 
@@ -108,6 +108,23 @@ def test_raw_repair_can_choose_another_owned_file_without_following_wrong_qa_tar
     assert (tools.root/'app/layout.tsx').read_text()==agent.content
     assert agent.raw_calls[0]['repair_focus']['file']=='app/page.tsx'
     assert agent.raw_calls[0]['write_target']=='app/layout.tsx'
+
+
+def test_selected_repair_target_is_retrieved_even_when_initial_diagnosis_scope_omitted_it(tools):
+    target='lib/render.ts';item=tools.root/target;item.parent.mkdir(parents=True,exist_ok=True);item.write_text('export const oldValue=1;\n')
+    before=item.read_bytes().decode('utf-8')
+    (tools.root/'app/page.tsx').write_text('export default function Page(){return null}\n')
+    state=configured(tools,'repair_build')
+    draft=tools.draft.model_copy(update={'files':[*tools.draft.files,
+        tools.draft.files[0].model_copy(update={'path':target,'purpose':'Rendering helper'})]})
+    class Selected(RawAgent):
+        def generate(self,schema,instruction,data,**kwargs):
+            if schema.__name__=='SourceTarget':assert target not in data['source']
+            return super().generate(schema,instruction,data,**kwargs)
+    agent=Selected('export const oldValue=2;\n',target)
+    SourceAgent(tools.ledger,agent,tools.root,draft,workspace_boundary=tools.root.parent,check_runner=good_check)(state)
+    assert agent.raw_calls[0]['source'][target]['content']==before
+    assert item.read_text()==agent.content
 
 
 def test_raw_target_selection_cannot_choose_another_owners_file(tools):

@@ -12,6 +12,7 @@ from forge.handoffs import record_handoff
 from forge.import_reference import relative_import_reference
 from forge.cycle_context import rejected_state_context,failure_obligations
 from forge.provider_errors import ProviderResourceError
+from forge.source_scope import scope_source
 from forge.tasks import CheckEvidence,Envelope,Observation,Task
 from forge.workspace import source_fingerprint
 from forge.workspace_tools import ReplaceText,WorkspaceTools,WriteFile,file_hash
@@ -176,16 +177,26 @@ class SourceAgent:
         fingerprint=source_fingerprint(tools.root)
         if fingerprint!=before:raise ValueError('Workspace changed while context was being read; retrieve a fresh snapshot')
         capabilities=tools.describe();capabilities.pop('schema')  # Keep tool-envelope schemas out of source-body context.
+        compiler=json.loads(source['tsconfig.json']['content']).get('compilerOptions',{}) if 'tsconfig.json' in source else {}
+        capabilities['compiler_options']={key:compiler[key] for key in ('strict','target','jsx','moduleResolution','paths') if key in compiler}
         if state.task.inputs.get('acceptance_contract'):
             capabilities['checks_available'].append('browser_acceptance')
             capabilities['frozen_browser_contract']='Executed separately from app source; builders cannot modify its assertions.'
+        latest=next((o for o in reversed(state.observations) if o.revision==state.revision
+            and any(c.check=='isolated_build' and c.exit_code!=0 for c in o.checks)),None)
+        seeds=targets
+        if repairing and latest and latest.fingerprint==fingerprint:
+            locations=diagnostic_context(observed_context(latest,self.ledger.store.path.parent),source)
+            seeds=list(dict.fromkeys(row['file'] for row in locations)) or targets
+        scoped,omitted,inventory=scope_source(source,seeds,tools.owners)
         data={'task':{'goal':state.task.goal,'owner':state.task.owner,'revision':state.revision},
             'original_request':state.task.inputs.get('original_request',''),
             'human_clarifications':state.task.inputs.get('human_clarifications',[]),
             'human_review_feedback':state.task.inputs.get('human_review_feedback',[]),
             'acceptance_contract':state.task.inputs.get('acceptance_contract'),
-            'app_design':self.draft.model_dump(),'capabilities':capabilities,
-            'source':source,'workspace_fingerprint':fingerprint,'allowed_targets':targets,
+            'app_design':self.draft.model_dump(include={'title','design','database','acceptance_criteria'}),'capabilities':capabilities,
+            'source':scoped,'source_inventory':inventory,'context_omitted':omitted,
+            'workspace_fingerprint':fingerprint,'allowed_targets':targets,
             'recent_failures':[o.model_dump() for o in state.observations if o.revision==state.revision][-2:],
             'latest_build_failure':next((o.model_dump() for o in reversed(state.observations) if o.revision==state.revision
                 and any(c.check=='isolated_build' and c.exit_code!=0 for c in o.checks)),None),
@@ -244,7 +255,7 @@ class SourceAgent:
             data.pop('app_design')
             if len(json.dumps(data,separators=(',',':')))>22000:raise ValueError('Focused repair context exceeds the complete-source budget; split the task')
         if callable(getattr(self.agents,'generate_source',None)):
-            proposal=self._raw_proposal(state,data,targets,tools,fingerprint,repairing)
+            proposal=self._raw_proposal(state,data,targets,tools,fingerprint,repairing,source)
         else:
             for index,path in enumerate(targets):
                 digest=file_hash(tools.root/path)
@@ -274,7 +285,7 @@ class SourceAgent:
                 report=outcome['report'],summary='Model-proposed source saved through ownership/hash checks; compilation and behavior are not implied.')]
         return build_evidence(tools)
 
-    def _raw_proposal(self,state,data,targets,tools,fingerprint,repairing):
+    def _raw_proposal(self,state,data,targets,tools,fingerprint,repairing,snapshot):
         previous=getattr(self.agents,'activity',None);target=targets[0];change=None
         try:
             self.agents.activity=lambda status,payload:self.ledger.store.event(self.ledger.job_id,status,payload,update_status=False)
@@ -289,6 +300,7 @@ class SourceAgent:
             tools.describe()
             if source_fingerprint(tools.root)!=fingerprint:raise ValueError('Workspace context changed during target selection; retrieve fresh source')
             context={**data,'write_target':target,'file':target,'selected_change':change,'source_transport':'raw_complete_file'}
+            context['source'],context['context_omitted'],context['source_inventory']=scope_source(snapshot,[target],tools.owners)
             context.pop('replace_rejected_patch',None);context.pop('edit_guidance',None)
             if repairing and data.get('rejected_state'):
                 obligations=[row for row in data['failure_obligations'] if row['file']==target]
@@ -310,9 +322,9 @@ class SourceAgent:
                     # Repeatedly showing the broken body anchored the small model
                     # on an exact failed implementation. Keep its hash for CAS and
                     # all reference interfaces, but request a fresh implementation.
-                    context['source']={path:packet for path,packet in data['source'].items() if path!=target}
-                    old=data['source'].get(target)
-                    context['context_omitted']=[{'file':target,'sha256':old['sha256'] if old else None,
+                    context['source']={path:packet for path,packet in context['source'].items() if path!=target}
+                    old=snapshot.get(target)
+                    context['context_omitted']=[*context['context_omitted'],{'file':target,'sha256':old['sha256'] if old else None,
                         'reason':'Cycle fallback: current target body intentionally withheld; full snapshot remains in the preceding target/QA handoff.'}]
                     context['diagnostic_locations']=[{key:value for key,value in row.items()
                         if row['file']!=target or key not in {'line_text','expression_at_column','source_excerpt'}}
@@ -322,7 +334,7 @@ class SourceAgent:
                 'Generate one complete source body for the chosen owned file; path and hashes remain controller-bound.',context,
                 agents=self.agents,task_id=state.task.id,parent_task_id=state.task.parent_id)
             content=self.agents.generate_source(SOURCE_TEXT_INSTRUCTION,context)
-            old=data['source'].get(target)
+            old=snapshot.get(target)
             return WriteFile(tool='write_file',path=target,content=content,expected_sha256=old['sha256'] if old else None,
                 expected_workspace_fingerprint=fingerprint,require_change=repairing)
         finally:self.agents.activity=previous

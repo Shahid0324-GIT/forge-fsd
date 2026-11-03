@@ -53,7 +53,9 @@ def test_model_proposes_actual_owned_write_with_original_goal_and_live_source(to
     assert checks[0].check=='source_written' and checks[0].exit_code==0
     assert checks[0].fingerprint==file_hash(tools.root/'app/page.tsx')
     assert agent.data['original_request']==state.task.inputs['original_request']
-    assert 'tsconfig.json' in agent.data['source'] and 'schema' not in agent.data['capabilities']
+    assert 'tsconfig.json' not in agent.data['source'] and 'schema' not in agent.data['capabilities']
+    assert agent.data['capabilities']['compiler_options']['strict'] is True
+    assert any(item['file']=='tsconfig.json' for item in agent.data['context_omitted'])
     packet=json.loads(__import__('pathlib').Path(checks[0].report).read_text())
     assert packet['initiator']=='model' and packet['proposal_call_id']=='model-call'
     assert tools.ledger.read(state.task.id).status=='running'
@@ -162,7 +164,8 @@ def test_repair_worker_uses_actual_failures_and_returns_fresh_build_evidence(too
     assert agent.instruction==REPAIR_INSTRUCTION
     assert agent.data['acceptance_criteria']==tools.draft.acceptance_criteria
     assert 'app_design' not in agent.data
-    assert 'tsconfig.json' in agent.data['source']
+    assert agent.data['capabilities']['compiler_options']['strict'] is True
+    assert any(item['file']=='tsconfig.json' for item in agent.data['context_omitted'])
     assert any(t.task.owner=='qa' and t.task.parent_id==state.task.id for t in tools.ledger.list())
 
 

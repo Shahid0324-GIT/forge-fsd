@@ -1175,3 +1175,27 @@ but never echo provider bodies, credentials, account IDs or source.
 Coordinator/provider/source-agent selection: **63 passed**, exit 0, with the existing
 13 warnings. Full regression before this increment was **493 passed**, exit 0, in
 246.41 seconds. Source-context selection is a separate following increment.
+
+## Increment 28: retrieve current module relationships instead of every body
+
+Builders still read and save the complete authorized snapshot before generation, but
+model inputs now select source by direct imports, consumers, shared type declarations
+and applicable Next.js entry/HTTP/style references. Missing declared modules are part
+of the graph, so generating a helper receives its actual API consumers. Relative/alias
+resolution stays inside the known source inventory; incorrect relative paths can yield
+explicit candidate references without being represented as valid imports. A selected
+repair target is retrieved again from the same complete snapshot even when the initial
+diagnosis scope omitted it. Whole-workspace and target-file CAS checks are unchanged.
+
+Omitted bodies retain path/hash/reason metadata and full tool-read reports. Compiler
+settings are supplied as bounded facts rather than repeating protected configuration
+files. The app's current design/requirements remain supplied; redundant planner test
+strategy and per-file assignments are represented by the existing task/inventory.
+Handoff event summaries now correctly list the source files actually supplied.
+
+For the paused helper, selected source shrank from **7,790 to 2,780 characters**, retaining
+both API consumers. This is source-character accounting, not a claimed provider token
+count or app pass. Initial test failures exposed pre-scoping assertions and a Windows
+CRLF fixture expectation; those expectations were corrected to explicit omission facts
+and exact read bytes. Final source/tool/build integration selection: **50 passed**,
+exit 0, with the existing 13 upstream warnings. Live replay follows separately.

@@ -25,7 +25,7 @@ def record_handoff(store, job_id, sender, recipient, summary, context, *, agents
     payload = {**identity,
                'context_sha256': hashlib.sha256(raw.encode('utf-8')).hexdigest(),
                'context_characters': len(raw), 'context_fields': list(context),
-               'source_files': list(context.get('existing_source', {})) if 'current_source' not in context else [context['file'],*context.get('reference_only_source', {})],
+               'source_files': list(context.get('existing_source',context.get('source',{}))) if 'current_source' not in context else [context['file'],*context.get('reference_only_source', {})],
                'context_omitted': context.get('context_omitted', []),
                'report': str(path.resolve())}
     store.event(job_id, 'AGENT_HANDOFF', payload, update_status=False)
