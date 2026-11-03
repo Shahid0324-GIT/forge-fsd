@@ -74,6 +74,19 @@ def test_paused_draft_resumes_with_actual_failure_context_and_new_strategy(tmp_p
     assert ledger.read(task.task.id).actions_used==2
 
 
+def test_candidate_changed_outside_ledger_is_not_forwarded_on_resume(tmp_path):
+    bad=draft();bad.files[0].path='package.json'
+    agent=Agent(bad);store=JobStore(tmp_path/'jobs.sqlite3')
+    paused=plan_app('Build a small interactive page.',agent,store,action_limit=1)
+    ledger=TaskLedger(store,paused['job_id']);task=next(t for t in ledger.list() if t.task.owner=='planner')
+    candidate=store.path.parent/'autonomous-plans'/ledger.job_id/'candidate.json'
+    candidate.write_text(draft().model_copy(update={'design':'An unrelated externally replaced proposal'}).model_dump_json())
+    ledger.resume(task,additional_actions=1);agent.proposal=draft()
+    assert continue_draft(ledger,task.task.id,agent)['status']=='AUTONOMOUS_DRAFT_READY'
+    assert agent.calls[-1][1]['latest_proposal'] is None
+    assert agent.calls[-1][1]['recent_failures']==[]
+
+
 def test_genuine_questions_do_not_enable_app_generation(tmp_path):
     agent=Agent(draft(),blocked=True)
     result=plan_app('Build a page with a payment integration.',agent,JobStore(tmp_path/'jobs.sqlite3'))

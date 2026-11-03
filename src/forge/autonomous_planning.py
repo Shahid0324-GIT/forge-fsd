@@ -120,9 +120,14 @@ def continue_draft(ledger,task_id,agents):
     directory.mkdir(parents=True,exist_ok=True);candidate=directory/'candidate.json'
     def fingerprint():return hashlib.sha256(candidate.read_bytes() if candidate.exists() else b'').hexdigest()
     def context(state):
+        current=fingerprint()
+        observations=[o for o in state.observations if o.revision==state.revision and o.fingerprint==current]
+        # candidate.json is shared by successive design revisions. Only a proposal
+        # observed for this task revision may be reused as current planning context.
+        bound=any(any(c.check=='draft_schema' for c in o.checks) for o in observations)
         return {**state.task.inputs,'runtime_capabilities':planning_capabilities(),
-            'latest_proposal':json.loads(candidate.read_text(encoding='utf-8')) if candidate.exists() else None,
-            'recent_failures':[o.model_dump() for o in state.observations if o.revision==state.revision][-2:],
+            'latest_proposal':json.loads(candidate.read_text(encoding='utf-8')) if bound and candidate.exists() else None,
+            'recent_failures':[o.model_dump() for o in observations][-2:],
             'recovery_strategy':state.recovery.model_dump() if state.recovery else None}
     if getattr(agents,'trace_directory',None) is None:
         agents.trace_directory=ledger.store.path.parent/'model-calls'/ledger.job_id

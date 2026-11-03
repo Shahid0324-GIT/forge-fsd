@@ -78,6 +78,7 @@ def test_requested_changes_recheck_scope_preserve_history_and_require_new_approv
     assert result['job_id']==job and result['status']=='AUTONOMOUS_DRAFT_READY'
     assert new['fingerprint']!=old['fingerprint'] and new['binding']['inputs']['original_request']==old['binding']['inputs']['original_request']
     assert agent.calls[-1][1]['human_review_feedback']==['Add a Reset button.']
+    assert agent.calls[-1][1]['latest_proposal'] is None
     assert Path(old['report']).read_bytes()==saved and Path(old_checks).read_bytes()==checks_before
     with pytest.raises(ValueError):decide_plan(job,store,old['fingerprint'],approved=True,actor='test_operator')
     assert not any(e['status']=='AUTONOMOUS_APPROVED' for e in result['events'])

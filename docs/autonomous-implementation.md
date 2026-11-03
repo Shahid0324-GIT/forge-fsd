@@ -773,3 +773,15 @@ Validation for increment 11:
 - No frontend or dependency changes; the preceding dashboard build checkpoint remains
   the latest frontend validation. Actual live-model timing and a fresh dashboard-led
   generation remain separate E2E work.
+
+## Increment 12: bind planner candidates to their producing revision
+
+A fresh dashboard-led character-counter evaluation exposed a further context issue:
+review feedback was present, but `candidate.json` from the previous design revision
+was still supplied as `latest_proposal`. The local model copied the obsolete proposal.
+Planner context now reuses a candidate only when its fingerprint has controller-observed
+draft evidence in the active task revision. Failure context is filtered to that same
+revision and fingerprint. Historical snapshots remain intact, and same-revision
+failed-manifest recovery still receives its candidate. An externally replaced candidate
+is omitted. Planning/review regressions: **29 passed**, exit 0, including both newly
+failing freshness assertions after the fix. Live dashboard evaluation continues separately.
