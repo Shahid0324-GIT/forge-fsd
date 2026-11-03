@@ -9,6 +9,8 @@ export function diagnoseModule(ts,path,text){
   const first=source.statements[0];
   let client=false;
   for(const statement of source.statements){
+    // Next's compiler removes type-only imports before reading runtime directives.
+    if(ts.isImportDeclaration(statement)&&statement.importClause?.isTypeOnly)continue;
     if(!ts.isExpressionStatement(statement)||!ts.isStringLiteral(statement.expression))break;
     if(statement.expression.text==='use client')client=true;
   }

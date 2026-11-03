@@ -20,3 +20,9 @@ test('comments and ordinary strings are not directives; aliased hooks are detect
   assert.deepEqual(rows.map(row=>row.code),['CLIENT_HOOK_WITHOUT_DIRECTIVE']);
   assert.equal(diagnoseModule(ts,'app/page.tsx',"import {useState} from 'react';\n'use client';")[0].code,'CLIENT_HOOK_WITHOUT_DIRECTIVE');
 });
+
+test('erased type-only imports do not create a false missing-client warning',()=>{
+  const code="import type {ReactNode} from 'react';\n'use client';\nimport {useState} from 'react';";
+  assert.deepEqual(diagnoseModule(ts,'app/page.tsx',code),[]);
+  assert.equal(diagnoseModule(ts,'app/page.tsx',code+"\nexport const metadata={title:'Server only'};")[0].code,'CLIENT_SERVER_METADATA');
+});
