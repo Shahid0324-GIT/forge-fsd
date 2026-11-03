@@ -9,6 +9,7 @@ from pydantic import Field,RootModel,create_model
 from forge.autonomous_planning import AppDraft
 from forge.check_context import observed_context,summarize_checks
 from forge.handoffs import record_handoff
+from forge.import_reference import relative_import_reference
 from forge.tasks import CheckEvidence,Envelope,Observation,Task
 from forge.workspace import source_fingerprint
 from forge.workspace_tools import ReplaceText,WorkspaceTools,WriteFile,file_hash
@@ -198,6 +199,10 @@ class SourceAgent:
                 and any(c.check=='isolated_build' and c.exit_code!=0 for c in o.checks))
             data['latest_build_failure']=observed_context(observed,self.ledger.store.path.parent)
             data['diagnostic_locations']=diagnostic_context(data['latest_build_failure'],source)
+            for location in data['diagnostic_locations']:
+                if location['code']=='TS2307':
+                    reference=relative_import_reference(location['file'],location['message'],source)
+                    if reference:location['module_reference']=reference
             # A prior diagnosis is a hypothesis, not compiler evidence. Replaying it
             # beside each new diagnosis anchored the model on incorrect causes.
             data['last_tool_error']=state.observations[-1].error if state.observations else ''

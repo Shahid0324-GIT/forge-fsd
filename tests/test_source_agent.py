@@ -87,6 +87,22 @@ def test_missing_original_context_prevents_ungrounded_generation(tools):
     assert agent.data is None
 
 
+def test_repair_handoff_includes_snapshot_import_facts_for_missing_module(tools):
+    page=tools.root/'app/page.tsx'
+    page.write_text("import value from '../components/card';\nexport default function Page(){return null}\n",encoding='utf-8')
+    state=configured(tools,'repair_build')
+    fp=source_fingerprint(tools.root)
+    state=tools.ledger.observe(state,Observation(revision=state.revision,fingerprint=fp,
+        checks=[CheckEvidence(check='isolated_build',exit_code=1,fingerprint=fp,report='missing.json',
+            summary="app/page.tsx(1,19): error TS2307: Cannot find module '../components/card' or its corresponding type declarations.")]))
+    agent=Agent('export default function Page(){return <main>Result</main>}')
+    SourceAgent(tools.ledger,agent,tools.root,tools.draft,workspace_boundary=tools.root.parent)(state)
+    reference=agent.data['diagnostic_locations'][0]['module_reference']
+    assert reference['resolved_base']=='components/card'
+    assert reference['existing_suffix_candidates']==[]
+    assert agent.data['workspace_fingerprint']==fp
+
+
 def test_other_files_changing_during_model_call_cannot_accept_stale_edit(tools):
     state=configured(tools)
     class RacingAgent(Agent):

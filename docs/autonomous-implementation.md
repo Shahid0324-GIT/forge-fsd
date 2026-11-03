@@ -994,3 +994,24 @@ Combined source selection: **43 passed**, exit 0; a further normalization-bounda
 test passed in the **12-test** decoder selection. Dashboard TypeScript and production
 build passed. No generated app source has been manually corrected; the paused notes
 app is resumed separately to test actual compilation/behavior with this transport.
+
+Full regression checkpoint after increment 20: **451 passed**, exit 0, with the
+existing 13 upstream LangSmith deprecation warnings (229.21 seconds).
+
+## Increment 21: ground missing-import diagnosis in snapshot path facts
+
+The resumed notes build produced complete page/layout source, but repairs then toggled
+the client directive while leaving unresolved imports. The existing cycle guard rejected
+restoring a previously failed snapshot; the job paused without a build-pass claim.
+
+For relative-module TS2307 diagnostics, QA and builders now receive the normalized
+import base and matching existing source paths from the same fingerprinted snapshot.
+Candidates are bounded and explicitly advisory; no missing module/export is invented.
+Next.js API route candidates identify the HTTP boundary so a corrected path is not
+mistaken for permission to import a server handler into client code. External package
+and alias resolution are not guessed. These facts neither edit app source nor add
+dependencies or override ownership. Implementation choices remain model-owned.
+
+Import-reference/source-agent/raw-writer regressions: **39 passed**, exit 0, with
+13 existing upstream warnings. Live effectiveness is evaluated separately; passing
+controller tests does not establish that the model will choose the correct repair.
