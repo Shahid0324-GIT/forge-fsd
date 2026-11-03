@@ -39,7 +39,7 @@ This diagram describes the target integration; the two paths above describe what
 
 ## Verified checkpoints
 
-Latest local controller suite: **397 Python tests passed**. These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy. Nine Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
+Latest local controller suite: **398 Python tests passed**. These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy. Eleven Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
 
 Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker builds and Chromium:
 
@@ -52,6 +52,7 @@ Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker b
 | Dashboard counter with review feedback | Consent, same-job revision and restart/resume worked. Generation remained paused after repeated client-directive repair failures; no working-app claim. |
 | Next.js client-boundary repair fixture | After the repair-loop fixes, the same 7B model corrected the directive and moved metadata to the server layout. Real build and 4/4 frozen browser assertions passed in 8 model calls. |
 | Fresh counter with independent QA | Reviewed model-generated source eventually passed build and 2/2 requirements-derived browser scenarios, including reload reset. This recovered evaluation required coverage re-evaluation and several saved repair resumes; it was not a one-shot success. No manual app-source corrections. |
+| Dashboard-led character counter | UI request, two review revisions, approval, generation, build repair, independent QA and saved-check resume reached 4/4 browser scenarios. Planner-context and diagnostic fixes were required. The reload scenario clears first, so persistence of nonempty text is not established. |
 
 The counter and formatter start from **deliberately faulty, controller-authored test fixtures**. They evaluate repair, not autonomous generation from a fresh request. Their frozen browser assertions run in a separate container and cannot be edited by the builder. All source corrections after fixture setup came from model tool calls.
 
@@ -193,7 +194,7 @@ The earlier pipeline includes limited static, dependency, secret-pattern and pro
 
 ## Remaining work
 
-1. Verify and broaden fresh dashboard request-to-app demonstrations using the new independent QA path, without manual source corrections.
+1. Strengthen QA scenario quality (including reload with nonempty state), then broaden dashboard-led demonstrations beyond the verified character-counter case.
 2. Support safe technical design revision when execution reveals a manifest problem, retaining human review for changes to the requested scope.
 3. Broaden repair and behavior coverage, including SQLite integrity and persistence after restart through the updated path.
 4. Integrate/revalidate generated-app CI and publishing against that path; database-backed cloud deployment remains separate work.

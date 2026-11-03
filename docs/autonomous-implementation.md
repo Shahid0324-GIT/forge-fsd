@@ -799,3 +799,51 @@ Changes were made only after the managed operation paused. The original contract
 paused source fingerprints were saved before resuming. Node regressions: **11 passed**;
 browser/source/coordinator Python selection: **51 passed**, both exit 0. The model must
 still demonstrate any effective source repair in execution; advice alone is not a pass.
+
+### Fresh dashboard-led verification — 3 November 2026
+
+The character-counter evaluation reached `AUTONOMOUS_APP_CHECKS_PASSED` through the
+actual browser UI and managed worker subprocesses. The sequence was create request,
+review plan, request changes twice, review the new proposal, approve as an internal
+operator, generate source, run real build/repair, freeze independent assertions,
+run browser checks, pause, and resume through the dashboard after increment 13.
+The requirements, proposal and frozen contract retained the same job identity.
+This was a recovered integration evaluation, not one-shot app generation or human approval.
+
+- Evidence: `artifacts/dashboard-evaluation/d5e7d76594124c1cbe95a0f6c24758e8/result.json`.
+- Job: `59651087c464444b95a4f4e0787f5621`.
+- Source fingerprint: `4b32e5b522ef6b85c377d7030bb5779313f2c85c86eee372db3cd782f9cd9711`.
+- Frozen contract fingerprint before/after resume:
+  `e28998f92a0d6d6c0a26594104393e3e80259520e2286786476e46990af1aa85`.
+- Actual typecheck/production build passed; **4/4** frozen browser scenarios passed:
+  initial zero/empty input, counting `Hello, world!` including its space, Clear
+  resetting input/count, and empty state after Clear followed by page reload.
+- The reload scenario clears input first. It does **not** establish persistence
+  behavior for nonempty text and cannot establish absence of a database or storage.
+  That weakness remains visible, despite its criterion coverage index. A protocol-valid
+  QA proposal is not a semantic proof; stronger scenario-quality checks remain work.
+- Before archival, `evidence_current` returned true. Combined/build/browser results,
+  source/contract/harness fingerprints and immutable image IDs matched. No source,
+  contract or harness changed during the successful execution.
+- Saved-context inspection worked in the browser. **25** handoff packets passed
+  identity/hash validation; **12** repair-context source bindings matched. All **8**
+  accepted source edits were model-initiated and matched expected workspace hashes.
+- **25** recorded model invocations; about **24.48 minutes** from request to final
+  result, including operator reviews, code fixes, validation and a saved pause. This
+  is not an isolated model-latency benchmark. No app source was manually corrected.
+- The dashboard showed the current selected-check pass and explicit limitations;
+  browser warning/error logs were empty. `dashboard-passed.png` records the result.
+  Close workspace completed; the isolated server exited with code 0. Source was
+  archived byte-identically and the disposable workspace removed. No job-labelled
+  containers or networks remained. The regular runs database was not used.
+- Docker Desktop was initially stopped and was started before execution. Existing
+  app/browser image IDs matched the earlier checkpoint; no dependencies or models
+  were downloaded or upgraded.
+
+Final validation: `.venv\Scripts\python.exe -m pytest -q --tb=short`:
+**398 passed**, exit 0, with 13 upstream LangSmith deprecation warnings.
+`node --test tests/framework-diagnostics.test.mjs tests/browser-protocol.test.mjs tests/browser-diagnostics.test.mjs`:
+**11 passed**, exit 0. No frontend changes; the prior TypeScript/build result remains
+that component's latest validation. Security, app preview, SQLite restart/integrity,
+publishing and deployment were not part of this run. Next work is stronger QA
+scenario quality, then a small SQLite dashboard-led flow and remaining release stages.
