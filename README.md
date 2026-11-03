@@ -13,7 +13,7 @@ The assignment explores how agents can gather requirements, plan an application,
 | Requirements and planning | Local-model intake, clarification and reviewable application proposals. The newer planner lets agents choose app-specific structure and types within workspace/tool boundaries. |
 | Task coordination | LangGraph orchestration, persistent task ownership/revisions, dependency invalidation and saved observations in SQLite. |
 | Agents and subagents | Planner, builder, QA diagnosis, test-quality, requirements-scope and senior-review roles with recorded handoffs and model calls. These are separate role invocations using the same local model, not separately trained models. |
-| Source tools | Scoped reads, complete-file writes and exact-text patches, guarded by ownership and file/workspace hashes. Models cannot select arbitrary host paths or shell commands. |
+| Source tools | Scoped reads, complete-file writes and exact-text patches, guarded by ownership and file/workspace hashes. The autonomous Ollama writer separates raw code from structured target metadata to preserve JSX quotes. Runtime/API references and snapshot-based import diagnostics support repairs. Models cannot select arbitrary host paths or shell commands. |
 | Repair | Real failure evidence, QA diagnosis, senior-review escalation, alternative edit strategies and resumable resource pauses. Changed source is rechecked before old diagnostics can justify edits. |
 | Verification | Isolated TypeScript and production builds. The earlier app workflow also has approved HTTP scenarios and applicable SQLite/restart checks. The autonomous path now freezes requirements-derived browser assertions outside app source, then executes them separately and feeds failures into repair. Coverage is explicit; database restart is not part of this browser protocol. |
 | Test quality | New suites must observe action results and challenge reload behavior with meaningful state. A separate critic reviews covered requirements; requirements-scope review separates grounded blockers from optional suggestions. Reviews are bound to the exact proposal and revision. Model judgments remain fallible. |
@@ -40,7 +40,7 @@ This diagram describes the target integration; the two paths above describe what
 
 ## Verified checkpoints
 
-Latest local controller suite: **427 Python tests passed**. These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy. Eleven Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
+Latest local controller suite: **458 Python tests passed** (13 upstream deprecation warnings). These use fake agents, temporary databases and mocked external services; they do not establish local-model accuracy. Eleven Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
 
 Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker builds and Chromium:
 
@@ -54,6 +54,7 @@ Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker b
 | Next.js client-boundary repair fixture | After the repair-loop fixes, the same 7B model corrected the directive and moved metadata to the server layout. Real build and 4/4 frozen browser assertions passed in 8 model calls. |
 | Fresh counter with independent QA | Reviewed model-generated source eventually passed build and 2/2 requirements-derived browser scenarios, including reload reset. This recovered evaluation required coverage re-evaluation and several saved repair resumes; it was not a one-shot success. No manual app-source corrections. |
 | Dashboard-led character counter | UI request, two review revisions, approval, generation, build repair, independent QA and saved-check resume reached 4/4 browser scenarios. Planner-context and diagnostic fixes were required. The reload scenario clears first, so persistence of nonempty text is not established. |
+| Dashboard-led SQLite notes | Runtime references removed the unavailable-ORM blocker; raw source produced complete JSX. Build repair still repeated incorrect imports/client-boundary edits despite current source and diagnostic facts. Cycle checks rejected repeated failed source; the job was archived paused. No build, behavior or persistence pass is claimed. |
 
 The counter and formatter start from **deliberately faulty, controller-authored test fixtures**. They evaluate repair, not autonomous generation from a fresh request. Their frozen browser assertions run in a separate container and cannot be edited by the builder. All source corrections after fixture setup came from model tool calls.
 

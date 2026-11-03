@@ -1015,3 +1015,27 @@ dependencies or override ownership. Implementation choices remain model-owned.
 Import-reference/source-agent/raw-writer regressions: **39 passed**, exit 0, with
 13 existing upstream warnings. Live effectiveness is evaluated separately; passing
 controller tests does not establish that the model will choose the correct repair.
+
+Final regression checkpoint: **458 passed**, exit 0, in 341.68 seconds, with
+13 existing upstream LangSmith deprecation warnings. The dashboard production build
+was already verified for increment 20; increment 21 changes no frontend code.
+
+The additional live repair window did **not** resolve the notes build. Both the QA
+and builder handoffs contained the correct path candidates and HTTP boundary facts,
+but the model still proposed a previously failed page. The cycle guard rejected it.
+This is evidence of a repair-selection limitation despite available context, not
+evidence that stale/missing context explains every failure.
+
+Checkpoint: `artifacts/sqlite-dashboard-evaluation/7443bd9ec7cf4c65985a3cad0be5825a/result.json`.
+All **73** saved handoffs passed identity/context-hash validation. Final source
+fingerprint: `0ccf56d0605dc69b9fc5220b2c4ba413f0e2ae48a7769aba04400db153b3a156`.
+The source was archived with the same fingerprint before removing only its disposable
+live workspace. The temporary dashboard stopped, and no trial containers remained.
+The default dashboard database was not used. No manual app-source correction,
+browser acceptance, database persistence, security, preview or release success is
+claimed. The source/history remain available for a later controlled replay.
+
+Next repair work should evaluate a structured recovery from rejected source cycles:
+retain the rejected candidate's failure as explicitly historical evidence, require
+the next plan to address its unresolved causes, and compare effectiveness on multiple
+fixtures. This remains planned work; path hints alone did not solve this trial.
