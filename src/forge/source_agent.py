@@ -10,6 +10,7 @@ from forge.autonomous_planning import AppDraft
 from forge.check_context import observed_context,summarize_checks
 from forge.handoffs import record_handoff
 from forge.import_reference import relative_import_reference
+from forge.cycle_context import rejected_state_context,failure_obligations
 from forge.tasks import CheckEvidence,Envelope,Observation,Task
 from forge.workspace import source_fingerprint
 from forge.workspace_tools import ReplaceText,WorkspaceTools,WriteFile,file_hash
@@ -71,6 +72,11 @@ SQLite modules remain server-only. Client components use fetch rather than impor
 route handlers. Resolve imports from the selected file's actual directory. Preserve
 server metadata in server modules. No new packages or external services are available.
 This response supplies file contents only; the controller enforces ownership and hashes.'''
+SOURCE_TEXT_INSTRUCTION+=''' When cycle_repair_actions is supplied, implement every
+listed correction together in this file. rejected_state describes a historically failed
+candidate, not the current file; avoid restoring it. A directive-only edit cannot fix
+a separate missing-import or HTTP boundary failure. Verify proposed actions against
+actual source and runtime facts rather than copying a wrong plan.'''
 
 
 FOCUS_INSTRUCTION='''You are the QA diagnosis subagent. Inspect the actual latest verification
@@ -207,6 +213,8 @@ class SourceAgent:
             # beside each new diagnosis anchored the model on incorrect causes.
             data['last_tool_error']=state.observations[-1].error if state.observations else ''
             data['repair_cycle_detected']='Repair cycle rejected:' in data['last_tool_error']
+            data['rejected_state']=rejected_state_context(state,self.ledger.store.path.parent)
+            data['failure_obligations']=failure_obligations(data['diagnostic_locations'],data['rejected_state'],source)
             data['framework_reference']={
                 'client_directive_source':"'use client';\n",
                 'client_boundary':'Place the quoted string literal before imports when using client hooks or browser handlers.',
@@ -281,6 +289,23 @@ class SourceAgent:
             if source_fingerprint(tools.root)!=fingerprint:raise ValueError('Workspace context changed during target selection; retrieve fresh source')
             context={**data,'write_target':target,'file':target,'selected_change':change,'source_transport':'raw_complete_file'}
             context.pop('replace_rejected_patch',None);context.pop('edit_guidance',None)
+            if repairing and data.get('rejected_state'):
+                obligations=[row for row in data['failure_obligations'] if row['file']==target]
+                if obligations:
+                    fields={row['id']:(str,Field(min_length=1,max_length=500,
+                        description=f"Concrete correction for {row['code']}: {row['message']}")) for row in obligations}
+                    schema=create_model('CycleRepairActions',__base__=Envelope,**fields)
+                    record_handoff(self.ledger.store,self.ledger.job_id,'coordinator',state.task.owner,
+                        'Plan one correction per current or rejected-state failure before generating replacement source.',context,
+                        agents=self.agents,task_id=state.task.id,parent_task_id=state.task.parent_id)
+                    actions=self.agents.generate(schema,
+                        'Plan concrete corrections for EVERY listed failure in write_target. Current and rejected-candidate failures must be addressed together to escape a cycle. Use actual source and module references. Keep hooks client-side and HTTP/database modules server-side. Return concise correction actions, not source or a pass claim.',context,coding=True)
+                    context['cycle_repair_actions']=schema.model_validate(actions).model_dump()
+                    # Ordinary diagnoses selected the failed loop; do not anchor the
+                    # new body on those hypotheses after the explicit recovery plan.
+                    for key in ('repair_focus','fresh_review','selected_change'):context.pop(key,None)
+                    tools.describe()
+                    if source_fingerprint(tools.root)!=fingerprint:raise ValueError('Workspace context changed during cycle planning; retrieve fresh source')
             record_handoff(self.ledger.store,self.ledger.job_id,'qa' if repairing else 'coordinator',state.task.owner,
                 'Generate one complete source body for the chosen owned file; path and hashes remain controller-bound.',context,
                 agents=self.agents,task_id=state.task.id,parent_task_id=state.task.parent_id)

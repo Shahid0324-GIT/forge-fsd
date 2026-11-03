@@ -1039,3 +1039,24 @@ Next repair work should evaluate a structured recovery from rejected source cycl
 retain the rejected candidate's failure as explicitly historical evidence, require
 the next plan to address its unresolved causes, and compare effectiveness on multiple
 fixtures. This remains planned work; path hints alone did not solve this trial.
+
+## Increment 22: explicit recovery actions for rejected source cycles
+
+Cycle recovery now retrieves the matching failed build observation from the same task
+revision. It labels that evidence as historical, separately from the current source
+diagnostics. An error string alone, an earlier revision, or an unrelated/successful
+check cannot supply historical build evidence. Senior review receives this distinction.
+
+When raw-source repair selects a file with cycle obligations, a bounded structured
+planning call requires one concrete action for every reported current/historical
+failure in that file. Missing actions block source generation. The replacement body
+receives those actions instead of the ordinary QA/target hypotheses that repeated the
+loop. The model still chooses implementation and target; the plan is not proof that
+an edit works. Source/task authorization is revalidated after planning and at write.
+No app-specific fields, endpoints, source patches, dependency changes or relaxed gates
+are introduced. Historical diagnostic positions are not represented as current lines.
+
+Repair/coordinator selection: **53 passed**, exit 0. Cycle/raw-source selection after
+adding source/revision-race cases: **14 passed**, exit 0. Dashboard TypeScript and
+production build passed. Both Python runs report the existing 13 upstream warnings.
+Live replay and full regression are recorded separately after execution.

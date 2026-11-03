@@ -6,6 +6,7 @@ from pydantic import Field,RootModel,create_model
 
 from forge.handoffs import record_handoff
 from forge.check_context import observed_context
+from forge.cycle_context import rejected_state_context
 from forge.tasks import RecoveryPlan
 
 
@@ -70,6 +71,7 @@ class SeniorReviewer:
         observations=[{'fingerprint':o['fingerprint'],'checks':[{'check':c['check'],'exit_code':c['exit_code'],'report':c['report']} for c in o['checks']]}
             for o in observations if o['fingerprint']==current_fingerprint]
         data={'current_evidence':observed_context(latest,self.ledger.store.path.parent) if latest else None,
+            'rejected_state':rejected_state_context(failed,self.ledger.store.path.parent),
             'latest_tool_error':history[-1].error if history else '',
             'original_goal':failed.task.goal,'current_owner':failed.task.owner,
             'input_revision':failed.revision,'required_checks':failed.task.required_checks,
