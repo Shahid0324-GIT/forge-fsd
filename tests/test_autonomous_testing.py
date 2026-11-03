@@ -14,11 +14,17 @@ from test_autonomous_build import Builder,approve,runner,setup
 
 
 class QAAgent(Builder):
-    def __init__(self,proposal):super().__init__(proposal);self.qa_contexts=[];self.repair_contracts=[];self.uncovered=False
+    def __init__(self,proposal):
+        super().__init__(proposal);self.qa_contexts=[];self.repair_contracts=[];self.uncovered=False;self.coverage_supported=False;self.coverage_calls=0
     def generate(self,schema,instruction,data,**kwargs):
+        if schema.__name__=='CoverageDecision':
+            self.coverage_calls+=1
+            return schema.model_validate({'can_check':self.coverage_supported,'reason':'Reload can be checked' if self.coverage_supported else 'Server restart is outside the browser protocol',
+                'strategy':['visit, interact, visit again, assert initial value'] if self.coverage_supported else []})
         if schema.__name__=='AcceptanceSuite':
             self.qa_contexts.append(data)
             count=len(data['approved_design']['acceptance_criteria'])
+            if self.coverage_supported and any('Coverage review found' in error for error in data['protocol_errors']):self.uncovered=False
             if self.uncovered:return schema.model_validate({'scenarios':[],
                 'uncovered':[{'criterion':index,'reason':'Requires database restart'} for index in range(1,count+1)]})
             return schema.model_validate({'scenarios':[{'id':'shows_result','criteria':list(range(1,count+1)),'steps':[
@@ -105,3 +111,21 @@ def test_uncovered_requirements_block_promotion_without_running_superficial_chec
         browser_runner=lambda *_:pytest.fail('Unsupported criteria must not run superficial checks'))
     assert result['status']=='AUTONOMOUS_CHECKS_BLOCKED' and not agent.repair_contracts
     assert result['events'][-1]['payload']['uncovered'] and not evidence_current(result,store,workspace_boundary=boundary)
+
+
+def test_supported_coverage_claim_is_reviewed_before_any_contract_is_frozen(ready):
+    store,job,agent,boundary,_=ready;agent.uncovered=True;agent.coverage_supported=True
+    result=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([True]))
+    assert result['status']=='AUTONOMOUS_APP_CHECKS_PASSED' and len(agent.qa_contexts)==2 and agent.coverage_calls==1
+    assert not any(e['status']=='AUTONOMOUS_CHECKS_BLOCKED' for e in result['events'])
+    assert any(e['payload'].get('recipient')=='coverage_reviewer' for e in result['events'])
+
+
+def test_blocked_coverage_can_be_re_evaluated_without_rewriting_old_contract(ready):
+    store,job,agent,boundary,_=ready;agent.uncovered=True
+    blocked=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([True]))
+    path=Path(blocked['events'][-1]['payload']['report']);original=path.read_bytes();source=source_fingerprint(boundary/job)
+    agent.uncovered=False
+    result=run_app_tests(job,agent,store,retry_coverage=True,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([True]))
+    assert result['status']=='AUTONOMOUS_APP_CHECKS_PASSED' and path.read_bytes()==original
+    assert source_fingerprint(boundary/job)==source and len(agent.qa_contexts)==2

@@ -193,7 +193,7 @@ def proposal_context(ledger,state,review):
     return data
 
 
-def acceptance_worker(ledger,state,agents,review,authorize):
+def acceptance_worker(ledger,state,agents,review,authorize,review_coverage=None):
     authorize();ledger.assert_active(state)
     if state.task.owner!='qa' or state.task.inputs.get('review_fingerprint')!=review['fingerprint']:
         raise ValueError('QA task must belong to the approved review')
@@ -212,6 +212,7 @@ def acceptance_worker(ledger,state,agents,review,authorize):
         proposal.parent.mkdir(parents=True,exist_ok=True)
         with proposal.open('x',encoding='utf-8',newline='\n') as output:output.write(suite.model_dump_json(indent=2))
         validate_coverage(suite,len(review['draft']['acceptance_criteria']))
+        if suite.uncovered and review_coverage:review_coverage(suite)
         authorize();ledger.assert_active(state)
         packet={'version':1,'job_id':ledger.job_id,'task_id':state.task.id,'revision':state.revision,
             'review_fingerprint':review['fingerprint'],'model':agents.model_name,'suite':suite.model_dump(),

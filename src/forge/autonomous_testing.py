@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from forge.acceptance_browser import harness_fingerprint,passed_report,run_acceptance_browser
+from forge.acceptance_coverage import review_coverage
 from forge.autonomous_acceptance import acceptance_worker,load_acceptance,suite_fingerprint,proposal_context
 from forge.autonomous_build import PROJECT,_runtime_unchanged
 from forge.autonomous_planning import AppDraft
@@ -33,10 +34,11 @@ def tests_resumable(record,store,*,workspace_boundary=None):
     except (ValueError,OSError,KeyError,TypeError,StopIteration):return False
 
 
-def test_app(job_id,agents,store,*,resume=False,additional_actions=8,workspace_boundary=None,
+def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,additional_actions=8,workspace_boundary=None,
              check_runner=run_source_checks,browser_runner=run_acceptance_browser):
     record=store.read(job_id)
-    expected='AUTONOMOUS_TEST_PAUSED' if resume else 'AUTONOMOUS_BUILD_CHECKS_PASSED'
+    if resume and retry_coverage:raise ValueError('Choose saved resource resume or coverage re-evaluation')
+    expected='AUTONOMOUS_CHECKS_BLOCKED' if retry_coverage else 'AUTONOMOUS_TEST_PAUSED' if resume else 'AUTONOMOUS_BUILD_CHECKS_PASSED'
     if record['status']!=expected:raise ValueError('App checks require a built approved app or explicit saved test resume')
     review=approved_review(job_id,store)
     if agents.model_name!=review['binding']['model']:raise ValueError('Use the approved job model for QA/repair')
@@ -66,6 +68,10 @@ def test_app(job_id,agents,store,*,resume=False,additional_actions=8,workspace_b
     def child(stage,owner,goal,inputs,dependencies,checks):
         matches=[state for state in ledger.list() if state.task.parent_id==parent.task.id and state.task.inputs.get('stage')==stage]
         if len(matches)>1:raise ValueError('Duplicate QA stage needs reconciliation')
+        if matches and matches[0].status=='needs_refresh':
+            saved=matches[0];saved=ledger.revise(saved,saved.task.model_copy(update={'dependencies':dependencies,
+                'inputs':{**saved.task.inputs,**inputs}}))
+            return ledger.resume(ledger.pause(saved,'Refresh verification after QA revision'),additional_actions=additional_actions)
         return matches[0] if matches else ledger.create(Task(parent_id=parent.task.id,owner=owner,goal=goal,
             inputs={**context,**inputs,'stage':stage,'review_fingerprint':review['fingerprint']},
             dependencies=dependencies,required_checks=checks),action_limit=8)
@@ -75,7 +81,13 @@ def test_app(job_id,agents,store,*,resume=False,additional_actions=8,workspace_b
         return store.read(job_id)
     qa=child('acceptance_plan','qa','Define independent executable assertions from the approved request.',{},
         [Dependency(task_id=review['binding']['task_id'],revision=review['binding']['revision'])],['acceptance_contract'])
-    qa=TaskCoordinator(ledger,{'qa':lambda state:acceptance_worker(ledger,state,agents,review,authorize)},
+    if retry_coverage:
+        prior=load_acceptance(ledger,qa,review)
+        if not prior['suite']['uncovered']:raise ValueError('There is no unsupported coverage to re-evaluate')
+        qa=ledger.revise(qa,qa.task)
+        qa=ledger.resume(ledger.pause(qa,'Re-evaluate unsupported claims without changing approved requirements'),additional_actions=additional_actions)
+    qa=TaskCoordinator(ledger,{'qa':lambda state:acceptance_worker(ledger,state,agents,review,authorize,
+        lambda suite:review_coverage(ledger,state,agents,review,suite,authorize))},
         SeniorReviewer(agents,ledger,{'qa'},context_loader=lambda current:proposal_context(ledger,current,review)),
         lambda:suite_fingerprint(ledger,ledger.read(qa.task.id))).run(qa.task.id)
     if qa.status!='completed':return pause(qa)
@@ -114,7 +126,7 @@ def test_app(job_id,agents,store,*,resume=False,additional_actions=8,workspace_b
     worker=SourceAgent(ledger,agents,root,draft,workspace_boundary=boundary,check_runner=verify,authorization=authorize)
     state=child('acceptance_verify',sorted(owners)[0],'Make the approved app pass frozen independent assertions without editing those assertions.',
         {'mode':'repair_build','acceptance_contract':contract['suite']},[Dependency(task_id=qa.task.id,revision=qa.revision)],['isolated_build'])
-    fresh_check=resume
+    fresh_check=resume or retry_coverage
     def verify_or_repair(current):
         nonlocal fresh_check
         authorize();load_acceptance(ledger,ledger.read(qa.task.id),review)

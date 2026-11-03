@@ -128,3 +128,18 @@ def test_frozen_contract_report_rejects_changed_bytes(client,tmp_path):
     assert browser.get(f'/api/jobs/{job}/reports/{sequence}').status_code==200
     path.write_text('{}',encoding='utf-8')
     assert browser.get(f'/api/jobs/{job}/reports/{sequence}').status_code==409
+
+
+def test_blocked_coverage_routes_to_independent_re_evaluation(client,monkeypatch):
+    import forge.autonomous_testing as testing
+    from forge.autonomous_review import decide_plan
+    browser,app=client;headers=session(browser);calls=fake_submit(app,monkeypatch)
+    job,agent,token,_=prepare(browser,app);decide_plan(job,app.state.store,token,approved=True,actor='test_operator')
+    app.state.store.event(job,'AUTONOMOUS_CHECKS_BLOCKED',{'reason':'Review unsupported claim'})
+    received=[]
+    def retry(job_id,*args,**kwargs):received.append(kwargs);return app.state.store.read(job_id)
+    monkeypatch.setattr(testing,'test_app',retry)
+    assert send(browser,headers,job,'retry_coverage').status_code==202
+    execute(job,'retry_coverage',calls[-1][2],app.state.store,agent)
+    assert received==[{'retry_coverage':True}]
+    assert send(browser,headers,job,'preview_start').status_code==409
