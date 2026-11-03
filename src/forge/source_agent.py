@@ -306,6 +306,17 @@ class SourceAgent:
                     for key in ('repair_focus','fresh_review','selected_change'):context.pop(key,None)
                     tools.describe()
                     if source_fingerprint(tools.root)!=fingerprint:raise ValueError('Workspace context changed during cycle planning; retrieve fresh source')
+                    # Repeatedly showing the broken body anchored the small model
+                    # on an exact failed implementation. Keep its hash for CAS and
+                    # all reference interfaces, but request a fresh implementation.
+                    context['source']={path:packet for path,packet in data['source'].items() if path!=target}
+                    old=data['source'].get(target)
+                    context['context_omitted']=[{'file':target,'sha256':old['sha256'] if old else None,
+                        'reason':'Cycle fallback: current target body intentionally withheld; full snapshot remains in the preceding target/QA handoff.'}]
+                    context['diagnostic_locations']=[{key:value for key,value in row.items()
+                        if row['file']!=target or key not in {'line_text','expression_at_column','source_excerpt'}}
+                        for row in data['diagnostic_locations']]
+                    context['replacement_strategy']='Reimplement the selected file from the requirements and reference interfaces. Its previous body repeatedly failed and is intentionally withheld to avoid copying it. The path and expected hash remain controller-owned. Choose working code and app-owned types; preserve required behavior and actual consumers.'
             record_handoff(self.ledger.store,self.ledger.job_id,'qa' if repairing else 'coordinator',state.task.owner,
                 'Generate one complete source body for the chosen owned file; path and hashes remain controller-bound.',context,
                 agents=self.agents,task_id=state.task.id,parent_task_id=state.task.parent_id)

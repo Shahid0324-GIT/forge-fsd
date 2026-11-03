@@ -54,6 +54,10 @@ def test_cycle_body_receives_separate_actions_for_current_and_rejected_failures(
     assert len(context['cycle_repair_actions'])==2
     assert {row['source_state'] for row in agent.obligations}=={'current','rejected_candidate'}
     assert 'repair_focus' not in context and 'selected_change' not in context
+    assert 'app/page.tsx' not in context['source']
+    assert context['context_omitted'][0]['file']=='app/page.tsx'
+    assert len(context['context_omitted'][0]['sha256'])==64
+    assert all('source_excerpt' not in row for row in context['diagnostic_locations'] if row['file']=='app/page.tsx')
 
 
 def test_incomplete_cycle_plan_cannot_reach_source_generation(tools):

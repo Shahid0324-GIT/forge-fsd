@@ -1060,3 +1060,29 @@ Repair/coordinator selection: **53 passed**, exit 0. Cycle/raw-source selection 
 adding source/revision-race cases: **14 passed**, exit 0. Dashboard TypeScript and
 production build passed. Both Python runs report the existing 13 upstream warnings.
 Live replay and full regression are recorded separately after execution.
+
+Increment 22 full suite: **466 passed**, exit 0, in 269.30 seconds, with the
+existing 13 warnings. Its live replay remained paused: the model supplied actions
+for both failures but still copied the invalid import. Completeness of a repair plan
+is not semantic correctness.
+
+## Increment 23: reimplement a selected file after a rejected cycle
+
+Three isolated source-context probes compared the installed model on the saved
+failure. Readable whole-file input (`705fa0a42b5f424db2c0075974c7a91d`) and smaller
+input (`d2d77581a5ae498587f0b09baaecf868`) retained the import failure. Those experimental
+format changes were discarded. Reimplementation without the broken target body
+(`2a64ece109b44b15bc0ff56708423f98`) generated HTTP calls instead of the invalid route
+import, but still failed TypeScript state typing. None is a working-app result.
+Evidence is under `artifacts/source-context-evaluation/`; compilation used disposable
+source copies and did not modify the saved app.
+
+The cycle-only raw-writer fallback now requests independent reimplementation of the
+selected file. It retains requirements, other modules' actual source, current/historical
+failure facts and controller-owned write hashes. The target body and its excerpt are
+explicitly omitted from that final body handoff to avoid copying the failed implementation;
+the complete snapshot remains in the preceding QA/target records. Ordinary generation
+and non-cycle repairs continue to receive the current body. File ownership, protected
+runtime, final compilation and independent acceptance checks remain authoritative.
+No probe candidate is copied into the app. Cycle/raw-source/transport selection:
+**26 passed**, exit 0, with the existing 13 upstream warnings.
