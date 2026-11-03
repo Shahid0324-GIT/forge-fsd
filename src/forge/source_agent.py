@@ -242,6 +242,10 @@ class SourceAgent:
             if state.recovery and state.reviewed_observations==len(state.observations):
                 data['fresh_review']={'source_fingerprint':fingerprint,'strategy':state.recovery.model_dump(),
                     'scope':'Advisory strategy for this observation set only; verify it against current source and checks.'}
+            # QA diagnoses current source too; it does not need to re-plan the
+            # architecture before each correction. Keep all approved criteria.
+            data['acceptance_criteria']=self.draft.acceptance_criteria
+            data.pop('app_design',None)
             focus=self._focus(state,data,targets)
             # QA is another model invocation: inputs may have expired while it ran.
             # Revalidate before forwarding its diagnosis and source to the builder.
@@ -252,7 +256,7 @@ class SourceAgent:
             # Retain requirements and complete interfaces, but avoid asking the
             # builder to follow contradictory assumptions from the original draft.
             data['acceptance_criteria']=self.draft.acceptance_criteria
-            data.pop('app_design')
+            data.pop('app_design',None)
             if len(json.dumps(data,separators=(',',':')))>22000:raise ValueError('Focused repair context exceeds the complete-source budget; split the task')
         if callable(getattr(self.agents,'generate_source',None)):
             proposal=self._raw_proposal(state,data,targets,tools,fingerprint,repairing,source)

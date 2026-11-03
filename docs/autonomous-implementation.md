@@ -1220,3 +1220,18 @@ Known saved pre-typed incomplete-source errors can retry the worker on resume.
 Provider/source-completion/coordinator selection: **49 passed**, exit 0, with the existing
 13 warnings. The preceding complete context/resource regression was **502 passed**,
 exit 0, in 299.05 seconds. Live re-execution is recorded separately.
+
+The helper and remaining shared type were subsequently generated, but repair QA hit
+an 8,000-token account limit with a request of 8,130 tokens. Repair QA now receives
+the approved acceptance criteria before diagnosis and omits the redundant architecture
+proposal, just as the source-repair body already did. Groq structured calls retain
+their complete native response schema without repeating that full schema in system
+text. Pydantic validation, source context, file hashes and ownership are unchanged.
+Source/raw-repair selection: **39 passed**; provider/source transport selection:
+**28 passed**, both exit 0 with the existing warnings. A prompt-concatenation syntax
+error was caught during test collection and corrected before live replay.
+The preceding full suite passed **504 tests**, exit 0, in 245.43 seconds.
+
+The user proposed 7B-primary/Groq escalation. Current jobs remain single-model pinned;
+an automatic hybrid policy is proposed work and is not implemented or silently applied
+to this approved Groq job.

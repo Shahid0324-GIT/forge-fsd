@@ -46,6 +46,17 @@ def test_structured_output_uses_provider_schema_and_still_validates_locally(monk
     assert result['raw'].usage_metadata['total_tokens']==30
 
 
+def test_agent_keeps_native_schema_without_duplicating_it_in_hosted_prompt(tmp_path,monkeypatch):
+    payloads=[]
+    def post(self,payload):payloads.append(payload);return 200,None,response()
+    monkeypatch.setattr(provider.GroqChat,'_post',post)
+    agent=OllamaAgents.__new__(OllamaAgents);agent.model=provider.GroqChat(model_name='openai/gpt-oss-20b');agent.model_name='groq:openai/gpt-oss-20b';agent.trace_directory=tmp_path
+    result=agent.generate(Answer,'Return value 3',{})
+    assert result.value==3
+    assert payloads[0]['response_format']['json_schema']['schema']==Answer.model_json_schema()
+    assert '"properties"' not in payloads[0]['messages'][0]['content']
+
+
 @pytest.mark.parametrize('body',['{"value":"bad"}',json.dumps(Answer.model_json_schema())])
 def test_invalid_schema_response_is_not_a_validated_proposal(monkeypatch,body):
     monkeypatch.setattr(provider.GroqChat,'_post',lambda *_:(200,None,response(body)))

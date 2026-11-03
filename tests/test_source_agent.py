@@ -17,6 +17,7 @@ class Agent:
     def generate(self,schema,instruction,data,**_):
         self.data=data;self.instruction=instruction;self.last_call_identity={'call_id':'model-call'}
         if schema.__name__=='RepairFocus':
+            assert 'app_design' not in data and data['acceptance_criteria']
             return schema.model_validate({'file':data['allowed_targets'][0],'cause':'Observed compiler failure',
                 'changes':['Correct the reported source expression while preserving behavior']})
         path=data['allowed_targets'][0]
