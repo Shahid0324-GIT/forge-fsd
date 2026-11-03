@@ -1199,3 +1199,10 @@ count or app pass. Initial test failures exposed pre-scoping assertions and a Wi
 CRLF fixture expectation; those expectations were corrected to explicit omission facts
 and exact read bytes. Final source/tool/build integration selection: **50 passed**,
 exit 0, with the existing 13 upstream warnings. Live replay follows separately.
+
+Saved pre-typed Groq capacity failures are also recognized at routing time. Their
+history is preserved, but the next dispatch retries the worker with current resource
+handling instead of escalating an old HTTP 413 to another code-review call. Only the
+known provider access/size/quota error format is recognized; ordinary tool/compiler
+failures remain reviewable. Coordinator/provider selection: **36 passed**, exit 0,
+including a saved-history replay, with the existing 13 upstream warnings.

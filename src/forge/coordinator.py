@@ -12,7 +12,7 @@ from langgraph.graph import END,START,StateGraph
 from langsmith import tracing_context
 
 from forge.tasks import CheckEvidence,Observation,RecoveryPlan,Task,TaskConflict
-from forge.provider_errors import ProviderResourceError
+from forge.provider_errors import ProviderResourceError,legacy_resource_failure
 
 
 class LoopState(TypedDict,total=False):
@@ -81,6 +81,10 @@ class TaskCoordinator:
             except TaskConflict:raise
             except Exception as exc:
                 self.ledger.pause(current,'Cannot route current evidence: '+str(exc)[:1000]);return {'next':'done'}
+        # Older snapshots recorded capacity failures as worker defects. Retain that
+        # history, but let the worker retry with current provider/context handling
+        # rather than spending another model call diagnosing an HTTP quota error.
+        if current.observations and legacy_resource_failure(current.observations[-1].error):return {'next':'worker'}
         stalled=(current.no_progress>=self.review_after or bool(current.review_error))
         reviewed=current.reviewed_observations==len(current.observations)
         if stalled and not reviewed and current.observations:
