@@ -248,9 +248,11 @@ def build_evidence(tools):
     outcome=tools.execute({'tool':'check_build'})
     if not outcome['ok']:raise ValueError(outcome['error'])
     data=outcome['data']
+    failed=[row for row in data['checks'] if row['exit_code']!=0 or row.get('stopped')]
+    build_failed=any(row['name'] in {'typecheck','production_build'} for row in failed)
     diagnostic='\n'.join(f"{row['file']}({row['line']},{row['column']}): {row['code']}: {row['message']}"
-        for row in data.get('source_diagnostics',[]))
-    summary=(diagnostic+'\n' if diagnostic else '')+'\n'.join(f"{row['name']} (exit {row['exit_code']}): {row['output']}" for row in data['checks'])
+        for row in data.get('source_diagnostics',[]) if build_failed)
+    summary=(diagnostic+'\n' if diagnostic else '')+'\n'.join(f"{row['name']} (exit {row['exit_code']}): {row['output']}" for row in (failed or data['checks']))
     return [CheckEvidence(check='isolated_build',exit_code=0 if data['passed'] else 1,
         fingerprint=data['source_fingerprint'],report=data['report'],
         summary=(summary or str(data.get('error') or 'Build report was incomplete'))[:2000])]

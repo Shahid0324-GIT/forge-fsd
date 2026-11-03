@@ -87,6 +87,20 @@ def test_cleanup_or_environment_failure_cannot_be_accepted_as_successful_build(t
     assert checks[0].check=='isolated_build' and checks[0].exit_code==1
 
 
+@pytest.mark.parametrize('build_failed',[False,True])
+def test_actual_failed_checks_outrank_advisories_from_a_passing_build(tools,build_failed):
+    tools.check_runner=lambda root,*_: {'passed':False,'report':'observed.json','source_fingerprint':source_fingerprint(root),
+        'coverage':{'application_behavior':'SELECTED_REQUIREMENTS_BROWSER_CHECKS'},'checks':{
+            'source_diagnostics':[{'file':'app/page.tsx','line':1,'column':1,'code':'CLIENT_HOOK_WITHOUT_DIRECTIVE','message':'Advisory client boundary hint'}],
+            'results':[{'name':'typecheck','exit_code':0,'stopped':None,'output':'successful typecheck'},
+                {'name':'production_build','exit_code':1 if build_failed else 0,'stopped':None,'output':'compiler failure' if build_failed else 'successful build'},
+                {'name':'browser_acceptance','exit_code':1,'stopped':None,'output':'Actual failure: expected visible result is missing'}]}}
+    summary=build_evidence(tools)[0].summary
+    assert 'Actual failure: expected visible result is missing' in summary
+    assert ('Advisory client boundary hint' in summary)==build_failed
+    assert 'successful build' not in summary and 'successful typecheck' not in summary
+
+
 def test_repair_worker_uses_actual_failures_and_returns_fresh_build_evidence(tools):
     state=configured(tools,'repair_build');agent=Agent('export default function Page(){return <main>Fixed</main>}')
     def check(root,*_):return {'passed':True,'report':'fresh.json','source_fingerprint':source_fingerprint(root),
