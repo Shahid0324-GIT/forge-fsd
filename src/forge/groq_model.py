@@ -12,6 +12,7 @@ from langchain_core.runnables import RunnableLambda
 
 
 GROQ_MODEL='groq:openai/gpt-oss-120b'
+GROQ_MODELS={GROQ_MODEL,'groq:openai/gpt-oss-20b'}
 KEY_FILE=Path(__file__).resolve().parents[2]/'.env.local'
 
 

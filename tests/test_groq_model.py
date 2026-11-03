@@ -15,12 +15,14 @@ def response(content='{"value":3}',finish='stop'):
 class Answer(BaseModel):value:int
 
 
-def test_provider_choice_does_not_initialize_ollama_or_change_local_defaults(monkeypatch):
+@pytest.mark.parametrize('model',sorted(provider.GROQ_MODELS))
+def test_provider_choice_does_not_initialize_ollama_or_change_local_defaults(monkeypatch,model):
     import forge.agents as module
     monkeypatch.setattr(provider,'groq_key',lambda:'test-key')
     monkeypatch.setattr(module,'init_chat_model',lambda *a,**k:(_ for _ in ()).throw(AssertionError('Unexpected Ollama initialization')))
-    agent=OllamaAgents(provider.GROQ_MODEL)
-    assert isinstance(agent.model,provider.GroqChat) and agent.model_name==provider.GROQ_MODEL
+    agent=OllamaAgents(model)
+    assert isinstance(agent.model,provider.GroqChat) and agent.model_name==model
+    assert agent.model.model_name==model.removeprefix('groq:')
 
 
 def test_credentials_are_local_ignored_configuration_not_model_state(tmp_path,monkeypatch):
@@ -44,8 +46,9 @@ def test_structured_output_uses_provider_schema_and_still_validates_locally(monk
     assert result['raw'].usage_metadata['total_tokens']==30
 
 
-def test_invalid_schema_response_is_not_a_validated_proposal(monkeypatch):
-    monkeypatch.setattr(provider.GroqChat,'_post',lambda *_:(200,None,response('{"value":"bad"}')))
+@pytest.mark.parametrize('body',['{"value":"bad"}',json.dumps(Answer.model_json_schema())])
+def test_invalid_schema_response_is_not_a_validated_proposal(monkeypatch,body):
+    monkeypatch.setattr(provider.GroqChat,'_post',lambda *_:(200,None,response(body)))
     result=provider.GroqChat().with_structured_output(Answer,include_raw=True).invoke([('human','Return a value')])
     assert result['parsed'] is None and result['parsing_error']
 

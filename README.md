@@ -2,7 +2,7 @@
 
 A local-first proof of concept for agent-assisted full-stack development, built with **Python, LangGraph, LangChain and Ollama**.
 
-New autonomous jobs can also opt into **Groq GPT-OSS 120B**. The controller remains
+New autonomous jobs can also opt into **Groq GPT-OSS 20B or 120B**. The controller remains
 local; hosted inference sends requirements, source context and diagnostics to Groq.
 Ollama remains the default and existing jobs retain their saved model.
 
@@ -118,7 +118,7 @@ Never commit or paste the key into chat. Alternatively set `GROQ_API_KEY` in the
 controller's environment. No extra package, model download or lockfile change is needed.
 
 Refresh the dashboard, choose **Autonomous app workflow · experimental**, then
-**Hosted · Groq GPT-OSS 120B**. This is an explicit choice for a new job; saved Ollama
+**Hosted · Groq GPT-OSS 20B** (or 120B). This is an explicit choice for a new job; saved Ollama
 jobs are not silently switched. Groq availability, account rate limits and credits
 apply. The adapter uses best-effort JSON-schema output plus the same local Pydantic
 validation and source/build/QA gates; provider output alone is not a pass.

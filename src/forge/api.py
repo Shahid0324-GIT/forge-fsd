@@ -27,7 +27,7 @@ from forge.autonomous_planning import uses_autonomous_planning,resumable_plannin
 from forge.autonomous_review import review_snapshot
 from forge.autonomous_build import build_resumable
 from forge.autonomous_testing import tests_resumable,evidence_current
-from forge.groq_model import GROQ_MODEL,groq_configured
+from forge.groq_model import GROQ_MODELS,groq_configured
 
 
 class NewJob(ApplicationRequest):
@@ -196,7 +196,7 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
 
     @app.post('/api/jobs',status_code=202)
     def new_job(body:NewJob):
-        if body.model==GROQ_MODEL:
+        if body.model in GROQ_MODELS:
             if body.workflow!='autonomous':raise HTTPException(422,'Groq is enabled for the autonomous app workflow only')
             if not groq_configured():raise HTTPException(422,'Configure GROQ_API_KEY in .env.local, then refresh the dashboard')
         with manager.lock:

@@ -1136,3 +1136,27 @@ Provider/API/source transport selection: **34 passed**, exit 0. Full integration
 Dashboard TypeScript and production build passed. These provider tests use mocked
 network responses. **Live Groq connectivity, model quality and a new end-to-end app
 remain pending the user's API-key setup.** No hosted success is claimed yet.
+
+## Increment 26: requested 20B option and live provider calibration
+
+The user selected `openai/gpt-oss-20b`; it is now an explicit persisted choice alongside
+120B. Both follow the same provider and source/evidence policies. An initial structured
+probe returned the schema itself and was correctly rejected. The common instruction
+now explicitly requests a JSON data instance rather than schema definitions. A new
+live structured probe passed at
+`artifacts/groq-connectivity-evaluation/88b01e687c0a4211a2818f41918726ba/result.json`.
+The earlier failure remains recorded; connectivity is not an app-quality result.
+
+After explicit user authorization to send saved generated app requirements/source/
+diagnostics to Groq, the exact saved notes repair context was evaluated on a disposable
+copy. Groq 20B generated the page in **3.49 seconds**, removed its invalid route import,
+defined its own client type and used HTTP calls. TypeScript reported no page errors;
+the unchanged backend's import still failed. This is a controlled partial repair result,
+not a whole-app pass. Evidence:
+`artifacts/groq-repair-comparison/a65ed0c1d73d4bc99e9a214d9c30a542/result.json`.
+No candidate was copied into the original app. These observations support a model
+capability bottleneck without attributing every previous issue to the local model.
+
+Both-model API, schema-echo rejection and source-transport selection: **30 passed**,
+exit 0, with the existing 13 warnings. Dashboard TypeScript and production build passed.
+Fresh hosted app generation and independent acceptance remain the next live evaluation.

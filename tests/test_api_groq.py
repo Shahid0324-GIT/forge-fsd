@@ -1,15 +1,17 @@
 from uuid import uuid4
+import pytest
 
-from forge.groq_model import GROQ_MODEL
+from forge.groq_model import GROQ_MODEL,GROQ_MODELS
 from forge.models import job_model
 from test_api import client,session,fake_submit
 
 
-def test_hosted_model_requires_local_configuration_and_autonomous_workflow(client,monkeypatch):
+@pytest.mark.parametrize('model',sorted(GROQ_MODELS))
+def test_hosted_model_requires_local_configuration_and_autonomous_workflow(client,monkeypatch,model):
     import forge.api as api
     browser,app=client;headers=session(browser);calls=fake_submit(app,monkeypatch)
     monkeypatch.setattr(api,'groq_configured',lambda:False)
-    body={'description':'Build a small saved notes application','model':GROQ_MODEL,'workflow':'autonomous','request_id':uuid4().hex}
+    body={'description':'Build a small saved notes application','model':model,'workflow':'autonomous','request_id':uuid4().hex}
     assert browser.post('/api/jobs',headers=headers,json=body).status_code==422
     assert not calls and app.state.store.list_jobs()==[]
     monkeypatch.setattr(api,'groq_configured',lambda:True)
@@ -17,7 +19,7 @@ def test_hosted_model_requires_local_configuration_and_autonomous_workflow(clien
     response=browser.post('/api/jobs',headers=headers,json=body)
     assert response.status_code==202
     saved=app.state.store.read(response.json()['job_id'])
-    assert job_model(saved)==GROQ_MODEL and calls[0][2]['model']==GROQ_MODEL
+    assert job_model(saved)==model and calls[0][2]['model']==model
 
 
 def test_session_discloses_provider_availability_without_credentials(client,monkeypatch):
