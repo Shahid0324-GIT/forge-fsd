@@ -15,5 +15,5 @@ def decode_source(text):
         if not match or re.search(r'(?m)^```',match[1]):raise ValueError('Expected one complete source block, not incomplete or multiple files')
         source=match[1].strip()
     if not source:raise ValueError('Source response is empty')
-    if len(source)>24000:raise ValueError('Source response exceeds the complete-file budget; it was not truncated')
+    if len(source)+1>24000:raise ValueError('Source response exceeds the complete-file budget; it was not truncated')
     return source+'\n'

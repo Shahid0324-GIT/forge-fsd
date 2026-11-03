@@ -5,6 +5,7 @@ const roles:Record<string,string>={IntakeDecision:'Intake',BusinessBrief:'Requir
 const name=(value:string)=>(value==='LayoutProposal'?'Implementation architect':roles[value])??value?.replaceAll('_',' ')??'Agent';
 Object.assign(roles,{AppDraft:'Planner',RecoveryDecision:'Senior reviewer',requirements:'Requirements',planner:'Planner',senior_reviewer:'Senior reviewer'});
 Object.assign(roles,{SourceEdit:'Source builder',RepairFocus:'QA diagnosis',builder:'Builder',frontend:'Frontend',backend:'Backend'});
+Object.assign(roles,{SourceText:'Source builder',SourceTarget:'Repair target selection'});
 Object.assign(roles,{AcceptanceSuite:'Acceptance QA',acceptance_qa:'Acceptance QA',CoverageDecision:'Coverage review',coverage_reviewer:'Coverage review'});
 Object.assign(roles,{AcceptanceCritique:'Test quality review',acceptance_reviewer:'Test quality review'});
 Object.assign(roles,{ClarificationReview:'Requirements review',intake_reviewer:'Requirements review'});

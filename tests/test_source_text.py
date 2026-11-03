@@ -18,6 +18,11 @@ def test_ambiguous_incomplete_empty_or_oversized_transport_is_rejected(text):
     with pytest.raises(ValueError):decode_source(text)
 
 
+def test_normalized_source_stays_within_the_writer_budget():
+    assert len(decode_source('x'*23999))==24000
+    with pytest.raises(ValueError):decode_source('x'*24000)
+
+
 class Model:
     def __init__(self,content,reason='stop'):self.content=content;self.reason=reason;self.messages=None
     def model_copy(self,*,update):

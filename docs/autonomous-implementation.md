@@ -969,9 +969,28 @@ These are syntax-only comparisons, not full app passes or proof of a universal c
 
 The adapter returns one raw source body without JSON grammar constraints, retaining
 model-call identity, input/output traces, disabled cloud tracing and completion checks.
-It rejects empty, oversized, incomplete-fenced or multiple-file responses rather than
+It rejects empty, oversized, incomplete-fenced or multiple-fenced-block responses rather than
 truncating them. Structured planning/QA protocols remain unchanged. The scoped writer
 still owns path and hash validation; this increment does not yet connect the adapter
 to app writes. Adapter/decoder/existing-agent selection: **20 passed**, exit 0.
 `scripts/evaluate_source_transport.py <archived-model-call.json>` replays an archived
 TSX source proposal without executing either candidate as app code.
+
+## Increment 20: connect raw source to the existing scoped writer
+
+The autonomous builder now uses raw source when its adapter supports it. For repairs
+with multiple owned files it first selects a target through a small literal-path
+schema, then generates that file's complete source body. A single assigned generation
+target needs no extra selection call. Path, expected file hash, expected workspace
+fingerprint and change requirement remain controller-bound. Ownership, dependency
+policy, runtime authorization and actual build/browser checks are unchanged. The raw
+body call's identity is recorded on the write; source is never executed on the host.
+Legacy structured adapters remain supported. The builder can choose another owned
+module when QA's target is wrong, and cannot choose another owner's file.
+
+Regression tests cover quote/unicode preservation, multiple owned-file selection,
+unauthorized targets, and source/task changes during selection or body generation.
+Combined source selection: **43 passed**, exit 0; a further normalization-boundary
+test passed in the **12-test** decoder selection. Dashboard TypeScript and production
+build passed. No generated app source has been manually corrected; the paused notes
+app is resumed separately to test actual compilation/behavior with this transport.

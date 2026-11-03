@@ -50,6 +50,28 @@ class RepairFocus(Envelope):
     changes: list[str] = Field(min_length=1,max_length=6)
 
 
+class SourceTarget(Envelope):
+    path: str
+    change: str = Field(min_length=1,max_length=500,description='Concise intended correction, not private reasoning.')
+
+
+SOURCE_TEXT_INSTRUCTION='''Implement or repair the one file named by write_target.
+Return its COMPLETE raw source contents only. Do not return JSON, tool fields, patches,
+explanation or multiple files. A single source fence is accepted. Complete every
+function and JSX element; do not copy an unfinished file ending from the current source.
+Preserve the original user request, clarification answers, review feedback and frozen
+acceptance assertions. Choose app-owned types and implementation details yourself.
+Use actual other files' exports and props, the supported runtime references and real
+compiler/browser evidence. repair_focus, selected_change and fresh_review are advisory;
+correct their hypothesis when the actual source/evidence disagrees. Never weaken tests,
+add dependencies, replace the requested app with a placeholder or claim execution.
+Use quoted 'use client'; before imports for interactive React modules. HTTP route and
+SQLite modules remain server-only. Client components use fetch rather than importing
+route handlers. Resolve imports from the selected file's actual directory. Preserve
+server metadata in server modules. No new packages or external services are available.
+This response supplies file contents only; the controller enforces ownership and hashes.'''
+
+
 FOCUS_INSTRUCTION='''You are the QA diagnosis subagent. Inspect the actual latest verification
 failure and current app source. Choose ONE authorized file to correct next and give
 concrete source-level changes that address its reported causes. Prioritize actual
@@ -145,7 +167,7 @@ class SourceAgent:
             if result['data']['exists']:source[path]=result['data']
         fingerprint=source_fingerprint(tools.root)
         if fingerprint!=before:raise ValueError('Workspace changed while context was being read; retrieve a fresh snapshot')
-        capabilities=tools.describe();capabilities.pop('schema')  # The exact write schema is already the response schema.
+        capabilities=tools.describe();capabilities.pop('schema')  # Keep tool-envelope schemas out of source-body context.
         if state.task.inputs.get('acceptance_contract'):
             capabilities['checks_available'].append('browser_acceptance')
             capabilities['frozen_browser_contract']='Executed separately from app source; builders cannot modify its assertions.'
@@ -207,26 +229,29 @@ class SourceAgent:
             data['acceptance_criteria']=self.draft.acceptance_criteria
             data.pop('app_design')
             if len(json.dumps(data,separators=(',',':')))>22000:raise ValueError('Focused repair context exceeds the complete-source budget; split the task')
-        for index,path in enumerate(targets):
-            digest=file_hash(tools.root/path)
-            fields={'path':(Literal[path],...),'expected_sha256':(Literal[digest],...),
-                'expected_workspace_fingerprint':(Literal[fingerprint],...)}
-            write=create_model(f'OwnedWrite{index}',__base__=WriteFile,
-                require_change=(Literal[repairing],...),**fields)
-            if repairing and digest is not None and not data['replace_rejected_patch']:
-                patch=create_model(f'OwnedPatch{index}',__base__=ReplaceText,**fields)
-                variants.append(Annotated[Union[write,patch],Field(discriminator='tool')])
-            else:variants.append(write)
-        choice=variants[0] if len(variants)==1 else Annotated[Union[tuple(variants)],Field(discriminator='path')]
-        schema=create_model('SourceEdit',__base__=RootModel[choice])
-        record_handoff(self.ledger.store,self.ledger.job_id,'qa' if repairing else 'coordinator',state.task.owner,
-            'Propose an owned source edit using the agent design, actual files and available tools.',
-            data,agents=self.agents,task_id=state.task.id,parent_task_id=state.task.parent_id)
-        previous=getattr(self.agents,'activity',None)
-        try:
-            self.agents.activity=lambda status,payload:self.ledger.store.event(self.ledger.job_id,status,payload,update_status=False)
-            proposal=self.agents.generate(schema,REPAIR_INSTRUCTION if repairing else INSTRUCTION,data,coding=True).root
-        finally:self.agents.activity=previous
+        if callable(getattr(self.agents,'generate_source',None)):
+            proposal=self._raw_proposal(state,data,targets,tools,fingerprint,repairing)
+        else:
+            for index,path in enumerate(targets):
+                digest=file_hash(tools.root/path)
+                fields={'path':(Literal[path],...),'expected_sha256':(Literal[digest],...),
+                    'expected_workspace_fingerprint':(Literal[fingerprint],...)}
+                write=create_model(f'OwnedWrite{index}',__base__=WriteFile,
+                    require_change=(Literal[repairing],...),**fields)
+                if repairing and digest is not None and not data['replace_rejected_patch']:
+                    patch=create_model(f'OwnedPatch{index}',__base__=ReplaceText,**fields)
+                    variants.append(Annotated[Union[write,patch],Field(discriminator='tool')])
+                else:variants.append(write)
+            choice=variants[0] if len(variants)==1 else Annotated[Union[tuple(variants)],Field(discriminator='path')]
+            schema=create_model('SourceEdit',__base__=RootModel[choice])
+            record_handoff(self.ledger.store,self.ledger.job_id,'qa' if repairing else 'coordinator',state.task.owner,
+                'Propose an owned source edit using the agent design, actual files and available tools.',
+                data,agents=self.agents,task_id=state.task.id,parent_task_id=state.task.parent_id)
+            previous=getattr(self.agents,'activity',None)
+            try:
+                self.agents.activity=lambda status,payload:self.ledger.store.event(self.ledger.job_id,status,payload,update_status=False)
+                proposal=self.agents.generate(schema,REPAIR_INSTRUCTION if repairing else INSTRUCTION,data,coding=True).root
+            finally:self.agents.activity=previous
         outcome=tools.execute(proposal.model_dump(),initiator='model',
             proposal_call_id=getattr(self.agents,'last_call_identity',{}).get('call_id'))
         if not outcome['ok']:raise ValueError(outcome['error'])
@@ -234,6 +259,31 @@ class SourceAgent:
             return [CheckEvidence(check='source_written',exit_code=0,fingerprint=outcome['data']['sha256'],
                 report=outcome['report'],summary='Model-proposed source saved through ownership/hash checks; compilation and behavior are not implied.')]
         return build_evidence(tools)
+
+    def _raw_proposal(self,state,data,targets,tools,fingerprint,repairing):
+        previous=getattr(self.agents,'activity',None);target=targets[0];change=None
+        try:
+            self.agents.activity=lambda status,payload:self.ledger.store.event(self.ledger.job_id,status,payload,update_status=False)
+            if repairing and len(targets)>1:
+                schema=create_model('SourceTarget',__base__=SourceTarget,path=(Literal[tuple(targets)],...))
+                record_handoff(self.ledger.store,self.ledger.job_id,'qa',state.task.owner,
+                    'Select an owned repair target from actual source and check evidence.',data,
+                    agents=self.agents,task_id=state.task.id,parent_task_id=state.task.parent_id)
+                selected=schema.model_validate(self.agents.generate(schema,
+                    'Choose the owned file that needs correction. QA focus is advisory; use actual evidence. Return only target metadata, not source or an execution claim.',data,coding=True))
+                target=selected.path;change=selected.change
+            tools.describe()
+            if source_fingerprint(tools.root)!=fingerprint:raise ValueError('Workspace context changed during target selection; retrieve fresh source')
+            context={**data,'write_target':target,'file':target,'selected_change':change,'source_transport':'raw_complete_file'}
+            context.pop('replace_rejected_patch',None);context.pop('edit_guidance',None)
+            record_handoff(self.ledger.store,self.ledger.job_id,'qa' if repairing else 'coordinator',state.task.owner,
+                'Generate one complete source body for the chosen owned file; path and hashes remain controller-bound.',context,
+                agents=self.agents,task_id=state.task.id,parent_task_id=state.task.parent_id)
+            content=self.agents.generate_source(SOURCE_TEXT_INSTRUCTION,context)
+            old=data['source'].get(target)
+            return WriteFile(tool='write_file',path=target,content=content,expected_sha256=old['sha256'] if old else None,
+                expected_workspace_fingerprint=fingerprint,require_change=repairing)
+        finally:self.agents.activity=previous
 
     def _focus(self,state,data,targets):
         schema=create_model('RepairFocus',__base__=RepairFocus,file=(Literal[tuple(targets)],...))
