@@ -20,6 +20,8 @@ class Agent:
     def generate(self,schema,instruction,data,**_):
         self.calls.append((schema,data))
         if schema is AppDraft:return self.proposal
+        if schema.__name__=='ClarificationReview':return schema.model_validate({'disposition':'ask_user',
+            'requirement_quote':data['application_request'],'reason':'An unresolved business or capability choice remains'})
         assert schema is IntakeDecision
         return schema.model_validate({'intent':'clarify','blocking_reason':'Requested service is not supported',
             'questions':['Can the requested payments integration be omitted?']} if self.blocked else {'intent':'build'})
@@ -105,6 +107,40 @@ def test_answered_question_cannot_be_repeated_and_correction_receives_actual_ans
     assert result['status']=='AUTONOMOUS_DRAFT_READY' and result['job_id']==first['job_id']
     assert sum(e['status']=='AUTONOMOUS_INPUT_NEEDED' for e in result['events'])==1
     assert len([data for schema,data in agent.calls if schema is IntakeDecision])==3
+
+
+def test_implementation_questions_are_delegated_without_inventing_user_answers(tmp_path):
+    class Delegating(Agent):
+        def generate(self,schema,instruction,data,**kwargs):
+            if schema is IntakeDecision:
+                self.calls.append((schema,data))
+                return schema.model_validate({'intent':'clarify','blocking_reason':'API design was not specified',
+                    'questions':['How should API requests and responses be designed?']})
+            if schema.__name__=='ClarificationReview':
+                self.calls.append((schema,data))
+                return schema.model_validate({'disposition':'delegate_to_planner','requirement_quote':data['application_request'],
+                    'reason':'The planner owns API and file design'})
+            return super().generate(schema,instruction,data,**kwargs)
+    agent=Delegating(draft(),blocked=True);store=JobStore(tmp_path/'jobs.sqlite3')
+    result=plan_app('Build a small local notes app.',agent,store)
+    assert result['status']=='AUTONOMOUS_DRAFT_READY'
+    assert not any(e['status']=='AUTONOMOUS_INPUT_NEEDED' for e in result['events'])
+    assert agent.calls[-1][1].get('human_clarifications',[])==[]
+    reviewer=next(t for t in TaskLedger(store,result['job_id']).list() if t.task.owner=='intake_reviewer')
+    assert reviewer.status=='completed'
+
+
+def test_ungrounded_question_review_cannot_delegate_or_ask_the_user(tmp_path):
+    class Ungrounded(Agent):
+        def generate(self,schema,instruction,data,**kwargs):
+            if schema.__name__=='ClarificationReview':return schema.model_validate({'disposition':'delegate_to_planner',
+                'requirement_quote':'This requirement was invented','reason':'Unsupported reasoning'})
+            return super().generate(schema,instruction,data,**kwargs)
+    agent=Ungrounded(draft(),blocked=True);store=JobStore(tmp_path/'jobs.sqlite3')
+    result=plan_app('Build a small local notes app.',agent,store,action_limit=1)
+    assert result['status']=='AUTONOMOUS_PAUSED'
+    assert not any(e['status']=='AUTONOMOUS_INPUT_NEEDED' for e in result['events'])
+    assert not any(schema is AppDraft for schema,_ in agent.calls)
 
 
 def test_genuine_questions_do_not_enable_app_generation(tmp_path):

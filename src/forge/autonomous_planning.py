@@ -8,6 +8,7 @@ from pydantic import Field
 
 from forge.coordinator import TaskCoordinator
 from forge.handoffs import record_handoff
+from forge.intake_review import review_clarification
 from forge.schemas import ApplicationRequest
 from forge.senior_review import SeniorReviewer
 from forge.contracts import IntakeDecision
@@ -251,6 +252,8 @@ def continue_intake(ledger,task_id,agents):
                 if isinstance(item,dict) and item.get('question') and item.get('answer','').strip()}
             duplicates=[answered[normalized(question)] for question in decision.root.questions if normalized(question) in answered]
             if duplicates:raise ValueError('Intake repeated an already answered question. Use these user decisions instead of asking again: '+json.dumps(duplicates))
+            routing=review_clarification(ledger,state,agents,data,decision)
+            if routing.disposition=='delegate_to_planner':decision=IntakeDecision.model_validate({'intent':'build'})
         route.write_text(decision.model_dump_json(indent=2),encoding='utf-8',newline='\n')
         snapshot=directory/f'intake-{state.actions_used}.json';snapshot.write_bytes(route.read_bytes())
         return [CheckEvidence(check='intake_schema',exit_code=0,fingerprint=fingerprint(),report=str(snapshot.resolve()),

@@ -916,3 +916,21 @@ of losing that feedback. Instructions distinguish historical question alternativ
 quoted rejected proposals from actual user decisions. No app/domain names are used in
 the guard. Existing genuine-clarification and review flows remain supported. Planning/
 review selection: **30 passed**, exit 0; no generated app was changed by this increment.
+
+## Increment 17: review clarification ownership before asking the user
+
+Intake clarification proposals now pass a narrow ownership review. The existing model
+must distinguish genuinely missing business/capability choices from implementation
+questions already delegated to the planner. Technical questions can route to planning
+without fabricating a human answer; genuine unsupported requests still ask the user.
+The decision quotes the actual request/feedback/answers and is saved in a real child
+task with its own handoff and evidence. Stale parent state or invented quotes reject
+the review. This is a fallible model routing judgment, not new implementation authority.
+The dashboard identifies requirements-review activity separately from test review.
+
+Local calibration (`scripts/evaluate_intake_review.py`) correctly delegated an API/
+server-client design question and retained a payment-capability question for the user:
+`artifacts/intake-review-evaluation/6309679f999b48f48cc5f1f567e2ed16/result.json`, exit 0.
+No app was generated/executed in that calibration. Planning/review selection:
+**32 passed**, exit 0. The preceding full checkpoint for increment 16 was **428 passed**;
+the complete suite for this integration is recorded after it finishes.
