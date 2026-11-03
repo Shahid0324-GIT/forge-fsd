@@ -1,7 +1,7 @@
 // A fixed interpreter for data-only test contracts. No selectors, scripts or eval.
 import assert from 'node:assert/strict';
 
-function target(page,query){
+export function resolveTarget(page,query){
   switch(query.by){
     case 'role': return page.getByRole(query.value,{exact:true,...(query.name?{name:query.name}:{})});
     case 'label': return page.getByLabel(query.value,{exact:true});
@@ -29,7 +29,7 @@ export async function executeStep(page,step,base){
     return page.goto(url.href,{waitUntil:'networkidle',timeout:15000});
   }
   if(step.action==='assert_title')return eventually(()=>page.title(),step.value);
-  const locator=target(page,step.target);
+  const locator=resolveTarget(page,step.target);
   switch(step.action){
     case 'click': return locator.click();
     case 'fill': return locator.fill(step.value);

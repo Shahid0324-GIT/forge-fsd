@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {chromium} from '/opt/forge-browser/node_modules/playwright/index.mjs';
-import {executeStep} from './browser-protocol.mjs';
+import {executeStep,resolveTarget} from './browser-protocol.mjs';
+import {inspectFailure} from './browser-diagnostics.mjs';
 
 const base=process.env.FORGE_BROWSER_BASE;
 assert.match(base,/^http:\/\/forge-browser-app-[a-f0-9]{12}:3000$/);
@@ -33,7 +34,8 @@ try{
     }catch(error){
       await page.screenshot({path:`/results/${scenario.id}.png`,fullPage:true}).catch(()=>{});
       results.push({id:scenario.id,passed:false,criteria:scenario.criteria,step:index+1,
-        action:scenario.steps[index]?.action,error:String(error),runtime_errors:errors,
+        action:scenario.steps[index]?.action,failure_context:await inspectFailure(page,scenario.steps[index],resolveTarget),
+        error:String(error),runtime_errors:errors,
         page_text:(await page.locator('body').innerText().catch(()=>'')).slice(0,2000)});
     }finally{clearTimeout(timer);await context.close();}
   }

@@ -15,6 +15,7 @@ from forge.workspace import safe_path,source_fingerprint
 
 def harness_fingerprint():
     names=['tests/acceptance/browser.mjs','tests/acceptance/browser-protocol.mjs',
+        'tests/acceptance/browser-diagnostics.mjs',
         'tests/browser/app-server.mjs','tests/browser/package-lock.json','tests/browser/Dockerfile']
     return hashlib.sha256(b''.join(name.encode()+b'\0'+(PROJECT/name).read_bytes() for name in names)).hexdigest()
 
@@ -88,6 +89,7 @@ def run_acceptance_browser(root,directory,job_id,contract,app_image):
             '--env',f'FORGE_BROWSER_BASE=http://{resources["app"]}:3000',
             '--mount',f'type=bind,source={PROJECT/"tests/acceptance/browser.mjs"},target=/trusted/browser.mjs,readonly',
             '--mount',f'type=bind,source={PROJECT/"tests/acceptance/browser-protocol.mjs"},target=/trusted/browser-protocol.mjs,readonly',
+            '--mount',f'type=bind,source={PROJECT/"tests/acceptance/browser-diagnostics.mjs"},target=/trusted/browser-diagnostics.mjs,readonly',
             '--mount',f'type=bind,source={Path(contract["report"]).resolve()},target=/trusted/contract.json,readonly',
             '--mount',f'type=bind,source={output},target=/results',report['browser_image'],'node','/trusted/browser.mjs']
         report['execution']=bounded_command(command,timeout=330,output_limit=64000)

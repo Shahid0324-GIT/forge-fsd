@@ -64,6 +64,11 @@ FOCUS_INSTRUCTION+=''' Select the module that owns the correction, not merely th
 where a symptom appears. Each proposed change must be implementable in that file.
 For missing document metadata with a client page, inspect the server layout. Your
 target is advisory; the builder may correct another file within its existing ownership.'''
+FOCUS_INSTRUCTION+=''' Read structured browser failure_context before interpreting a
+timeout. kind=missing_target with match_count=0 means the requested semantic target
+was absent. Compare the accessibility snapshot and source markup to the frozen target.
+Do not guess slow performance, increase immutable test timeouts, or change numeric
+state types merely because a UI target is missing. Propose an owned app-source fix.'''
 
 
 REPAIR_INSTRUCTION='''Repair the selected existing file so the supplied real compiler,
@@ -75,6 +80,9 @@ Choose the file that actually owns the correction. Never repeat a no-op in the w
 module merely to follow QA's recommendation.
 fresh_review, when present, was requested for this exact source/evidence snapshot.
 Consider its strategy alongside the compiler and source; it is advisory, not proof.
+For browser missing_target facts, align the app's accessible markup/control with the
+frozen target while preserving behavior. A zero-match timeout is not a reason to edit
+tests, increase waits, or change otherwise-correct numeric state into strings.
 Read the selected file and other files' actual exports and props before editing.
 Resolve relative imports from the directory of the importing file, not the app root.
 Next.js supplies app/layout.tsx automatically; pages must not invent a layout import.
