@@ -6,6 +6,7 @@ from forge.autonomous_review import approved_review
 from forge.coordinator import TaskCoordinator
 from forge.senior_review import SeniorReviewer
 from forge.runtime_reference import runtime_references
+from forge.repair_routing import compiler_repair_owner
 from forge.source_agent import SourceAgent,build_evidence
 from forge.source_checks import run_source_checks
 from forge.tasks import Dependency,Observation,Task,TaskLedger
@@ -123,7 +124,8 @@ def build_app(job_id,agents,store,*,resume=False,additional_actions=8,workspace_
             return build_evidence(WorkspaceTools(ledger,current,root,draft,workspace_boundary=boundary,
                 check_runner=check_runner,authorization=authorize))
         return writer(current)
-    state=TaskCoordinator(ledger,{role:verify_or_repair for role in capabilities},reviewer_for(capabilities),lambda:source_fingerprint(root)).run(state.task.id)
+    state=TaskCoordinator(ledger,{role:verify_or_repair for role in capabilities},reviewer_for(capabilities),lambda:source_fingerprint(root),
+        owner_router=lambda current:compiler_repair_owner(current,root,{file.path:file.owner for file in draft.files},store.path.parent)).run(state.task.id)
     if state.status!='completed':return pause(state)
     authorize();checks=state.observations[-1].checks;fingerprint=source_fingerprint(root)
     if any(check.fingerprint!=fingerprint for check in checks):return pause(state,'Source changed after verification; run fresh checks')

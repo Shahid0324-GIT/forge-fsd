@@ -1086,3 +1086,24 @@ and non-cycle repairs continue to receive the current body. File ownership, prot
 runtime, final compilation and independent acceptance checks remain authoritative.
 No probe candidate is copied into the app. Cycle/raw-source/transport selection:
 **26 passed**, exit 0, with the existing 13 upstream warnings.
+
+Live reimplementation changed the model-generated page to use HTTP requests, but
+introduced state typing and nonexistent-export errors. It remained build-paused.
+This is progress beyond the exact import cycle, not a successful app or a general
+model-reliability result. No isolated probe candidate was copied into the app.
+
+## Increment 24: route unambiguous compiler evidence to its source owner
+
+Build and acceptance coordinators can now hand a current compiler failure to the
+existing owner when every located diagnostic belongs to that single other role.
+Mixed-owner or noncompiler failures remain ordinary agent/reviewer decisions. Routing
+uses the same-revision, same-source-fingerprint report and rechecks source around the
+decision. The ledger records a controller handoff rather than pretending a senior
+model made it. It preserves task revision, required checks, history and remaining
+action budget; no new file permissions or workers are granted. In-flight tasks cannot
+be reassigned. This prevents frontend retries from being the only way to resolve
+backend-only build errors, without weakening final global compilation.
+
+Routing/coordinator/build/acceptance integration: **42 passed**, exit 0, with the
+existing 13 upstream warnings. Tests cover stale source/revision, ambiguous failures,
+unregistered workers, source changes during routing and exhausted budgets.

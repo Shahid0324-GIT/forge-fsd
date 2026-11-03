@@ -212,6 +212,16 @@ class TaskLedger:
             current.inflight_role=None;current.review_error=error[:4000]
         return self.update(state.task.id,state.version,'TASK_REVIEW_FAILED',error[:4000],mutate)
 
+    def reassign(self,state,owner,roles,reason):
+        """Route known evidence to an existing worker; grant no new file ownership."""
+        def mutate(current,_):
+            if current.status!='running' or current.inflight_role is not None:
+                raise TaskConflict('Only idle running tasks can be reassigned')
+            if owner not in roles:raise ValueError('Handoff selected an unavailable worker')
+            current.task.owner=owner;current.recovery=None;current.review_error=''
+            current.reviewed_observations=0;current.no_progress=0
+        return self.update(state.task.id,state.version,'TASK_REASSIGNED',reason,mutate)
+
     def pause(self,state,reason,*,action_finished=False):
         def mutate(current,_):
             if current.status not in {'queued','running','paused'}:raise TaskConflict('Task cannot pause in its current state')

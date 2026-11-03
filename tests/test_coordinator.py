@@ -64,6 +64,42 @@ def test_reviewer_reassigns_design_problem_to_planner(ledger):
     assert seen==['builder','builder','planner'] and result.status=='completed'
 
 
+def test_owner_routing_hands_off_evidence_without_extra_model_review_or_budget(ledger):
+    seen=[]
+    def builder(state):seen.append(state.task.owner);return evidence(False)
+    def backend(state):seen.append(state.task.owner);return evidence()
+    task=create(ledger)
+    result=TaskCoordinator(ledger,{'builder':builder,'backend':backend},retry,lambda:FP,
+        owner_router=lambda state:'backend' if state.observations else None).run(task.task.id)
+    assert seen==['builder','backend'] and result.status=='completed'
+    assert result.actions_used==2 and result.action_limit==task.action_limit and result.revision==task.revision
+    assert result.task.required_checks==task.task.required_checks and len(result.observations)==2
+    assert any(event['status']=='TASK_REASSIGNED' for event in ledger.store.read(ledger.job_id)['events'])
+
+
+def test_owner_routing_cannot_create_a_new_worker(ledger):
+    calls=[];task=create(ledger)
+    result=TaskCoordinator(ledger,{'builder':lambda _:calls.append(1)},retry,lambda:FP,
+        owner_router=lambda _:'unregistered').run(task.task.id)
+    assert result.status=='paused' and not calls and 'unavailable' in result.pause_reason
+
+
+def test_source_change_during_owner_routing_discards_the_handoff(ledger):
+    fp=[FP];calls=[];task=create(ledger)
+    def route(_):fp[0]='b'*64;return 'backend'
+    def builder(_):calls.append('builder');return evidence(fp=fp[0])
+    result=TaskCoordinator(ledger,{'builder':builder,'backend':lambda _:calls.append('backend')},retry,lambda:fp[0],owner_router=route).run(task.task.id)
+    assert result.status=='completed' and calls==['builder']
+
+
+def test_owner_handoff_does_not_extend_an_exhausted_budget(ledger):
+    task=create(ledger,limit=1);calls=[]
+    def builder(_):calls.append('builder');return evidence(False)
+    result=TaskCoordinator(ledger,{'builder':builder,'backend':lambda _:calls.append('backend')},retry,lambda:FP,
+        owner_router=lambda state:'backend' if state.observations else None).run(task.task.id)
+    assert result.status=='paused' and result.actions_used==1 and calls==['builder']
+
+
 def test_exhaustion_pauses_and_explicit_resume_keeps_attempt_history(ledger):
     task=create(ledger,limit=3)
     engine=TaskCoordinator(ledger,{'builder':lambda _:evidence(False)},retry,lambda:FP)

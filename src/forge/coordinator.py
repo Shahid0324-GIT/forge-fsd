@@ -20,11 +20,12 @@ class LoopState(TypedDict,total=False):
 
 
 class TaskCoordinator:
-    def __init__(self,ledger,workers,reviewer,fingerprint,*,review_after=2):
+    def __init__(self,ledger,workers,reviewer,fingerprint,*,review_after=2,owner_router=None):
         if review_after<1:raise ValueError('Review threshold must be positive')
         if not workers or 'senior_reviewer' in workers:raise ValueError('Register workers separately from the escalation reviewer')
         self.ledger=ledger;self.workers=dict(workers);self.reviewer=reviewer
         self.fingerprint=fingerprint;self.review_after=review_after
+        self.owner_router=owner_router
         graph=StateGraph(LoopState)
         graph.add_node('route',self._route);graph.add_node('worker',self._work)
         graph.add_node('senior_reviewer',self._review)
@@ -69,6 +70,16 @@ class TaskCoordinator:
         if current.actions_used>=current.action_limit:
             self.ledger.pause(current,'Action budget reached. Work, evidence and recovery strategy are saved; resume with an explicit budget extension.')
             return {'next':'done'}
+        if self.owner_router is not None:
+            try:
+                before=self.fingerprint();owner=self.owner_router(current)
+                if self.fingerprint()!=before:owner=None
+                if owner and owner!=current.task.owner:
+                    current=self.ledger.reassign(current,owner,set(self.workers),
+                        'Current compiler diagnostics belong to another declared source owner; hand off the saved evidence without expanding permissions.')
+            except TaskConflict:raise
+            except Exception as exc:
+                self.ledger.pause(current,'Cannot route current evidence: '+str(exc)[:1000]);return {'next':'done'}
         stalled=(current.no_progress>=self.review_after or bool(current.review_error))
         reviewed=current.reviewed_observations==len(current.observations)
         if stalled and not reviewed and current.observations:
