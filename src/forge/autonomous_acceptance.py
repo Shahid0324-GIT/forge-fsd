@@ -54,9 +54,24 @@ class Visible(Envelope):
     target: Target
 
 
+class TextRoleTarget(RoleTarget):
+    value: Literal['button','link','heading','option','status','alert','list','listitem','table','row','columnheader','cell',
+        'dialog','tab','tabpanel','progressbar','radiogroup','img','main','navigation','region','form','group','separator']
+
+
+class ValueRoleTarget(RoleTarget):
+    value: Literal['textbox','spinbutton','combobox','searchbox']
+
+
 class Text(Envelope):
-    action: Literal['assert_text','assert_value']
-    target: Target
+    action: Literal['assert_text']
+    target: Annotated[TextRoleTarget | TextTarget,Field(discriminator='by')]
+    value: str = Field(max_length=600)
+
+
+class Value(Envelope):
+    action: Literal['assert_value']
+    target: Annotated[ValueRoleTarget | TextTarget,Field(discriminator='by')]
     value: str = Field(max_length=600)
 
 
@@ -71,7 +86,7 @@ class Title(Envelope):
     value: str = Field(min_length=1,max_length=300)
 
 
-Step=Annotated[Visit | Click | Fill | Toggle | Visible | Text | Count | Title,Field(discriminator='action')]
+Step=Annotated[Visit | Click | Fill | Toggle | Visible | Text | Value | Count | Title,Field(discriminator='action')]
 
 
 class Scenario(Envelope):

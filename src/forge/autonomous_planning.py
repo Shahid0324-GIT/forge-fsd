@@ -51,7 +51,9 @@ files can be chosen within the supplied manifest rules. Package/configuration fi
 remain controller-owned. Assign files to builder, frontend, backend or qa as useful;
 one builder is enough for a small app. Define expected behavior and applicable tests
 from the request, not invented implementation results. Assumptions cannot waive
-requirements. Requirements intake has already established the supported scope. Respect
+requirements. Acceptance criteria express requested functionality and explicit constraints;
+do not promote your optional styling/placement choices into new acceptance requirements.
+Requirements intake has already established the supported scope. Respect
 negative constraints: 'no saved data' excludes browser localStorage/sessionStorage,
 cookies and databases, not merely a server database. Use transient state for that scope.
 the supplied clarification answers and choose sensible defaults for remaining design
