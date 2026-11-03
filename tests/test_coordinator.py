@@ -6,7 +6,7 @@ import pytest
 from forge.coordinator import TaskCoordinator
 from forge.persistence import JobStore
 from forge.senior_review import SeniorReviewer
-from forge.tasks import CheckEvidence,Observation,RecoveryPlan,Task,TaskLedger
+from forge.tasks import CheckEvidence,Dependency,Observation,RecoveryPlan,Task,TaskLedger
 
 
 FP='a'*64
@@ -172,3 +172,49 @@ def test_senior_review_distinguishes_current_checks_from_latest_tool_error(ledge
             assert all(o['fingerprint']==current for o in data['recent_observations'])
             return schema.model_validate(retry(None,None).model_dump())
     SeniorReviewer(Agent(),ledger,{'builder'})(task,child)
+
+
+def test_restarted_pause_rechecks_changed_source_before_senior_handoff(ledger):
+    task=create(ledger,limit=2)
+    paused=TaskCoordinator(ledger,{'builder':lambda _:evidence(False)},retry,lambda:FP).run(task.task.id)
+    reopened=TaskLedger(JobStore(ledger.store.path),ledger.job_id)
+    resumed=reopened.resume(reopened.read(paused.task.id),additional_actions=2)
+    calls=[];reviews=[];current='b'*64
+    def worker(state):
+        calls.append(state);return evidence(fp=current)
+    result=TaskCoordinator(reopened,{'builder':worker},lambda *args:reviews.append(args),lambda:current).run(resumed.task.id)
+    assert result.status=='completed' and len(calls)==1 and not reviews
+    assert result.observations[-1].fingerprint==current
+    assert result.observations[:2]==paused.observations
+
+
+def test_source_changing_during_review_cannot_apply_old_reassignment(ledger):
+    fingerprint=[FP];builders=[];planners=[]
+    def worker(state):
+        builders.append(state);return evidence(len(builders)>2,fp=fingerprint[0])
+    def reviewer(*_):
+        fingerprint[0]='b'*64
+        return RecoveryPlan(diagnosis='Old interface failure',strategy='Change the old contract',action='reassign',owner='planner')
+    def planner(state):planners.append(state);return evidence(fp=fingerprint[0])
+    result=TaskCoordinator(ledger,{'builder':worker,'planner':planner},reviewer,lambda:fingerprint[0]).run(create(ledger).task.id)
+    assert result.status=='completed' and len(builders)==3 and not planners
+    assert result.recovery is None and result.task.owner=='builder'
+    child=next(t for t in ledger.list() if t.task.owner=='senior_reviewer')
+    assert child.status=='paused' and 'Artifacts changed during review' in child.observations[-1].checks[0].summary
+
+
+def test_upstream_revision_during_worker_invalidates_result_after_reopen(ledger):
+    upstream=ledger.start(create(ledger))
+    upstream=ledger.observe(upstream,Observation(revision=1,fingerprint=FP,checks=evidence()))
+    downstream=ledger.create(Task(owner='builder',goal='Implement the approved interface',required_checks=['functional'],
+        dependencies=[Dependency(task_id=upstream.task.id,revision=upstream.revision)]))
+    def worker(_):
+        ledger.revise(upstream,upstream.task.model_copy(update={'inputs':{'interface':'new contract'}}))
+        return evidence()
+    result=TaskCoordinator(ledger,{'builder':worker},retry,lambda:FP).run(downstream.task.id)
+    reopened=TaskLedger(JobStore(ledger.store.path),ledger.job_id)
+    assert result.status=='needs_refresh' and not result.observations
+    assert reopened.read(result.task.id)==result
+    calls=[]
+    TaskCoordinator(reopened,{'builder':lambda _:calls.append(1)},retry,lambda:FP).run(result.task.id)
+    assert not calls

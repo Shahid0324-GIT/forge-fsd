@@ -192,6 +192,10 @@ class SourceAgent:
                 data['fresh_review']={'source_fingerprint':fingerprint,'strategy':state.recovery.model_dump(),
                     'scope':'Advisory strategy for this observation set only; verify it against current source and checks.'}
             focus=self._focus(state,data,targets)
+            # QA is another model invocation: inputs may have expired while it ran.
+            # Revalidate before forwarding its diagnosis and source to the builder.
+            tools.describe()
+            if source_fingerprint(tools.root)!=fingerprint:return build_evidence(tools)
             data['repair_focus']=focus.model_dump()
             # Repair is a source/debugging task, not another architecture proposal.
             # Retain requirements and complete interfaces, but avoid asking the

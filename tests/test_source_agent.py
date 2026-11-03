@@ -264,3 +264,35 @@ def test_changed_source_is_rechecked_before_using_old_failure_locations(tools,pa
     assert checks[0].fingerprint==source_fingerprint(tools.root)
     assert checks[0].exit_code==(0 if passed else 1)
     assert not any(task.task.owner=='qa' for task in tools.ledger.list())
+
+
+@pytest.mark.parametrize('change',['source','requirements','authorization','runtime'])
+def test_changed_context_during_qa_is_not_forwarded_to_builder(tools,change):
+    state=configured(tools,'repair_build');calls=[];authorized=[True]
+    class RacingQA(Agent):
+        def generate(self,schema,instruction,data,**kwargs):
+            calls.append(schema.__name__)
+            proposal=super().generate(schema,instruction,data,**kwargs)
+            if schema.__name__=='RepairFocus':
+                if change=='source':(tools.root/'app/globals.css').write_text('/* changed during diagnosis */')
+                elif change=='requirements':
+                    tools.ledger.revise(state,state.task.model_copy(update={'inputs':{**state.task.inputs,'original_request':'A revised request'}}))
+                elif change=='runtime':(tools.root/'package.json').write_text('{}')
+                else:authorized[0]=False
+            return proposal
+    def authorize():
+        if not authorized[0]:raise ValueError('Approved review changed')
+    def check(root,*_):return {'passed':False,'report':'fresh.json','source_fingerprint':source_fingerprint(root),
+        'coverage':{'application_behavior':'NOT_TESTED'},'checks':{'results':[
+            {'name':'typecheck','exit_code':2,'output':'Fresh current-source failure','stopped':None}]}}
+    worker=SourceAgent(tools.ledger,RacingQA('Must not be written'),tools.root,tools.draft,
+        workspace_boundary=tools.root.parent,check_runner=check,authorization=authorize)
+    if change=='source':
+        checks=worker(state)
+        assert checks[0].fingerprint==source_fingerprint(tools.root)
+        assert 'Fresh current-source failure' in checks[0].summary
+    else:
+        with pytest.raises(TaskConflict):worker(state)
+    assert calls==['RepairFocus'] and not (tools.root/'app/page.tsx').exists()
+    handoffs=[e for e in tools.ledger.store.read(tools.ledger.job_id)['events'] if e['status']=='AGENT_HANDOFF']
+    assert not any(e['payload']['recipient']=='frontend' for e in handoffs)

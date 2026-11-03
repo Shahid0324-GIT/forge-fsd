@@ -71,6 +71,13 @@ class TaskCoordinator:
             return {'next':'done'}
         stalled=(current.no_progress>=self.review_after or bool(current.review_error))
         reviewed=current.reviewed_observations==len(current.observations)
+        if stalled and not reviewed and current.observations:
+            try:unchanged=current.observations[-1].fingerprint==self.fingerprint()
+            except Exception as exc:
+                self.ledger.pause(current,'Cannot inspect artifacts before review: '+str(exc)[:1000])
+                return {'next':'done'}
+            # A saved failure is history until a worker rechecks the new artifacts.
+            if not unchanged:return {'next':'worker'}
         return {'next':'review' if stalled and not reviewed else 'worker'}
 
     def _work(self,state):
@@ -94,6 +101,11 @@ class TaskCoordinator:
 
     def _review(self,state):
         current=self.ledger.read(state['task_id'])
+        try:fingerprint_before=self.fingerprint()
+        except Exception as exc:
+            self.ledger.pause(current,'Cannot inspect artifacts before review: '+str(exc)[:1000])
+            return {}
+        if current.observations and current.observations[-1].fingerprint!=fingerprint_before:return {}
         dispatched=self.ledger.reserve_action(current,'senior_reviewer')
         child=self.ledger.create(Task(parent_id=current.task.id,owner='senior_reviewer',
             goal='Diagnose stalled work and propose a concrete recovery strategy without weakening required behavior.',
@@ -103,6 +115,9 @@ class TaskCoordinator:
         plan=None;error=''
         try:
             plan=RecoveryPlan.model_validate(self.reviewer(dispatched,child))
+            self.ledger.assert_active(dispatched)
+            if self.fingerprint()!=fingerprint_before:
+                raise ValueError('Artifacts changed during review; discard this strategy and obtain fresh worker evidence')
             if plan.owner not in self.workers:raise ValueError('Reviewer selected an unavailable worker')
             if plan.action=='request_input' and not current.task.allow_review_questions:raise ValueError('User-question authority was not delegated for this review')
             if plan.action=='retry' and plan.owner!=current.task.owner:raise ValueError('Ownership changes require reassign')
@@ -110,6 +125,7 @@ class TaskCoordinator:
         directory=self.ledger.store.path.parent/'task-reviews'/self.ledger.job_id
         directory.mkdir(parents=True,exist_ok=True);report=directory/(uuid4().hex+'.json')
         content=json.dumps({'task_id':current.task.id,'task_revision':current.revision,
+            'artifact_fingerprint':fingerprint_before,
             'review_task_id':child.task.id,'plan':plan.model_dump() if plan else None,
             'error':error,'scope':'Recovery proposal validation only; application success is not established.'},indent=2)
         report.write_text(content,encoding='utf-8',newline='\n');fingerprint=hashlib.sha256(report.read_bytes()).hexdigest()

@@ -741,3 +741,22 @@ It is not evidence of one-shot reliability. Earlier failed trials remain archive
 Next increments remain fresh dashboard-led generation, safe technical amendments,
 SQLite restart/integrity checks, then preview and generated-app CI/release integration.
 This checkpoint adds no security, cloud deployment or unrestricted-app guarantee.
+
+## Increment 11: reject expired senior-review context
+
+Regression tests exposed two source-freshness gaps. After reopening a saved pause,
+the coordinator could escalate old-source failures before rechecking changed artifacts.
+A source change during a senior-review model call could also leave an obsolete
+reassignment eligible for application. The coordinator now requires current artifact
+evidence before review and rejects a review if artifacts change during its invocation.
+Rejected proposals remain in the audit reports and cannot change the parent owner.
+The existing upstream-revision guard also passed a simulated in-flight change followed
+by reopening the persisted ledger: the dependent task remains invalidated and cannot
+accept or replay the expired worker result. These are deterministic orchestration tests,
+not a new local-model or generated-app benchmark.
+
+The QA-to-builder boundary also revalidates the active task, approved authorization,
+protected runtime and source snapshot after diagnosis returns. Changed source triggers
+fresh verification instead of forwarding expired source or repair advice. Changed
+requirements, approval or runtime stop the handoff before the builder is invoked.
+Parameterized regression cases reproduce all four changes during the QA model call.
