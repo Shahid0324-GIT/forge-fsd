@@ -7,6 +7,7 @@ from typing import Annotated,Literal
 from pydantic import Field,model_validator
 
 from forge.handoffs import record_handoff
+from forge.scenario_quality import validate_quality
 from forge.tasks import CheckEvidence,Envelope
 
 
@@ -146,6 +147,9 @@ not because the design leaves routine UI implementation choices to the builder.
 Only a NEW SCENARIO creates a fresh browser session. A second visit / within one
 scenario reloads while preserving that session's storage; use it for reload and
 no-saved-state checks. Do not mark reload behavior unsupported.
+Observe the changed state BEFORE a reload and the required result immediately AFTER
+it. Never clear/reset to the initial state first: that cannot distinguish persistence
+from reset. Assertions before an interaction do not verify the interaction's result.
 State exact expected numbers/text from the requirements. Exercise repeated actions,
 invalid input and state transitions when applicable. Reference all approved criteria
 using one-based indices. If a criterion cannot be demonstrated with these browser
@@ -212,9 +216,11 @@ def acceptance_worker(ledger,state,agents,review,authorize,review_coverage=None)
         proposal.parent.mkdir(parents=True,exist_ok=True)
         with proposal.open('x',encoding='utf-8',newline='\n') as output:output.write(suite.model_dump_json(indent=2))
         validate_coverage(suite,len(review['draft']['acceptance_criteria']))
+        validate_quality(suite.model_dump())
         if suite.uncovered and review_coverage:review_coverage(suite)
         authorize();ledger.assert_active(state)
         packet={'version':1,'job_id':ledger.job_id,'task_id':state.task.id,'revision':state.revision,
+            'scenario_quality_version':1,
             'review_fingerprint':review['fingerprint'],'model':agents.model_name,'suite':suite.model_dump(),
             'scope':'Requirements-derived assertions; coverage references are QA proposals, not execution evidence.'}
         path=suite_path(ledger,state);path.parent.mkdir(parents=True,exist_ok=True)
@@ -240,4 +246,7 @@ def load_acceptance(ledger,state,review):
         or packet.get('revision')!=state.revision or packet.get('review_fingerprint')!=review['fingerprint']
         or packet.get('model')!=review['binding']['model']):raise ValueError('Acceptance contract belongs to another review/task/model')
     suite=AcceptanceSuite.model_validate(packet['suite']);validate_coverage(suite,len(review['draft']['acceptance_criteria']))
+    if packet.get('scenario_quality_version') is not None:
+        if packet['scenario_quality_version']!=1:raise ValueError('Unknown scenario-quality protocol')
+        validate_quality(suite.model_dump())
     return {**packet,'fingerprint':digest,'report':str(path.resolve())}

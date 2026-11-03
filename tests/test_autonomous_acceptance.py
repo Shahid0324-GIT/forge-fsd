@@ -98,6 +98,30 @@ def test_revoked_authorization_after_model_response_prevents_freezing(context):
     assert not suite_path(ledger,state).exists()
 
 
+def test_interaction_without_observed_result_is_saved_for_revision_not_frozen(context):
+    ledger,state,review,agent=context
+    def weak(schema,*_,**kwargs):
+        data=proposal();data['scenarios'][0]['steps'].pop()
+        return schema.model_validate(data)
+    agent.generate=weak
+    with pytest.raises(ValueError,match='unobserved_interaction'):
+        acceptance_worker(ledger,state,agent,review,lambda:None)
+    assert not suite_path(ledger,state).exists()
+    assert len(list(suite_path(ledger,state).parent.glob('proposal-*.json')))==1
+
+
+def test_legacy_contract_is_readable_without_claiming_new_quality_validation(context):
+    import hashlib
+    ledger,state,review,agent=context
+    checks=acceptance_worker(ledger,state,agent,review,lambda:None)
+    path=suite_path(ledger,state);packet=json.loads(path.read_text());packet.pop('scenario_quality_version')
+    packet['suite']['scenarios'][0]['steps'].pop()  # Older protocol permitted baseline-only tests.
+    path.write_text(json.dumps(packet),encoding='utf-8');digest=hashlib.sha256(path.read_bytes()).hexdigest()
+    state=ledger.observe(state,Observation(revision=state.revision,fingerprint=digest,
+        checks=[checks[0].model_copy(update={'fingerprint':digest})]))
+    assert 'scenario_quality_version' not in load_acceptance(ledger,state,review)
+
+
 @pytest.mark.parametrize('change',[
     lambda d:d['scenarios'][0]['steps'][0].update(path='//external.example/'),
     lambda d:d['scenarios'][0]['steps'][0].update(path='http://127.0.0.1:8787/'),

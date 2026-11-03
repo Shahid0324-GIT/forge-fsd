@@ -847,3 +847,17 @@ Final validation: `.venv\Scripts\python.exe -m pytest -q --tb=short`:
 that component's latest validation. Security, app preview, SQLite restart/integrity,
 publishing and deployment were not part of this run. Next work is stronger QA
 scenario quality, then a small SQLite dashboard-led flow and remaining release stages.
+
+## Increment 14: observable-state checks before freezing QA scenarios
+
+New suites must observe the result of their final interaction. Same-path reload tests
+must observe state after setup and before reload, then observe the reload result before
+another interaction can hide it. A known baseline that is unchanged before and after
+reload cannot establish a reset/persistence distinction. These checks inspect only the
+action protocol, never app names, source, fields or business types; grouped form actions
+and navigation to another route remain valid. Unknown initial state is not invented.
+Rejected proposals are retained and returned to the QA correction loop with scenario,
+step and reason. New contracts record structural-quality version 1; legacy contracts
+remain readable without claiming this newer validation. This is structural evidence,
+not semantic completeness or database-restart evidence. Scenario/contract/repair
+regressions: **41 passed**, exit 0, with the existing 13 upstream warnings.
