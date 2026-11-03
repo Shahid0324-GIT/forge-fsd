@@ -13,6 +13,11 @@ from forge.workspace import safe_path,source_fingerprint
 PROJECT=Path(__file__).resolve().parents[2]
 
 
+def harness_fingerprint():
+    return hashlib.sha256((PROJECT/'tests/acceptance/source-checks.mjs').read_bytes()+b'\0'+
+        (PROJECT/'tests/acceptance/framework-diagnostics.mjs').read_bytes()).hexdigest()
+
+
 def run_source_checks(root,directory,job_id):
     if not re.fullmatch(r'[a-f0-9]{32}',job_id):raise ValueError('Invalid job identity')
     root=Path(root).absolute();directory=Path(directory)
@@ -22,10 +27,9 @@ def run_source_checks(root,directory,job_id):
     name='forge-check-'+uuid4().hex[:12]
     harness=PROJECT/'tests/acceptance/source-checks.mjs'
     diagnostics=PROJECT/'tests/acceptance/framework-diagnostics.mjs'
-    def harness_hash():return hashlib.sha256(harness.read_bytes()+b'\0'+diagnostics.read_bytes()).hexdigest()
     fingerprint=source_fingerprint(root)
     report={'job_id':job_id,'source_fingerprint':fingerprint,'container':name,
-        'harness_fingerprint':harness_hash(),
+        'harness_fingerprint':harness_fingerprint(),
         'coverage':{'typecheck':'NOT_RUN','production_build':'NOT_RUN','application_behavior':'NOT_TESTED'},
         'cleanup_errors':[],'passed':False}
     attempted=False
@@ -54,7 +58,7 @@ def run_source_checks(root,directory,job_id):
             if row['name'] in {'typecheck','production_build'}:
                 report['coverage'][row['name']]='PASSED' if row['exit_code']==0 and not row.get('stopped') else 'FAILED'
         report['source_unchanged']=source_fingerprint(root)==fingerprint
-        report['harness_unchanged']=harness_hash()==report['harness_fingerprint']
+        report['harness_unchanged']=harness_fingerprint()==report['harness_fingerprint']
         lock=report.get('checks',{}).get('source_lock')
         report['passed']=(report['execution']['exit_code']==0 and not report['execution']['stopped']
             and report.get('checks',{}).get('passed') is True and report['source_unchanged'] and report['harness_unchanged']

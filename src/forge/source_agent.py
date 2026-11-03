@@ -137,6 +137,7 @@ class SourceAgent:
             'original_request':state.task.inputs.get('original_request',''),
             'human_clarifications':state.task.inputs.get('human_clarifications',[]),
             'human_review_feedback':state.task.inputs.get('human_review_feedback',[]),
+            'acceptance_contract':state.task.inputs.get('acceptance_contract'),
             'app_design':self.draft.model_dump(),'capabilities':capabilities,
             'source':source,'workspace_fingerprint':fingerprint,'allowed_targets':targets,
             'recent_failures':[o.model_dump() for o in state.observations if o.revision==state.revision][-2:],

@@ -60,7 +60,8 @@ def decide_plan(job_id,store,fingerprint,*,approved,actor):
 
 def approved_review(job_id,store):
     record=store.read(job_id)
-    if record['status'] not in {'AUTONOMOUS_APPROVED','AUTONOMOUS_BUILDING','AUTONOMOUS_BUILD_PAUSED','AUTONOMOUS_BUILD_CHECKS_PASSED'}:
+    if record['status'] not in {'AUTONOMOUS_APPROVED','AUTONOMOUS_BUILDING','AUTONOMOUS_BUILD_PAUSED','AUTONOMOUS_BUILD_CHECKS_PASSED',
+        'AUTONOMOUS_TESTING','AUTONOMOUS_TEST_PAUSED','AUTONOMOUS_CHECKS_BLOCKED','AUTONOMOUS_APP_CHECKS_PASSED'}:
         raise ValueError('This job is not authorized for source generation')
     approved=next((e['payload'] for e in reversed(record['events']) if e['status']=='AUTONOMOUS_APPROVED'),None)
     if not approved:raise ValueError('Source generation requires approval of the current plan')

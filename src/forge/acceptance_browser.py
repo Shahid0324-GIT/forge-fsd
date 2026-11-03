@@ -28,6 +28,7 @@ def read_contract(contract):
     for key in ['version','job_id','task_id','revision','review_fingerprint','model']:
         if packet.get(key)!=contract.get(key):raise ValueError('Acceptance contract identity changed')
     suite=AcceptanceSuite.model_validate(packet['suite'])
+    if not suite.scenarios:raise ValueError('No executable acceptance scenarios; report unsupported coverage before execution')
     if len({case.id for case in suite.scenarios})!=len(suite.scenarios):raise ValueError('Duplicate acceptance scenario IDs')
     return suite
 

@@ -87,7 +87,7 @@ class Uncovered(Envelope):
 
 
 class AcceptanceSuite(Envelope):
-    scenarios: list[Scenario] = Field(min_length=1,max_length=6)
+    scenarios: list[Scenario] = Field(max_length=6)
     uncovered: list[Uncovered] = Field(default_factory=list,max_length=20)
 
 

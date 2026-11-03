@@ -1,0 +1,107 @@
+import hashlib
+import json
+from pathlib import Path
+
+import pytest
+
+from forge.acceptance_browser import harness_fingerprint
+from forge.autonomous_build import build_app
+from forge.autonomous_testing import evidence_current,test_app as run_app_tests,tests_resumable as resumable_checks
+from forge.source_checks import harness_fingerprint as build_harness
+from forge.tasks import TaskLedger
+from forge.workspace import source_fingerprint
+from test_autonomous_build import Builder,approve,runner,setup
+
+
+class QAAgent(Builder):
+    def __init__(self,proposal):super().__init__(proposal);self.qa_contexts=[];self.repair_contracts=[];self.uncovered=False
+    def generate(self,schema,instruction,data,**kwargs):
+        if schema.__name__=='AcceptanceSuite':
+            self.qa_contexts.append(data)
+            count=len(data['approved_design']['acceptance_criteria'])
+            if self.uncovered:return schema.model_validate({'scenarios':[],
+                'uncovered':[{'criterion':index,'reason':'Requires database restart'} for index in range(1,count+1)]})
+            return schema.model_validate({'scenarios':[{'id':'shows_result','criteria':list(range(1,count+1)),'steps':[
+                {'action':'visit','path':'/'},{'action':'assert_visible','target':{'by':'text','value':'3'}}]}],
+                'uncovered':[]})
+        if schema.__name__=='SourceEdit' and data['repair_mode']:
+            self.repair_contracts.append(data['acceptance_contract'])
+            path=data['allowed_targets'][0];old=data['source'][path]
+            return schema.model_validate({'tool':'write_file','path':path,
+                'content':old['content']+'\n// model-proposed repair '+str(data['attempt']),
+                'expected_sha256':old['sha256'],'expected_workspace_fingerprint':data['workspace_fingerprint'],'require_change':True})
+        return super().generate(schema,instruction,data,**kwargs)
+
+
+def build_checks(root,directory,job):
+    result=runner()(root,directory,job)
+    result.update(image='sha256:'+'a'*64,cleanup_errors=[],harness_fingerprint=build_harness())
+    Path(result['report']).write_text(json.dumps(result),encoding='utf-8')
+    return result
+
+
+def browsers(outcomes,seen=None):
+    def execute(root,directory,job,contract,image):
+        if seen is not None:seen.append(contract['fingerprint'])
+        passed=outcomes[0]
+        if len(outcomes)>1:outcomes.pop(0)
+        directory.mkdir(parents=True);path=directory/'report.json'
+        result={'passed':passed,'job_id':job,'report':str(path),'cleanup_errors':[],'source_fingerprint':source_fingerprint(root),
+            'contract_fingerprint':contract['fingerprint'],'review_fingerprint':contract['review_fingerprint'],
+            'harness_fingerprint':harness_fingerprint(),'app_image':image,'browser_image':'sha256:'+'b'*64,
+            'source_unchanged':True,'contract_unchanged':True,'harness_unchanged':True,'execution':{'exit_code':0 if passed else 1,'stopped':None},
+            'browser':{'passed':passed,'results':[{'id':case['id'],'criteria':case['criteria'],'passed':passed,
+                **({'step':2,'error':'Expected visible result was missing'} if not passed else {})} for case in contract['suite']['scenarios']]}}
+        path.write_text(json.dumps(result),encoding='utf-8');return result
+    return execute
+
+
+@pytest.fixture
+def ready(setup):
+    store,job,builder,boundary,review=setup;approve(store,job,review)
+    build_app(job,builder,store,workspace_boundary=boundary,check_runner=runner())
+    return store,job,QAAgent(builder.proposal),boundary,review
+
+
+def test_frozen_requirements_checks_feed_actual_failures_to_source_repair(ready):
+    store,job,agent,boundary,review=ready;seen=[]
+    result=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([False,True],seen))
+    assert result['status']=='AUTONOMOUS_APP_CHECKS_PASSED'
+    assert len(agent.qa_contexts)==1 and 'source' not in agent.qa_contexts[0] and 'current_source' not in agent.qa_contexts[0]
+    assert agent.qa_contexts[0]['original_request']==review['binding']['inputs']['original_request']
+    assert agent.repair_contracts and len(set(seen))==1 and len(seen)==2
+    assert evidence_current(result,store,workspace_boundary=boundary)
+    assert not any(e['status'] in {'READY','SECURITY_PASSED','PREVIEW_RUNNING'} for e in result['events'])
+
+
+@pytest.mark.parametrize('change',['source','contract','combined_report','browser_report','verify_revision'])
+def test_pass_is_invalidated_when_any_final_evidence_changes(ready,change):
+    store,job,agent,boundary,_=ready
+    result=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([True]))
+    assert evidence_current(result,store,workspace_boundary=boundary)
+    event=result['events'][-1]['payload'];ledger=TaskLedger(store,job)
+    if change=='source':(boundary/job/'app/page.tsx').write_text('changed',encoding='utf-8')
+    if change=='contract':Path(ledger.read(event['qa_task_id']).observations[-1].checks[0].report).write_text('{}',encoding='utf-8')
+    if change=='combined_report':Path(event['report']).write_text('{}',encoding='utf-8')
+    if change=='browser_report':Path(json.loads(Path(event['report']).read_text())['acceptance_report']).write_text('{}',encoding='utf-8')
+    if change=='verify_revision':
+        state=ledger.read(event['task_id']);ledger.revise(state,state.task)
+    assert not evidence_current(store.read(job),store,workspace_boundary=boundary)
+
+
+def test_saved_qa_pause_resumes_without_replanning_or_discarding_frozen_assertions(ready):
+    store,job,agent,boundary,_=ready;seen=[]
+    paused=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([False],seen))
+    assert paused['status']=='AUTONOMOUS_TEST_PAUSED' and resumable_checks(paused,store,workspace_boundary=boundary)
+    repairs=len(agent.repair_contracts)
+    result=run_app_tests(job,agent,store,resume=True,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([True],seen))
+    assert result['status']=='AUTONOMOUS_APP_CHECKS_PASSED' and len(agent.qa_contexts)==1 and len(set(seen))==1
+    assert len(agent.repair_contracts)==repairs
+
+
+def test_uncovered_requirements_block_promotion_without_running_superficial_checks(ready):
+    store,job,agent,boundary,_=ready;agent.uncovered=True
+    result=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,
+        browser_runner=lambda *_:pytest.fail('Unsupported criteria must not run superficial checks'))
+    assert result['status']=='AUTONOMOUS_CHECKS_BLOCKED' and not agent.repair_contracts
+    assert result['events'][-1]['payload']['uncovered'] and not evidence_current(result,store,workspace_boundary=boundary)
