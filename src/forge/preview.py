@@ -35,7 +35,9 @@ def docker(*args):
 
 
 def preview_resources(record):
-    return next((e['payload']['preview'] for e in reversed(record['events']) if 'preview' in e['payload']),None)
+    return next((e['payload']['preview'] for e in reversed(record['events'])
+        if e['status'] in {'PREVIEW_STARTING','PREVIEW_RUNNING','PREVIEW_FAILED','PREVIEW_STOPPED'}
+        and isinstance(e['payload'].get('preview'),dict)),None)
 
 
 def cleanup(resources,job_id):

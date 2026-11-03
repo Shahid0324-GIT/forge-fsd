@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -28,6 +29,8 @@ class OperationManager:
             db.execute("UPDATE operations SET status='INTERRUPTED',reason='Dashboard restarted; worker ownership lost' WHERE status='RUNNING'")
         for _,job in old:
             store.event(job,'INTERRUPTED',{'reason':'Dashboard restarted during an operation; inspect before retrying'})
+            try:self.cleanup_job(job)
+            except Exception as exc:store.event(job,'CLEANUP_WARNING',{'reason':str(exc)[:1000]},update_status=False)
 
     def read(self,operation_id):
         with self.store.connect() as db:
@@ -113,12 +116,30 @@ class OperationManager:
         resources=preview_resources(record)
         if resources:cleanup(resources,job_id)
         ids=subprocess.run(['docker','ps','-aq','--filter',f'label=forge.job={job_id}'],capture_output=True,text=True,timeout=15)
+        if ids.returncode:raise RuntimeError('Cannot inspect owned verification containers: '+ids.stderr[:500])
         if ids.returncode==0:
             for container_id in ids.stdout.split():
-                info=json.loads(subprocess.check_output(['docker','inspect',container_id],text=True,timeout=15))[0]
+                try:info=json.loads(subprocess.check_output(['docker','inspect',container_id],stderr=subprocess.STDOUT,text=True,timeout=15))[0]
+                except subprocess.CalledProcessError as exc:
+                    if 'No such' in str(exc.output):continue
+                    raise
                 labels=info['Config'].get('Labels',{})
                 if labels.get('forge.job')==job_id and labels.get('forge.role') in {'verification','scanner','audit','browser_verification'}:
-                    subprocess.run(['docker','rm','--force',container_id],capture_output=True,timeout=20)
+                    result=subprocess.run(['docker','rm','--force',container_id],capture_output=True,text=True,timeout=20)
+                    if result.returncode and 'No such' not in result.stderr:raise RuntimeError('Owned verification container cleanup failed: '+result.stderr[:500])
+        networks=subprocess.run(['docker','network','ls','-q','--filter',f'label=forge.job={job_id}'],capture_output=True,text=True,timeout=15)
+        if networks.returncode:raise RuntimeError('Cannot inspect owned browser networks: '+networks.stderr[:500])
+        if networks.returncode==0:
+            for network_id in networks.stdout.split():
+                try:info=json.loads(subprocess.check_output(['docker','network','inspect',network_id],stderr=subprocess.STDOUT,text=True,timeout=15))[0]
+                except subprocess.CalledProcessError as exc:
+                    if 'No such' in str(exc.output):continue
+                    raise
+                labels=info.get('Labels',{})
+                if (labels.get('forge.job')==job_id and labels.get('forge.role')=='browser_verification'
+                    and re.fullmatch(r'forge-browser-net-[a-f0-9]{12}',info.get('Name',''))):
+                    result=subprocess.run(['docker','network','rm',network_id],capture_output=True,text=True,timeout=20)
+                    if result.returncode and 'No such' not in result.stderr:raise RuntimeError('Owned browser network cleanup failed: '+result.stderr[:500])
 
     def cancel(self,job_id):
         with self.lock:

@@ -133,6 +133,9 @@ class SourceAgent:
         fingerprint=source_fingerprint(tools.root)
         if fingerprint!=before:raise ValueError('Workspace changed while context was being read; retrieve a fresh snapshot')
         capabilities=tools.describe();capabilities.pop('schema')  # The exact write schema is already the response schema.
+        if state.task.inputs.get('acceptance_contract'):
+            capabilities['checks_available'].append('browser_acceptance')
+            capabilities['frozen_browser_contract']='Executed separately from app source; builders cannot modify its assertions.'
         data={'task':{'goal':state.task.goal,'owner':state.task.owner,'revision':state.revision},
             'original_request':state.task.inputs.get('original_request',''),
             'human_clarifications':state.task.inputs.get('human_clarifications',[]),

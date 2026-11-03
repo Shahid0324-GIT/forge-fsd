@@ -12,7 +12,7 @@ test('navigation stays on the app origin',async()=>{
 });
 test('semantic locators, values and assertions are interpreted without executing code',async()=>{
   const actions=[];
-  const locator={fill:async value=>actions.push(value),inputValue:async()=>'-2.5',innerText:async()=>'Count:   2',count:async()=>0};
+  const locator={waitFor:async options=>assert.equal(options.state,'visible'),fill:async value=>actions.push(value),inputValue:async()=>'-2.5',innerText:async()=>'Count:   2',count:async()=>0};
   const page={getByLabel:(value,options)=>{assert.equal(value,'Amount');assert.equal(options.exact,true);return locator;},
     getByText:()=>locator,title:async()=>'Calculator'};
   const target={by:'label',value:'Amount'};

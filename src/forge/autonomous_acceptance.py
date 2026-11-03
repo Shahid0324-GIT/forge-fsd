@@ -10,15 +10,21 @@ from forge.handoffs import record_handoff
 from forge.tasks import CheckEvidence,Envelope
 
 
-class Target(Envelope):
-    by: Literal['role','label','text','placeholder']
+class TextTarget(Envelope):
+    by: Literal['label','text','placeholder']
     value: str = Field(min_length=1,max_length=300)
-    name: str = Field(default='',max_length=300,description='Accessible name for role targets only; empty otherwise.')
+    name: Literal[''] = ''
 
-    @model_validator(mode='after')
-    def role_name(self):
-        if self.by!='role' and self.name:raise ValueError('Only role targets use name')
-        return self
+
+class RoleTarget(Envelope):
+    by: Literal['role']
+    value: Literal['button','link','heading','textbox','spinbutton','checkbox','combobox','option','status','alert',
+        'list','listitem','table','row','columnheader','cell','dialog','tab','tabpanel','progressbar','radio',
+        'radiogroup','switch','slider','img','main','navigation','region','form','group','searchbox','separator']
+    name: str = Field(default='',max_length=300,description='Accessible name; omit only when matching the role alone is unambiguous.')
+
+
+Target=Annotated[RoleTarget | TextTarget,Field(discriminator='by')]
 
 
 class Visit(Envelope):

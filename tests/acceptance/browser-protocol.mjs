@@ -36,8 +36,12 @@ export async function executeStep(page,step,base){
     case 'select': return locator.selectOption(step.value);
     case 'check': return locator.setChecked(step.checked);
     case 'assert_visible': return locator.waitFor({state:'visible'});
-    case 'assert_text': return eventually(async()=>visibleText(await locator.innerText()),visibleText(step.value));
-    case 'assert_value': return eventually(()=>locator.inputValue(),step.value);
+    case 'assert_text':
+      await locator.waitFor({state:'visible'});
+      return eventually(async()=>visibleText(await locator.innerText()),visibleText(step.value));
+    case 'assert_value':
+      await locator.waitFor({state:'visible'});
+      return eventually(()=>locator.inputValue(),step.value);
     case 'assert_count': return eventually(()=>locator.count(),step.count);
     default: throw new Error('Unsupported browser action');
   }

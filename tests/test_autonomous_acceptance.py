@@ -89,6 +89,7 @@ def test_revoked_authorization_after_model_response_prevents_freezing(context):
     lambda d:d['uncovered'][0].update(criterion=1),
     lambda d:d['scenarios'].append(d['scenarios'][0]),
     lambda d:d['scenarios'][0]['steps'].append({'action':'evaluate','code':'fetch("http://control-plane")'}),
+    lambda d:d['scenarios'][0]['steps'][1].update(target={'by':'role','value':'text'}),
 ])
 def test_test_protocol_rejects_external_navigation_code_empty_assertions_and_incomplete_coverage(change):
     data=proposal();change(data)

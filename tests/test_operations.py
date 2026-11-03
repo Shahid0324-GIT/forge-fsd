@@ -2,6 +2,8 @@ import subprocess
 import sys
 import time
 from uuid import uuid4
+import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -18,6 +20,22 @@ def manager_fixture(tmp_path,monkeypatch,delay=5):
     manager=OperationManager(store,spawn=spawn)
     monkeypatch.setattr(manager,'cleanup_job',lambda *_:None)
     return store,job,manager
+
+
+def test_cleanup_finds_orphan_browser_networks_by_owned_labels(tmp_path,monkeypatch):
+    import forge.operations as module
+    store=JobStore(tmp_path/'jobs.db');job=store.create()
+    store.event(job,'AUTONOMOUS_BUILD_CHECKS_PASSED',{'preview':'NOT_APPROVED'})
+    manager=OperationManager(store);calls=[]
+    def run(args,**_):
+        calls.append(args)
+        return SimpleNamespace(returncode=0,stdout='owned other' if args[1:3]==['network','ls'] else '',stderr='')
+    def inspect(args,**_):
+        return json.dumps([{'Name':'forge-browser-net-'+'a'*12,'Labels':{'forge.job':job if args[-1]=='owned' else 'other','forge.role':'browser_verification'}}])
+    monkeypatch.setattr(module.subprocess,'run',run);monkeypatch.setattr(module.subprocess,'check_output',inspect)
+    manager.cleanup_job(job)
+    assert ['docker','network','rm','owned'] in calls
+    assert ['docker','network','rm','other'] not in calls
 
 
 def test_operation_deduplication_and_global_worker_lock(tmp_path,monkeypatch):

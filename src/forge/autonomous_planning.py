@@ -75,7 +75,7 @@ def planning_capabilities():
             'optional_http_handler':'app/api/<path-segments>/route.ts'},
         'storage':'No database is valid. node:sqlite is available only on the server; no remote database adapter is implemented.',
         'execution_checks':['typecheck','production_build'],
-        'browser_coverage':'Fixed controller profiles only; general app-specific browser assertions still require implementation.',
+        'browser_coverage':'Independent requirements-derived semantic browser assertions run after source build. Supports accessible controls, visible text, values, counts and titles. Database restart, security and deployment are not browser coverage.',
         'test_frameworks_available':sorted(packages & {'jest','vitest','@testing-library/react'}),
         'network_and_packages':'No package installation or external services in generated-app execution.'}
 

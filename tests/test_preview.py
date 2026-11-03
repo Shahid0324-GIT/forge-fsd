@@ -53,3 +53,12 @@ def test_cleanup_cannot_remove_unrelated_container(monkeypatch):
     monkeypatch.setattr(module,'docker',lambda *args:json.dumps([{'Config':{'Labels':{'forge.job':'other','forge.role':'preview'}}}]))
     with pytest.raises(ValueError,match='unrelated'):
         cleanup({'container':'forge-preview-example','network':'forge-preview-net-example'},'job')
+
+
+def test_resource_lookup_ignores_readiness_and_permission_status_strings():
+    from forge.preview import preview_resources
+    resources={'container':'forge-preview-example'}
+    record={'events':[{'status':'PREVIEW_STOPPED','payload':{'preview':resources}},
+        {'status':'AUTONOMOUS_BUILD_CHECKS_PASSED','payload':{'preview':'NOT_APPROVED'}}]}
+    assert preview_resources(record)==resources
+    assert preview_resources({'events':record['events'][1:]}) is None
