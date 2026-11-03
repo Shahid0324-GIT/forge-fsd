@@ -56,7 +56,7 @@ def review_coverage(ledger,state,agents,review,suite,authorize):
             try:
                 record_handoff(ledger.store,ledger.job_id,'acceptance_qa','coverage_reviewer',
                     'Check the unsupported claim against actual browser capabilities; no implementation is supplied.',context,
-                    agents=agents,task_id=child.task.id,parent_task_id=state.task.id)
+                    agents=agents,task_id=child.task.id,parent_task_id=state.task.id,task_state=child)
                 agents.activity=lambda status,payload:ledger.store.event(ledger.job_id,status,payload,update_status=False)
                 decision=CoverageDecision.model_validate(agents.generate(CoverageDecision,INSTRUCTION,context))
                 authorize();ledger.assert_active(state)

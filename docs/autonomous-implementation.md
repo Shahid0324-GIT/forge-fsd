@@ -1232,6 +1232,36 @@ Source/raw-repair selection: **39 passed**; provider/source transport selection:
 error was caught during test collection and corrected before live replay.
 The preceding full suite passed **504 tests**, exit 0, in 245.43 seconds.
 
-The user proposed 7B-primary/Groq escalation. Current jobs remain single-model pinned;
-an automatic hybrid policy is proposed work and is not implemented or silently applied
-to this approved Groq job.
+The user proposed 7B-primary/Groq escalation. This approved Groq job remains pinned;
+the next increment implements an explicit policy for new jobs only.
+
+## Increment 30: explicit local-first hybrid inference
+
+New autonomous jobs can select `hybrid:7b-groq20b-v1`. Routine work starts on local
+7B; planning, independent quality/scope review and senior review use Groq 20B.
+Observed invalid structured output or two no-progress observations can escalate a
+task revision. Escalation survives worker restarts for that revision. Each dispatch
+records its actual selected model, reason and handoff fingerprint; model-call traces
+retain the policy as well as actual provider identity.
+
+Routing requires the producing task snapshot and checks its revision, dispatch version
+and active reservation. A stale handoff cannot invoke either provider. Single-model
+approvals cannot silently turn into hybrid approvals. Resource limits pause without
+downgrading to a weaker provider. No new model, dependency or execution permission was
+added. Small hosted repair-metadata calls use 1,200 output tokens and low reasoning
+effort; schema validation and source completion checks remain unchanged.
+
+Focused adapter, hybrid, API and planning checks: **69 passed**, exit 0 (13 existing
+upstream warnings). Dashboard TypeScript and production build passed, exit 0. The
+broader suite caught an optional model-identity assumption in adapter test doubles;
+the affected output-rejection checks now pass. Live hybrid model accuracy is not
+established by these mocked transport tests. A separate live counter check reached
+`AUTONOMOUS_DRAFT_READY`: actual local 7B intake followed by actual Groq 20B planning,
+with both routing decisions saved. No source generation or app-check pass is implied.
+The complete regression rerun passed **522 tests**, exit 0, in 268.48 seconds (13
+existing warnings). The subsequent provenance-initialization check is included in
+the 69-test focused result above.
+The existing notes run remains paused on provider HTTP 429 with its source and
+approval preserved. A diagnostic replay of its current repair-focus request later
+returned HTTP 200 (4,694 input / 146 output tokens); it was not applied as workflow
+evidence or an app edit.

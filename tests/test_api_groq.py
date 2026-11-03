@@ -3,10 +3,11 @@ import pytest
 
 from forge.groq_model import GROQ_MODEL,GROQ_MODELS
 from forge.models import job_model
+from forge.models import HYBRID_MODEL
 from test_api import client,session,fake_submit
 
 
-@pytest.mark.parametrize('model',sorted(GROQ_MODELS))
+@pytest.mark.parametrize('model',sorted(GROQ_MODELS|{HYBRID_MODEL}))
 def test_hosted_model_requires_local_configuration_and_autonomous_workflow(client,monkeypatch,model):
     import forge.api as api
     browser,app=client;headers=session(browser);calls=fake_submit(app,monkeypatch)

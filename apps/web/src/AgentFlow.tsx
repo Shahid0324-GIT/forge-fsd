@@ -57,6 +57,7 @@ const summaries:Record<string,[string,string]>={
 
 function describe(event:WorkflowEvent):[string,string]{
   const p=event.payload;
+  if(event.status==='MODEL_ROUTED')return [String(p.model).startsWith('groq:')?'Groq assistance selected':'Local 7B selected',String(p.reason)];
   if(event.status==='TOOL_CALL_STARTED'||event.status==='TOOL_CALL_COMPLETED')return [p.tool==='check_build'?'Isolated verification':String(p.tool??'Workspace tool').replaceAll('_',' '),String(p.summary??'A scoped tool call was recorded.')];
   if(event.status==='TASK_ACTION_STARTED')return [name(p.task_state?.inflight_role??p.owner),String(p.summary??'Task dispatched.')];
   if(event.status==='PLANNING_QUALITY_REVIEW')return [name(p.reviewer),p.issues?.length?p.issues.join(' '):p.summary];
@@ -74,7 +75,7 @@ export default function AgentFlow({workflow,events,busy,status,onContext}:Props)
   const autonomous=workflow==='autonomous';
   const routes=autonomous?[['Requirements',['requirements','intake_reviewer']],['Planner',['planner']],['Implementation',['builder','frontend','backend','qa']],['Senior review',['senior_reviewer']],['Acceptance QA',['acceptance_qa']],['Test quality',['acceptance_reviewer','requirements_reviewer']],['Coverage review',['coverage_reviewer']],['Verification',['verification']]] as const:steps;
   const routeRole=(event:WorkflowEvent)=>event.status==='TOOL_CALL_STARTED'&&event.payload.tool==='check_build'?'verification':event.status==='TASK_ACTION_STARTED'?(event.payload.task_state?.task?.inputs?.stage==='acceptance_plan'?'acceptance_qa':event.payload.task_state?.inflight_role):event.status==='AGENT_HANDOFF'?event.payload.recipient:'';
-  const visible=events.filter(e=>e.status in summaries||['PLANNING_QUALITY_REVIEW','AGENT_HANDOFF','AGENT_CALL_STARTED','AGENT_CALL_COMPLETED','AGENT_CALL_FAILED','AGENT_VALIDATION_FAILED','FAILED','VERIFICATION_FAILED','SECURITY_BLOCKED','INTERRUPTED','CANCELLED'].includes(e.status));
+  const visible=events.filter(e=>e.status in summaries||['MODEL_ROUTED','PLANNING_QUALITY_REVIEW','AGENT_HANDOFF','AGENT_CALL_STARTED','AGENT_CALL_COMPLETED','AGENT_CALL_FAILED','AGENT_VALIDATION_FAILED','FAILED','VERIFICATION_FAILED','SECURITY_BLOCKED','INTERRUPTED','CANCELLED'].includes(e.status));
   const recent=visible.slice(-8).reverse();
   const active=autonomous?events.filter(e=>e.status==='TASK_ACTION_STARTED'||e.status==='TOOL_CALL_STARTED'&&e.payload.tool==='check_build').at(-1):events.filter(e=>steps.some(([,statuses])=>(statuses as readonly string[]).includes(e.status))).at(-1);
   const failed=['FAILED','VERIFICATION_FAILED','SECURITY_BLOCKED','INTERRUPTED'].includes(status);

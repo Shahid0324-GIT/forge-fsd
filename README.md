@@ -6,6 +6,12 @@ New autonomous jobs can also opt into **Groq GPT-OSS 20B or 120B**. The controll
 local; hosted inference sends requirements, source context and diagnostics to Groq.
 Ollama remains the default and existing jobs retain their saved model.
 
+An explicit **Hybrid · 7B first + Groq assistance** option is available for new autonomous
+jobs. Routine intake, generation and QA start locally. Planning, independent quality
+review and senior review use Groq; invalid output or repeated lack of progress can
+escalate a task revision. Each routing decision is recorded against its current
+handoff. Provider limits pause work rather than silently switching providers.
+
 The assignment explores how agents can gather requirements, plan an application, delegate work, inspect real test results, review failures and iterate. Generated apps use **Next.js, React and TypeScript**, with **SQLite** for supported local persistence workflows. Docker isolates application execution from the controller.
 
 **Status — 3 November 2026:** the core components and local dashboard are implemented. A newer autonomous coordinator is being integrated incrementally. It is **not yet a single, fully verified request-to-deployment workflow through the dashboard**. The distinctions below are intentional.
@@ -16,7 +22,7 @@ The assignment explores how agents can gather requirements, plan an application,
 | --- | --- |
 | Requirements and planning | Local-model intake, clarification and reviewable application proposals. The newer planner lets agents choose app-specific structure and types within workspace/tool boundaries. |
 | Task coordination | LangGraph orchestration, persistent task ownership/revisions, dependency invalidation and saved observations in SQLite. |
-| Agents and subagents | Planner, builder, QA diagnosis, test-quality, requirements-scope and senior-review roles with recorded handoffs and model calls. These are separate role invocations using the same local model, not separately trained models. |
+| Agents and subagents | Planner, builder, QA diagnosis, test-quality, requirements-scope and senior-review roles with recorded handoffs and model calls. These are separate role invocations using the selected model or explicit hybrid policy, not separately trained models. |
 | Source tools | Scoped reads, complete-file writes and exact-text patches, guarded by ownership and file/workspace hashes. The autonomous Ollama writer separates raw code from structured target metadata to preserve JSX quotes. Runtime/API references and snapshot-based import diagnostics support repairs. Models cannot select arbitrary host paths or shell commands. |
 | Repair | Real failure evidence, QA diagnosis, senior-review escalation, alternative edit strategies and resumable resource pauses. Changed source is rechecked before old diagnostics can justify edits. |
 | Verification | Isolated TypeScript and production builds. The earlier app workflow also has approved HTTP scenarios and applicable SQLite/restart checks. The autonomous path now freezes requirements-derived browser assertions outside app source, then executes them separately and feeds failures into repair. Coverage is explicit; database restart is not part of this browser protocol. |
@@ -44,7 +50,7 @@ This diagram describes the target integration; the two paths above describe what
 
 ## Verified checkpoints
 
-Latest local controller suite: **490 Python tests passed** (13 upstream deprecation warnings). These use fake agents, temporary databases and mocked external services; they do not establish model accuracy. Groq integration is covered with mocked responses; live hosted inference is pending credential setup. Eleven Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
+Latest complete controller checkpoint: **522 Python tests passed** (13 upstream deprecation warnings). The latest focused hybrid/planning/provider/adapter selection passes **69 tests**, including an additional provider-initialization provenance check. These use fake agents, temporary databases and mocked external services; they do not establish model accuracy. A separate live hybrid check completed local 7B intake and Groq 20B planning for a counter, reaching human review; source generation and app checks were not run in that check. A live Groq 20B comparison corrected the selected notes-page compiler errors; the fresh SQLite notes evaluation remains paused during repair and is not an end-to-end pass. Eleven Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
 
 Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker builds and Chromium:
 
@@ -118,7 +124,8 @@ Never commit or paste the key into chat. Alternatively set `GROQ_API_KEY` in the
 controller's environment. No extra package, model download or lockfile change is needed.
 
 Refresh the dashboard, choose **Autonomous app workflow · experimental**, then
-**Hosted · Groq GPT-OSS 20B** (or 120B). This is an explicit choice for a new job; saved Ollama
+**Hosted · Groq GPT-OSS 20B** (or 120B), or **Hybrid · 7B first + Groq assistance**.
+Hybrid also requires the installed `qwen2.5-coder:7b` model. These are explicit choices for a new job; saved Ollama
 jobs are not silently switched. Groq availability, account rate limits and credits
 apply. The adapter uses best-effort JSON-schema output plus the same local Pydantic
 validation and source/build/QA gates; provider output alone is not a pass.

@@ -209,7 +209,7 @@ def acceptance_worker(ledger,state,agents,review,authorize,review_coverage=None,
     try:
         record_handoff(ledger.store,ledger.job_id,'coordinator','acceptance_qa',
             'Define independent assertions from approved requirements; no app source is supplied.',data,
-            agents=agents,task_id=state.task.id,parent_task_id=state.task.parent_id)
+            agents=agents,task_id=state.task.id,parent_task_id=state.task.parent_id,task_state=state)
         agents.activity=lambda status,payload:ledger.store.event(ledger.job_id,status,payload,update_status=False)
         suite=AcceptanceSuite.model_validate(agents.generate(AcceptanceSuite,INSTRUCTION,data,coding=True))
         authorize();ledger.assert_active(state)

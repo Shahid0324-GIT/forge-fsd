@@ -2,8 +2,9 @@
 from typing import Literal
 
 LocalModel=Literal['qwen2.5-coder:3b','qwen2.5-coder:7b']
-AgentModel=Literal['qwen2.5-coder:3b','qwen2.5-coder:7b','groq:openai/gpt-oss-120b','groq:openai/gpt-oss-20b']
-SUPPORTED_MODELS={'qwen2.5-coder:3b','qwen2.5-coder:7b','groq:openai/gpt-oss-120b','groq:openai/gpt-oss-20b'}
+HYBRID_MODEL='hybrid:7b-groq20b-v1'
+AgentModel=Literal['qwen2.5-coder:3b','qwen2.5-coder:7b','groq:openai/gpt-oss-120b','groq:openai/gpt-oss-20b','hybrid:7b-groq20b-v1']
+SUPPORTED_MODELS={'qwen2.5-coder:3b','qwen2.5-coder:7b','groq:openai/gpt-oss-120b','groq:openai/gpt-oss-20b',HYBRID_MODEL}
 DEFAULT_MODEL='qwen2.5-coder:3b'
 
 

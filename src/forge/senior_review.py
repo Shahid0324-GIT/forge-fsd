@@ -91,7 +91,7 @@ class SeniorReviewer:
         try:
             record_handoff(self.ledger.store,self.ledger.job_id,'coordinator','senior_reviewer',
                 'Diagnose stalled work and return a recovery proposal grounded in saved evidence.',data,
-                agents=self.agents,task_id=child.task.id,parent_task_id=failed.task.id)
+                agents=self.agents,task_id=child.task.id,parent_task_id=failed.task.id,task_state=child)
             self.agents.activity=lambda status,payload:self.ledger.store.event(self.ledger.job_id,status,payload,update_status=False)
             return self.agents.generate(schema,INSTRUCTION,data,coding=True).root
         finally:

@@ -138,7 +138,7 @@ def continue_draft(ledger,task_id,agents):
         capabilities_before=hashlib.sha256(json.dumps(data['runtime_capabilities'],sort_keys=True,separators=(',',':')).encode()).hexdigest()
         record_handoff(ledger.store,ledger.job_id,'coordinator','planner',
             'Choose the application design and shared interfaces from the user goal; use observed feedback to revise it.',
-            data,agents=agents,task_id=state.task.id,parent_task_id=state.task.parent_id)
+            data,agents=agents,task_id=state.task.id,parent_task_id=state.task.parent_id,task_state=state)
         previous_activity=getattr(agents,'activity',None)
         try:
             agents.activity=lambda status,payload:ledger.store.event(ledger.job_id,status,payload,update_status=False)
@@ -240,7 +240,7 @@ def continue_intake(ledger,task_id,agents):
         if getattr(agents,'trace_directory',None) is None:agents.trace_directory=ledger.store.path.parent/'model-calls'/ledger.job_id
         record_handoff(ledger.store,ledger.job_id,'coordinator','requirements',
             'Establish the business scope before architecture; optional implementation choices are delegated to the planner.',
-            data,agents=agents,task_id=state.task.id,parent_task_id=state.task.parent_id)
+            data,agents=agents,task_id=state.task.id,parent_task_id=state.task.parent_id,task_state=state)
         previous_activity=getattr(agents,'activity',None)
         try:
             agents.activity=lambda status,payload:ledger.store.event(ledger.job_id,status,payload,update_status=False)

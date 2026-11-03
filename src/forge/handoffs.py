@@ -4,7 +4,12 @@ import json
 from uuid import uuid4
 
 
-def record_handoff(store, job_id, sender, recipient, summary, context, *, agents=None,task_id=None,parent_task_id=None):
+def record_handoff(store, job_id, sender, recipient, summary, context, *, agents=None,task_id=None,parent_task_id=None,task_state=None):
+    from forge.models import HYBRID_MODEL
+    if getattr(agents,'model_name',None)==HYBRID_MODEL:
+        from forge.tasks import TaskLedger
+        if task_state is None or task_state.task.id!=task_id:raise ValueError('Hybrid handoff needs the producing task snapshot')
+        TaskLedger(store,job_id).assert_active(task_state)
     # This is the supplied context, not a model's assertion that it remembers it.
     raw = json.dumps(context, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
     if len(raw.encode('utf-8')) > 160000:
@@ -32,6 +37,9 @@ def record_handoff(store, job_id, sender, recipient, summary, context, *, agents
     if agents is not None:
         agents.invocation_context={**previous,'job_id':job_id,'handoff_id':handoff_id,
             'task_id':task_id,'parent_task_id':parent,'actor':recipient,'file':scope,'context_sha256':identity['context_sha256']}
+        if getattr(agents,'model_name',None)==HYBRID_MODEL:
+            agents.routing_store=store
+            agents.invocation_context.update(task_revision=task_state.revision,task_version=task_state.version)
     return payload
 
 

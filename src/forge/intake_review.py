@@ -42,7 +42,7 @@ def review_clarification(ledger,state,agents,data,proposed):
         if len(json.dumps(context,separators=(',',':')))>18000:raise ValueError('Clarification review exceeds context budget')
         record_handoff(ledger.store,ledger.job_id,'requirements','intake_reviewer',
             'Check question ownership before asking the user; implementation choices belong to the planner.',context,
-            agents=agents,task_id=child.task.id,parent_task_id=state.task.id)
+            agents=agents,task_id=child.task.id,parent_task_id=state.task.id,task_state=child)
         agents.activity=lambda status,payload:ledger.store.event(ledger.job_id,status,payload,update_status=False)
         decision=ClarificationReview.model_validate(agents.generate(ClarificationReview,INSTRUCTION,context))
         ledger.assert_active(state)

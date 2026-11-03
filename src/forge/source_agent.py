@@ -275,7 +275,7 @@ class SourceAgent:
             schema=create_model('SourceEdit',__base__=RootModel[choice])
             record_handoff(self.ledger.store,self.ledger.job_id,'qa' if repairing else 'coordinator',state.task.owner,
                 'Propose an owned source edit using the agent design, actual files and available tools.',
-                data,agents=self.agents,task_id=state.task.id,parent_task_id=state.task.parent_id)
+                data,agents=self.agents,task_id=state.task.id,parent_task_id=state.task.parent_id,task_state=state)
             previous=getattr(self.agents,'activity',None)
             try:
                 self.agents.activity=lambda status,payload:self.ledger.store.event(self.ledger.job_id,status,payload,update_status=False)
@@ -297,7 +297,7 @@ class SourceAgent:
                 schema=create_model('SourceTarget',__base__=SourceTarget,path=(Literal[tuple(targets)],...))
                 record_handoff(self.ledger.store,self.ledger.job_id,'qa',state.task.owner,
                     'Select an owned repair target from actual source and check evidence.',data,
-                    agents=self.agents,task_id=state.task.id,parent_task_id=state.task.parent_id)
+                    agents=self.agents,task_id=state.task.id,parent_task_id=state.task.parent_id,task_state=state)
                 selected=schema.model_validate(self.agents.generate(schema,
                     'Choose the owned file that needs correction. QA focus is advisory; use actual evidence. Return only target metadata, not source or an execution claim.',data,coding=True))
                 target=selected.path;change=selected.change
@@ -314,7 +314,7 @@ class SourceAgent:
                     schema=create_model('CycleRepairActions',__base__=Envelope,**fields)
                     record_handoff(self.ledger.store,self.ledger.job_id,'coordinator',state.task.owner,
                         'Plan one correction per current or rejected-state failure before generating replacement source.',context,
-                        agents=self.agents,task_id=state.task.id,parent_task_id=state.task.parent_id)
+                        agents=self.agents,task_id=state.task.id,parent_task_id=state.task.parent_id,task_state=state)
                     actions=self.agents.generate(schema,
                         'Plan concrete corrections for EVERY listed failure in write_target. Current and rejected-candidate failures must be addressed together to escape a cycle. Use actual source and module references. Keep hooks client-side and HTTP/database modules server-side. Return concise correction actions, not source or a pass claim.',context,coding=True)
                     context['cycle_repair_actions']=schema.model_validate(actions).model_dump()
@@ -336,7 +336,7 @@ class SourceAgent:
                     context['replacement_strategy']='Reimplement the selected file from the requirements and reference interfaces. Its previous body repeatedly failed and is intentionally withheld to avoid copying it. The path and expected hash remain controller-owned. Choose working code and app-owned types; preserve required behavior and actual consumers.'
             record_handoff(self.ledger.store,self.ledger.job_id,'qa' if repairing else 'coordinator',state.task.owner,
                 'Generate one complete source body for the chosen owned file; path and hashes remain controller-bound.',context,
-                agents=self.agents,task_id=state.task.id,parent_task_id=state.task.parent_id)
+                agents=self.agents,task_id=state.task.id,parent_task_id=state.task.parent_id,task_state=state)
             content=self.agents.generate_source(SOURCE_TEXT_INSTRUCTION,context)
             old=snapshot.get(target)
             return WriteFile(tool='write_file',path=target,content=content,expected_sha256=old['sha256'] if old else None,
@@ -354,7 +354,7 @@ class SourceAgent:
         try:
             record_handoff(self.ledger.store,self.ledger.job_id,state.task.owner,'qa',
                 'Diagnose the actual failure and delegate one concrete repair target to the builder.',data,
-                agents=self.agents,task_id=child.task.id,parent_task_id=state.task.id)
+                agents=self.agents,task_id=child.task.id,parent_task_id=state.task.id,task_state=child)
             self.agents.activity=lambda status,payload:self.ledger.store.event(self.ledger.job_id,status,payload,update_status=False)
             focus=schema.model_validate(self.agents.generate(schema,FOCUS_INSTRUCTION,data,coding=True))
         except ProviderResourceError as exc:resource_error=exc;error=str(exc)

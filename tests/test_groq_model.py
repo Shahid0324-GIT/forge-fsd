@@ -57,6 +57,17 @@ def test_agent_keeps_native_schema_without_duplicating_it_in_hosted_prompt(tmp_p
     assert '"properties"' not in payloads[0]['messages'][0]['content']
 
 
+def test_small_repair_metadata_uses_a_bounded_budget_without_changing_schema(tmp_path,monkeypatch):
+    from pydantic import create_model
+    schema=create_model('RepairFocus',__base__=Answer);payloads=[]
+    def post(self,payload):payloads.append(payload);return 200,None,response()
+    monkeypatch.setattr(provider.GroqChat,'_post',post)
+    agent=OllamaAgents.__new__(OllamaAgents);agent.model=provider.GroqChat();agent.model_name=provider.GROQ_MODEL;agent.trace_directory=tmp_path
+    assert agent.generate(schema,'Return value 3',{},coding=True).value==3
+    assert payloads[0]['max_completion_tokens']==1200 and payloads[0]['reasoning_effort']=='low'
+    trace=json.loads(next(tmp_path.glob('*.json')).read_text());assert trace['requested_options']['max_completion_tokens']==1200
+
+
 @pytest.mark.parametrize('body',['{"value":"bad"}',json.dumps(Answer.model_json_schema())])
 def test_invalid_schema_response_is_not_a_validated_proposal(monkeypatch,body):
     monkeypatch.setattr(provider.GroqChat,'_post',lambda *_:(200,None,response(body)))

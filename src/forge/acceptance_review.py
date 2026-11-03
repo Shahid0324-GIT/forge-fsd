@@ -174,7 +174,7 @@ def review_suite(ledger,state,agents,review,suite,authorize):
         try:
             record_handoff(ledger.store,ledger.job_id,'acceptance_qa','acceptance_reviewer',
                 'Review scenario effectiveness against requirements before freezing; no implementation supplied.',context,
-                agents=agents,task_id=child.task.id,parent_task_id=state.task.id)
+                agents=agents,task_id=child.task.id,parent_task_id=state.task.id,task_state=child)
             agents.activity=lambda status,payload:ledger.store.event(ledger.job_id,status,payload,update_status=False)
             decision=AcceptanceCritique.model_validate(agents.generate(AcceptanceCritique,INSTRUCTION,context,coding=True))
             authorize();ledger.assert_active(state);_validate(decision,data)
@@ -187,7 +187,7 @@ def review_suite(ledger,state,agents,review,suite,authorize):
                 scope_context['proposed_blockers']=[issue.model_dump() for issue in original.issues]
                 record_handoff(ledger.store,ledger.job_id,'acceptance_reviewer','requirements_reviewer',
                     'Ground proposed blockers in agreed requirements; optional coverage cannot expand app scope.',scope_context,
-                    agents=agents,task_id=scope_child.task.id,parent_task_id=child.task.id)
+                    agents=agents,task_id=scope_child.task.id,parent_task_id=child.task.id,task_state=scope_child)
                 assessment=ScopeAssessment.model_validate(agents.generate(ScopeAssessment,SCOPE_INSTRUCTION,scope_context,coding=True))
                 authorize();ledger.assert_active(state);decision=_scoped_decision(original,assessment,review)
                 scope={'task_id':scope_child.task.id,'decision':assessment.model_dump()}
