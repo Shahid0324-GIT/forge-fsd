@@ -861,3 +861,39 @@ step and reason. New contracts record structural-quality version 1; legacy contr
 remain readable without claiming this newer validation. This is structural evidence,
 not semantic completeness or database-restart evidence. Scenario/contract/repair
 regressions: **41 passed**, exit 0, with the existing 13 upstream warnings.
+
+## Increment 15: review test effectiveness without expanding app scope
+
+New app-QA proposals pass a separate test-quality reviewer before freezing. It receives
+the original requirements, review feedback, approved criterion text and proposed steps,
+never generated source. It must assess every covered criterion and reference existing
+scenarios. Proposed blockers go to a narrowly scoped requirements reviewer: optional
+robustness advice cannot invent new requested features. Blocking classifications require
+an exact requirement quote; optional coverage remains a suggestion. Both roles use the
+existing local model. This is additional scrutiny, not an independent-model semantic oracle.
+
+The critique, scope assessment and effective findings are preserved together, bound to
+the exact proposal fingerprint, parent revision and approved review. Their real child
+tasks must have matching completed evidence when a frozen contract is loaded. Changing
+either reviewer task or its evidence invalidates a prior app-check pass. Identical
+proposals reuse their exact review rather than paying for another identical critique;
+new proposals receive new reviews. Rejected proposals return to the saved QA correction
+loop. The dashboard exposes test-quality and requirements-scope activity. Older contracts
+remain explicitly unreviewed rather than being silently credited with these new gates.
+
+`scripts/evaluate_test_quality.py` calibrates two fixed proposals with the installed 7B
+model, without generating or executing an app. The meaningful proposal exercises three
+different arithmetic inputs/results; the superficial proposal asserts only a page title.
+The final calibration accepted the former and rejected the latter with valid findings:
+`artifacts/test-quality-evaluation/90f4d0c513c74050b6682feef0ed5422/result.json`, exit 0.
+Earlier failed calibrations are preserved (`70e92616…`, `f4683726…`, `e275b814…`,
+`a0ba32cc…`): the critic expanded validation scope, and initial scope-protocol outputs
+omitted evidence or contradicted their explanation. Explicit classification variants
+now require a quote for blockers at schema level, followed by an actual-text check.
+Those failures do not count as successful negative cases. This bounded calibration
+does not establish general QA reliability or any generated-app success.
+
+Reviewer/scope regressions: **16 passed**, exit 0. Separate app-result tests confirm
+changed reviewer evidence/task invalidates a pass: **2 passed**, exit 0. Dashboard
+TypeScript and production build passed with the new activity labels. Full-suite and
+SQLite workflow results are recorded separately below when completed.

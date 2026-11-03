@@ -8,6 +8,7 @@ from pydantic import Field,model_validator
 
 from forge.handoffs import record_handoff
 from forge.scenario_quality import validate_quality
+from forge.acceptance_review import load_quality_review
 from forge.tasks import CheckEvidence,Envelope
 
 
@@ -197,7 +198,7 @@ def proposal_context(ledger,state,review):
     return data
 
 
-def acceptance_worker(ledger,state,agents,review,authorize,review_coverage=None):
+def acceptance_worker(ledger,state,agents,review,authorize,review_coverage=None,review_quality=None):
     authorize();ledger.assert_active(state)
     if state.task.owner!='qa' or state.task.inputs.get('review_fingerprint')!=review['fingerprint']:
         raise ValueError('QA task must belong to the approved review')
@@ -218,9 +219,15 @@ def acceptance_worker(ledger,state,agents,review,authorize,review_coverage=None)
         validate_coverage(suite,len(review['draft']['acceptance_criteria']))
         validate_quality(suite.model_dump())
         if suite.uncovered and review_coverage:review_coverage(suite)
+        quality=review_quality(suite) if review_quality else None
+        if review_quality:
+            if not quality:raise ValueError('Scenario reviewer must return bound review evidence')
+            if load_quality_review(ledger,state,review,suite.model_dump(),quality).issues:
+                raise ValueError('Scenario review still has unresolved findings')
         authorize();ledger.assert_active(state)
         packet={'version':1,'job_id':ledger.job_id,'task_id':state.task.id,'revision':state.revision,
             'scenario_quality_version':1,
+            'quality_review':quality,
             'review_fingerprint':review['fingerprint'],'model':agents.model_name,'suite':suite.model_dump(),
             'scope':'Requirements-derived assertions; coverage references are QA proposals, not execution evidence.'}
         path=suite_path(ledger,state);path.parent.mkdir(parents=True,exist_ok=True)
@@ -249,4 +256,7 @@ def load_acceptance(ledger,state,review):
     if packet.get('scenario_quality_version') is not None:
         if packet['scenario_quality_version']!=1:raise ValueError('Unknown scenario-quality protocol')
         validate_quality(suite.model_dump())
+    if packet.get('quality_review') is not None:
+        if load_quality_review(ledger,state,review,suite.model_dump(),packet['quality_review']).issues:
+            raise ValueError('Frozen contract has unresolved scenario-review findings')
     return {**packet,'fingerprint':digest,'report':str(path.resolve())}

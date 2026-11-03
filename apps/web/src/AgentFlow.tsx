@@ -6,6 +6,8 @@ const name=(value:string)=>(value==='LayoutProposal'?'Implementation architect':
 Object.assign(roles,{AppDraft:'Planner',RecoveryDecision:'Senior reviewer',requirements:'Requirements',planner:'Planner',senior_reviewer:'Senior reviewer'});
 Object.assign(roles,{SourceEdit:'Source builder',RepairFocus:'QA diagnosis',builder:'Builder',frontend:'Frontend',backend:'Backend'});
 Object.assign(roles,{AcceptanceSuite:'Acceptance QA',acceptance_qa:'Acceptance QA',CoverageDecision:'Coverage review',coverage_reviewer:'Coverage review'});
+Object.assign(roles,{AcceptanceCritique:'Test quality review',acceptance_reviewer:'Test quality review'});
+Object.assign(roles,{ScopeAssessment:'Requirements scope review',requirements_reviewer:'Requirements scope review'});
 export function conciseIssue(message:string):string{
   if(message.includes('Failed to parse')){
     const role=message.includes('AcceptancePlan')?'QA':message.includes('AppBrief')?'Requirements':'Planning';
@@ -68,7 +70,7 @@ function describe(event:WorkflowEvent):[string,string]{
 
 export default function AgentFlow({workflow,events,busy,status,onContext}:Props){
   const autonomous=workflow==='autonomous';
-  const routes=autonomous?[['Requirements',['requirements']],['Planner',['planner']],['Implementation',['builder','frontend','backend','qa']],['Senior review',['senior_reviewer']],['Acceptance QA',['acceptance_qa']],['Coverage review',['coverage_reviewer']],['Verification',['verification']]] as const:steps;
+  const routes=autonomous?[['Requirements',['requirements']],['Planner',['planner']],['Implementation',['builder','frontend','backend','qa']],['Senior review',['senior_reviewer']],['Acceptance QA',['acceptance_qa']],['Test quality',['acceptance_reviewer','requirements_reviewer']],['Coverage review',['coverage_reviewer']],['Verification',['verification']]] as const:steps;
   const routeRole=(event:WorkflowEvent)=>event.status==='TOOL_CALL_STARTED'&&event.payload.tool==='check_build'?'verification':event.status==='TASK_ACTION_STARTED'?(event.payload.task_state?.task?.inputs?.stage==='acceptance_plan'?'acceptance_qa':event.payload.task_state?.inflight_role):event.status==='AGENT_HANDOFF'?event.payload.recipient:'';
   const visible=events.filter(e=>e.status in summaries||['PLANNING_QUALITY_REVIEW','AGENT_HANDOFF','AGENT_CALL_STARTED','AGENT_CALL_COMPLETED','AGENT_CALL_FAILED','AGENT_VALIDATION_FAILED','FAILED','VERIFICATION_FAILED','SECURITY_BLOCKED','INTERRUPTED','CANCELLED'].includes(e.status));
   const recent=visible.slice(-8).reverse();

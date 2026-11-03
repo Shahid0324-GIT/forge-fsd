@@ -134,7 +134,7 @@ export default function App(){
   const proposalEvent=latest(job,'AUTONOMOUS_DRAFT_READY');
   const approved=latest(job,'AUTONOMOUS_APPROVED')?.payload;
   const buildRoles=[...new Set<string>((approved?.draft?.files??[]).map((file:{owner:string})=>file.owner))];
-  const team=job?.workflow==='autonomous'?[['Requirements','requirements'],['Planner','planner'],...buildRoles.map(role=>[role.replaceAll('_',' '),role]),...(!buildRoles.includes('qa')&&approved?[['QA diagnosis','qa']]:[]),...(approved?[['Acceptance QA','acceptance_qa'],['Coverage review','coverage_reviewer']]:[]),['Senior review','senior_reviewer'],...(approved?[['Build checker','verification']]:[])]:agents;
+  const team=job?.workflow==='autonomous'?[['Requirements','requirements'],['Planner','planner'],...buildRoles.map(role=>[role.replaceAll('_',' '),role]),...(!buildRoles.includes('qa')&&approved?[['QA diagnosis','qa']]:[]),...(approved?[['Acceptance QA','acceptance_qa'],['Test quality review','acceptance_reviewer'],['Requirements scope review','requirements_reviewer'],['Coverage review','coverage_reviewer']]:[]),['Senior review','senior_reviewer'],...(approved?[['Build checker','verification']]:[])]:agents;
   const latestDispatch=job?.events.filter(event=>event.status==='TASK_ACTION_STARTED'||event.status==='TOOL_CALL_STARTED'&&event.payload.tool==='check_build').at(-1);
   const taskRole=latestDispatch?.status==='TOOL_CALL_STARTED'?'verification':latestDispatch?.payload.task_state?.task?.inputs?.stage==='acceptance_plan'?'acceptance_qa':latestDispatch?.payload.task_state?.inflight_role;
   const preview=latest(job,'PREVIEW_RUNNING')?.payload;

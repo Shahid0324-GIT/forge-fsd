@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from forge.acceptance_browser import harness_fingerprint,passed_report,run_acceptance_browser
 from forge.acceptance_coverage import review_coverage
+from forge.acceptance_review import review_suite
 from forge.autonomous_acceptance import acceptance_worker,load_acceptance,suite_fingerprint,proposal_context
 from forge.autonomous_build import PROJECT,_runtime_unchanged
 from forge.autonomous_planning import AppDraft
@@ -87,7 +88,8 @@ def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,additional_
         qa=ledger.revise(qa,qa.task)
         qa=ledger.resume(ledger.pause(qa,'Re-evaluate unsupported claims without changing approved requirements'),additional_actions=additional_actions)
     qa=TaskCoordinator(ledger,{'qa':lambda state:acceptance_worker(ledger,state,agents,review,authorize,
-        lambda suite:review_coverage(ledger,state,agents,review,suite,authorize))},
+        lambda suite:review_coverage(ledger,state,agents,review,suite,authorize),
+        lambda suite:review_suite(ledger,state,agents,review,suite,authorize))},
         SeniorReviewer(agents,ledger,{'qa'},context_loader=lambda current:proposal_context(ledger,current,review)),
         lambda:suite_fingerprint(ledger,ledger.read(qa.task.id))).run(qa.task.id)
     if qa.status!='completed':return pause(qa)
@@ -115,6 +117,8 @@ def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,additional_
             review_fingerprint=review['fingerprint'],acceptance_harness_fingerprint=browser['harness_fingerprint'])
         report['cleanup_errors'].extend(browser['cleanup_errors'])
         report['coverage'].update(application_behavior='SELECTED_REQUIREMENTS_BROWSER_CHECKS',
+            scenario_structure='PASSED' if contract.get('scenario_quality_version')==1 else 'LEGACY_NOT_CHECKED',
+            scenario_review='NO_UNRESOLVED_MODEL_FINDINGS' if contract.get('quality_review') else 'NOT_REVIEWED',
             browser_acceptance='PASSED' if browser['passed'] else 'FAILED',database_restart='NOT_TESTED')
         report['passed']=bool(browser['passed'] and report['source_fingerprint']==browser['source_fingerprint']==source_fingerprint(root)
             and browser['app_image']==report['image'] and browser['contract_fingerprint']==contract['fingerprint'] and not report['cleanup_errors'])

@@ -17,6 +17,8 @@ class QAAgent(Builder):
     def __init__(self,proposal):
         super().__init__(proposal);self.qa_contexts=[];self.repair_contracts=[];self.uncovered=False;self.coverage_supported=False;self.coverage_calls=0
     def generate(self,schema,instruction,data,**kwargs):
+        if schema.__name__=='AcceptanceCritique':
+            return schema.model_validate({'assessed_criteria':sorted({index for case in data['proposed_suite']['scenarios'] for index in case['criteria']}),'issues':[]})
         if schema.__name__=='CoverageDecision':
             self.coverage_calls+=1
             return schema.model_validate({'can_check':self.coverage_supported,'reason':'Reload can be checked' if self.coverage_supported else 'Server restart is outside the browser protocol',
@@ -80,7 +82,7 @@ def test_frozen_requirements_checks_feed_actual_failures_to_source_repair(ready)
     assert not any(e['status'] in {'READY','SECURITY_PASSED','PREVIEW_RUNNING'} for e in result['events'])
 
 
-@pytest.mark.parametrize('change',['source','contract','combined_report','browser_report','verify_revision'])
+@pytest.mark.parametrize('change',['source','contract','combined_report','browser_report','verify_revision','quality_review','quality_task'])
 def test_pass_is_invalidated_when_any_final_evidence_changes(ready,change):
     store,job,agent,boundary,_=ready
     result=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([True]))
@@ -92,6 +94,12 @@ def test_pass_is_invalidated_when_any_final_evidence_changes(ready,change):
     if change=='browser_report':Path(json.loads(Path(event['report']).read_text())['acceptance_report']).write_text('{}',encoding='utf-8')
     if change=='verify_revision':
         state=ledger.read(event['task_id']);ledger.revise(state,state.task)
+    if change in {'quality_review','quality_task'}:
+        qa=ledger.read(event['qa_task_id']);contract=json.loads(Path(qa.observations[-1].checks[0].report).read_text())
+        reference=contract['quality_review']
+        if change=='quality_review':Path(reference['report']).write_text('{}')
+        else:
+            child=ledger.read(reference['task_id']);ledger.revise(child,child.task)
     assert not evidence_current(store.read(job),store,workspace_boundary=boundary)
 
 
