@@ -52,6 +52,8 @@ remain controller-owned. Assign files to builder, frontend, backend or qa as use
 one builder is enough for a small app. Define expected behavior and applicable tests
 from the request, not invented implementation results. Assumptions cannot waive
 requirements. Requirements intake has already established the supported scope. Respect
+negative constraints: 'no saved data' excludes browser localStorage/sessionStorage,
+cookies and databases, not merely a server database. Use transient state for that scope.
 the supplied clarification answers and choose sensible defaults for remaining design
 choices. Do not reopen optional scope questions or ask the user to design the internals.
 Apply human_review_feedback as requirements updates without relaxing platform policy.

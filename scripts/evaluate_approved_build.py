@@ -13,7 +13,7 @@ from uuid import uuid4
 from forge.agents import OllamaAgents
 from forge.autonomous_build import build_app
 from forge.autonomous_planning import plan_app
-from forge.autonomous_review import decide_plan,review_snapshot
+from forge.autonomous_review import decide_plan,review_snapshot,request_changes
 from forge.autonomous_testing import test_app
 from forge.persistence import JobStore
 from forge.source_checks import PROJECT
@@ -23,6 +23,7 @@ from forge.workspace import source_fingerprint
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--app-checks',action='store_true',help='Run independent requirements-derived browser checks after generation/build.')
+    parser.add_argument('--review-feedback',help='Internal operator feedback through the normal request-changes flow before approval.')
     args=parser.parse_args()
     directory=PROJECT/'artifacts/approved-build-evaluation'/uuid4().hex;directory.mkdir(parents=True)
     store=JobStore(directory/'jobs.sqlite3');agents=OllamaAgents('qwen2.5-coder:7b')
@@ -36,6 +37,11 @@ def main():
         job=record['job_id'];root=boundary/job;summary['job_id']=job
         if record['status']!='AUTONOMOUS_DRAFT_READY':raise RuntimeError('Internal planning did not reach a reviewable proposal')
         review=review_snapshot(job,store)
+        if args.review_feedback:
+            (directory/'initial-review.json').write_text(json.dumps(review,indent=2),encoding='utf-8')
+            record=request_changes(job,agents,store,review['fingerprint'],args.review_feedback,actor='internal_evaluation')
+            if record['status']!='AUTONOMOUS_DRAFT_READY':raise RuntimeError('Feedback did not reach a reviewable proposal')
+            review=review_snapshot(job,store)
         if review['draft']['database']!='none':raise ValueError('The fixed stateless evaluation unexpectedly proposed a database')
         (directory/'review.json').write_text(json.dumps(review,indent=2),encoding='utf-8')
         decide_plan(job,store,review['fingerprint'],approved=True,actor='internal_evaluation')
