@@ -1419,3 +1419,16 @@ dashboard build passed. The focused tests cover source/contract changes during
 startup, invalid evidence before Docker, explicit consent, cleanup and stop. A test
 initially caught a workspace-boundary mismatch, corrected by passing the selected
 boundary explicitly. Live preview remains pending separate user approval.
+
+The user subsequently approved the counter preview. Dashboard-managed startup reached
+`PREVIEW_RUNNING` with a localhost-only mapping. Browser interactions confirmed 0 -> 1
+-> 2 and reload -> 0; screenshots were saved under the evaluation artifacts. Preview
+permission did not authorize publication. The proxy reused the already verified
+dependency image because the older separately tagged proxy base was not installed.
+
+Browser verification caught UTF-8 text corrupted by a Windows locale-default file
+read in the UI edit; the original Unicode was restored with explicit UTF-8 output and
+the dashboard rebuilt successfully. Two older tests still expected autonomous preview
+to be entirely unsupported. They now check explicit preview consent and continued
+publication rejection; that API selection passed **7 tests**, exit 0. No checks were
+removed from the preview evidence gate.
