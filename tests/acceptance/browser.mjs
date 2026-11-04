@@ -8,6 +8,11 @@ const base=process.env.FORGE_BROWSER_BASE;
 assert.match(base,/^http:\/\/forge-browser-app-[a-f0-9]{12}:3000$/);
 const contract=JSON.parse(readFileSync('/trusted/contract.json','utf8'));
 assert.equal(contract.version,1);
+// The controller gives every scenario a fresh app process and temporary data.
+// Reloads within a scenario retain that scenario's database and browser storage.
+const scenarioId=process.env.FORGE_SCENARIO_ID;
+const scenarios=scenarioId?contract.suite.scenarios.filter(row=>row.id===scenarioId):contract.suite.scenarios;
+assert.ok(!scenarioId||scenarios.length===1,'Unknown isolated scenario');
 const results=[];
 let browser;
 try{
@@ -18,7 +23,7 @@ try{
   }
   assert.ok(ready,'App did not become healthy');
   browser=await chromium.launch({headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
-  for(const scenario of contract.suite.scenarios){
+  for(const scenario of scenarios){
     const context=await browser.newContext({serviceWorkers:'block'});
     const page=await context.newPage();page.setDefaultTimeout(3500);
     await context.route('**/*',route=>new URL(route.request().url()).origin===base?route.continue():route.abort());
@@ -41,7 +46,7 @@ try{
   }
 }catch(error){results.push({id:'setup',passed:false,error:String(error)});}
 finally{await browser?.close();}
-const report={passed:results.length===contract.suite.scenarios.length&&results.every(row=>row.passed),results};
+const report={passed:results.length===scenarios.length&&results.every(row=>row.passed),results};
 writeFileSync('/results/browser.json',JSON.stringify(report,null,2));
 console.log(JSON.stringify(report));
 process.exitCode=report.passed?0:1;

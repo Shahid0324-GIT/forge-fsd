@@ -222,3 +222,16 @@ def test_failed_evidence_reuse_requires_current_source_contract_and_intact_repor
     if change=='build':Path(report['build_report']).write_text('{}',encoding='utf-8')
     if change=='contract':contract={**contract,'fingerprint':'stale'}
     assert current_failure_for_repair(state,boundary/job,contract)==(change is None)
+
+
+def test_recheck_keeps_frozen_contract_and_replaces_evidence_for_same_source(ready):
+    store,job,agent,boundary,_=ready
+    first=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([True]))
+    before=first['events'][-1]['payload'];source=source_fingerprint(boundary/job)
+    result=run_app_tests(job,agent,store,recheck=True,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([True]))
+    after=result['events'][-1]['payload']
+    assert result['status']=='AUTONOMOUS_APP_CHECKS_PASSED' and evidence_current(result,store,workspace_boundary=boundary)
+    assert source_fingerprint(boundary/job)==source==after['source_fingerprint']
+    assert before['contract_fingerprint']==after['contract_fingerprint']
+    assert after['verification_revision']>before['verification_revision'] and len(agent.qa_contexts)==1
+    assert not agent.repair_contracts

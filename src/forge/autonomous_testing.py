@@ -59,12 +59,13 @@ def current_failure_for_repair(state,root,contract):
     except (ValueError,OSError,KeyError,TypeError,IndexError):return False
 
 
-def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,run_selected=False,additional_actions=8,workspace_boundary=None,
+def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,run_selected=False,recheck=False,additional_actions=8,workspace_boundary=None,
              check_runner=run_source_checks,browser_runner=run_acceptance_browser):
     record=store.read(job_id)
-    if sum(map(bool,[resume,retry_coverage,run_selected]))>1:raise ValueError('Choose one saved verification action')
+    if sum(map(bool,[resume,retry_coverage,run_selected,recheck]))>1:raise ValueError('Choose one saved verification action')
     expected='AUTONOMOUS_CHECKS_BLOCKED' if retry_coverage or run_selected else 'AUTONOMOUS_TEST_PAUSED' if resume else 'AUTONOMOUS_BUILD_CHECKS_PASSED'
-    if record['status']!=expected:raise ValueError('App checks require a built approved app or explicit saved test resume')
+    allowed={'AUTONOMOUS_APP_CHECKS_PASSED','PREVIEW_STOPPED','PREVIEW_FAILED'} if recheck else {expected}
+    if record['status'] not in allowed:raise ValueError('App checks require a built approved app or explicit saved test resume')
     review=approved_review(job_id,store)
     if agents.model_name!=execution_model(job_id,store,review):raise ValueError('Use the approved job model for QA/repair')
     boundary=Path(workspace_boundary) if workspace_boundary else PROJECT/'workspace';root=safe_path(boundary,job_id)
@@ -89,7 +90,7 @@ def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,run_selecte
             dependencies=[Dependency(task_id=built['task_id'],revision=ledger.read(built['task_id']).revision)],required_checks=['isolated_build'])))
     else:parent=parents[0]
     if parent.task.inputs['review_fingerprint']!=review['fingerprint']:raise ValueError('Acceptance run belongs to another review')
-    if run_selected and parent.status=='completed':parent=ledger.start(ledger.revise(parent,parent.task))
+    if (run_selected or recheck) and parent.status=='completed':parent=ledger.start(ledger.revise(parent,parent.task))
     context={key:review['binding']['inputs'].get(key,[] if key!='original_request' else '')
         for key in ['original_request','human_clarifications','human_review_feedback']}
     store.event(job_id,'AUTONOMOUS_TESTING',{'task_id':parent.task.id,
@@ -158,8 +159,8 @@ def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,run_selecte
     worker=SourceAgent(ledger,agents,root,draft,workspace_boundary=boundary,check_runner=verify,authorization=authorize)
     state=child('acceptance_verify',sorted(owners)[0],'Make the approved app pass frozen independent assertions without editing those assertions.',
         {'mode':'repair_build','acceptance_contract':contract['suite']},[Dependency(task_id=qa.task.id,revision=qa.revision)],['isolated_build'])
-    if run_selected and state.status=='completed':state=ledger.revise(state,state.task)
-    fresh_check=retry_coverage or run_selected or (resume and not (resource_resume and current_failure_for_repair(state,root,contract)))
+    if (run_selected or recheck) and state.status=='completed':state=ledger.revise(state,state.task)
+    fresh_check=retry_coverage or run_selected or recheck or (resume and not (resource_resume and current_failure_for_repair(state,root,contract)))
     def verify_or_repair(current):
         nonlocal fresh_check
         authorize();load_acceptance(ledger,ledger.read(qa.task.id),review)

@@ -82,3 +82,37 @@ def test_setup_failure_records_owned_resources_and_cleans_them(setup,monkeypatch
     monkeypatch.setattr(module,'docker',unavailable)
     report=module.run_acceptance_browser(root,directory,'c'*32,contract,'sha256:'+'d'*64)
     assert not report['passed'] and 'Docker unavailable' in report['error'] and cleanup
+
+
+@pytest.mark.parametrize('failed_case',[None,'other_case'])
+def test_each_frozen_scenario_gets_distinct_application_and_data_with_full_aggregate_evidence(setup,monkeypatch,failed_case):
+    from pathlib import Path
+    root,directory,contract,_,commands,cleanup=setup
+    packet=json.loads(Path(contract['report']).read_text(encoding='utf-8'))
+    other=json.loads(json.dumps(packet['suite']['scenarios'][0]));other['id']='other_case'
+    packet['suite']['scenarios'].append(other)
+    Path(contract['report']).write_text(json.dumps(packet),encoding='utf-8')
+    contract.update(suite=packet['suite'],fingerprint=hashlib.sha256(Path(contract['report']).read_bytes()).hexdigest())
+    before=Path(contract['report']).read_bytes()
+    def execute(args,**_):
+        commands.append(args)
+        if '--detach' not in args:
+            case=next(v.split('=',1)[1] for v in args if v.startswith('FORGE_SCENARIO_ID='))
+            mount=next(v for v in args if v.startswith('type=bind,source=') and v.endswith('target=/results'))
+            output=Path(mount.split('source=',1)[1].rsplit(',target=',1)[0])
+            passed=case!=failed_case
+            (output/'browser.json').write_text(json.dumps({'passed':passed,'results':[{'id':case,'criteria':[1,2],'passed':passed}]}),encoding='utf-8')
+        return {'command':args,'exit_code':0,'stopped':None,'output':''}
+    monkeypatch.setattr(module,'bounded_command',execute)
+    report=module.run_acceptance_browser(root,directory,'c'*32,contract,'sha256:'+'d'*64)
+    assert report['passed']==(failed_case is None)
+    applications=[c for c in commands if '--detach' in c]
+    assert len(applications)==2 and len({c[c.index('--name')+1] for c in applications})==2
+    assert all('/work:rw,nosuid,size=2g,uid=1000,gid=1000' in c for c in applications)
+    assert len(cleanup)==2 and len(report['scenario_reports'])==2
+    assert Path(contract['report']).read_bytes()==before
+    assert {r['id'] for r in report['browser']['results']}=={'counter_actions','other_case'}
+    if failed_case is None:
+        assert module.passed_report(report,contract)
+        Path(report['scenario_reports'][0]['report']).write_text('{}',encoding='utf-8')
+        assert not module.passed_report(report,contract)

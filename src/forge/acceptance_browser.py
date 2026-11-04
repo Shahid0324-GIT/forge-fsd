@@ -14,7 +14,7 @@ from forge.workspace import safe_path,source_fingerprint
 
 
 def harness_fingerprint():
-    names=['tests/acceptance/browser.mjs','tests/acceptance/browser-protocol.mjs',
+    names=['src/forge/acceptance_browser.py','tests/acceptance/browser.mjs','tests/acceptance/browser-protocol.mjs',
         'tests/acceptance/browser-diagnostics.mjs',
         'tests/browser/app-server.mjs','tests/browser/package-lock.json','tests/browser/Dockerfile']
     return hashlib.sha256(b''.join(name.encode()+b'\0'+(PROJECT/name).read_bytes() for name in names)).hexdigest()
@@ -34,9 +34,10 @@ def read_contract(contract):
     return suite
 
 
-def passed_report(report,contract):
+def _passed_report(report,contract,scenario_id=None):
     suite=read_contract(contract);rows=report.get('browser',{}).get('results',[])
-    expected={case.id:case.criteria for case in suite.scenarios}
+    expected={case.id:case.criteria for case in suite.scenarios if scenario_id is None or case.id==scenario_id}
+    if not expected:return False
     return bool(report.get('job_id')==contract['job_id'] and not report.get('error')
         and re.fullmatch(r'sha256:[a-f0-9]{64}',report.get('app_image',''))
         and re.fullmatch(r'sha256:[a-f0-9]{64}',report.get('browser_image',''))
@@ -51,7 +52,22 @@ def passed_report(report,contract):
         and not report.get('cleanup_errors'))
 
 
-def run_acceptance_browser(root,directory,job_id,contract,app_image):
+def passed_report(report,contract):
+    if not _passed_report(report,contract):return False
+    if 'scenario_reports' in report:
+        expected={case.id for case in read_contract(contract).scenarios}
+        references=report['scenario_reports']
+        if len(references)!=len(expected) or {row['id'] for row in references}!=expected:return False
+        for row in references:
+            path=Path(row['report']).resolve()
+            if not path.is_relative_to((PROJECT/'artifacts').resolve()) or path.stat().st_size>100000:return False
+            raw=path.read_bytes();case=json.loads(raw)
+            if hashlib.sha256(raw).hexdigest()!=row['sha256'] or not _passed_report(case,contract,row['id']):return False
+            if any(case[key]!=report[key] for key in ['source_fingerprint','harness_fingerprint','app_image','browser_image']):return False
+    return True
+
+
+def _run_acceptance_browser(root,directory,job_id,contract,app_image,scenario_id=None):
     suite=read_contract(contract)
     if not re.fullmatch(r'[a-f0-9]{32}',job_id) or contract['job_id']!=job_id:raise ValueError('Invalid acceptance job identity')
     if not re.fullmatch(r'sha256:[a-f0-9]{64}',app_image):raise ValueError('Expected immutable verified app image')
@@ -92,6 +108,8 @@ def run_acceptance_browser(root,directory,job_id,contract,app_image):
             '--mount',f'type=bind,source={PROJECT/"tests/acceptance/browser-diagnostics.mjs"},target=/trusted/browser-diagnostics.mjs,readonly',
             '--mount',f'type=bind,source={Path(contract["report"]).resolve()},target=/trusted/contract.json,readonly',
             '--mount',f'type=bind,source={output},target=/results',report['browser_image'],'node','/trusted/browser.mjs']
+        if scenario_id is not None:
+            command[2:2]=['--env',f'FORGE_SCENARIO_ID={scenario_id}']
         report['execution']=bounded_command(command,timeout=330,output_limit=64000)
         result=output/'browser.json'
         if result.stat().st_size>64000:raise ValueError('Browser result exceeds budget')
@@ -104,7 +122,48 @@ def run_acceptance_browser(root,directory,job_id,contract,app_image):
     report['harness_unchanged']=harness_fingerprint()==report['harness_fingerprint']
     try:read_contract(contract);report['contract_unchanged']=True
     except (ValueError,OSError,KeyError):report['contract_unchanged']=False
-    try:report['passed']=passed_report(report,contract)
+    try:report['passed']=_passed_report(report,contract,scenario_id)
     except (ValueError,OSError,KeyError):report['passed']=False
     report['phase']='completed';path.write_text(json.dumps(report,indent=2),encoding='utf-8')
+    return report
+
+
+def run_acceptance_browser(root,directory,job_id,contract,app_image):
+    """Isolate durable application state between cases, preserving the frozen suite."""
+    suite=read_contract(contract)
+    if len(suite.scenarios)==1:return _run_acceptance_browser(root,directory,job_id,contract,app_image)
+    directory=Path(directory).resolve()
+    if not directory.is_relative_to((PROJECT/'artifacts').resolve()):raise ValueError('Acceptance output must stay in artifacts')
+    directory.mkdir(parents=True,exist_ok=True)
+    report={'version':1,'job_id':job_id,'source_fingerprint':source_fingerprint(Path(root)),
+        'contract_fingerprint':contract['fingerprint'],'review_fingerprint':contract['review_fingerprint'],
+        'harness_fingerprint':harness_fingerprint(),'app_image':app_image,'passed':False,
+        'cleanup_errors':[],'scenario_reports':[],'uncovered':suite.model_dump()['uncovered'],
+        'scope':'Fresh app process and temporary database per scenario; reload persistence within each scenario. Database restart, security and deployment NOT_TESTED.'}
+    cases=[]
+    try:
+        for index,scenario in enumerate(suite.scenarios):
+            case=_run_acceptance_browser(root,directory/f'scenario-{index}',job_id,contract,app_image,scenario.id)
+            cases.append(case)
+            report['scenario_reports'].append({'id':scenario.id,'report':case['report'],
+                'sha256':hashlib.sha256(Path(case['report']).read_bytes()).hexdigest()})
+        images={case.get('browser_image') for case in cases}
+        if len(images)!=1 or None in images:raise ValueError('Scenario browser images do not match')
+        report['browser_image']=next(iter(images))
+        report['browser']={'passed':all(case['passed'] for case in cases),
+            'results':[row for case in cases for row in case.get('browser',{}).get('results',[])]}
+        report['execution']={'exit_code':0 if all(case['passed'] for case in cases) else 1,
+            'stopped':next((case.get('execution',{}).get('stopped') for case in cases if case.get('execution',{}).get('stopped')),None)}
+        errors=[case['error'] for case in cases if case.get('error')]
+        if errors:report['error']='; '.join(errors)[:3000]
+    except Exception as exc:report['error']=str(exc)[-3000:]
+    report['cleanup_errors']=[error for case in cases for error in case.get('cleanup_errors',[])]
+    report['source_unchanged']=source_fingerprint(Path(root))==report['source_fingerprint'] and all(case['source_unchanged'] and case['source_fingerprint']==report['source_fingerprint'] for case in cases)
+    report['harness_unchanged']=harness_fingerprint()==report['harness_fingerprint'] and all(case['harness_unchanged'] and case['harness_fingerprint']==report['harness_fingerprint'] for case in cases)
+    try:read_contract(contract);report['contract_unchanged']=all(case['contract_unchanged'] for case in cases)
+    except (ValueError,OSError,KeyError):report['contract_unchanged']=False
+    report['report']=str(directory/'report.json');report['phase']='completed'
+    try:report['passed']=passed_report(report,contract)
+    except (ValueError,OSError,KeyError,TypeError):report['passed']=False
+    Path(report['report']).write_text(json.dumps(report,indent=2),encoding='utf-8')
     return report

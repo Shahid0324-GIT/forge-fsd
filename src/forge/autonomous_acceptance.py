@@ -146,7 +146,8 @@ targets from the approved behavior. Builders can align accessible controls durin
 One assertion may cover multiple criteria; a visible value assertion can also prove a
 display requirement. Mark uncovered only for genuinely unavailable checks or conflicts,
 not because the design leaves routine UI implementation choices to the builder.
-Only a NEW SCENARIO creates a fresh browser session. A second visit / within one
+Each NEW SCENARIO gets a fresh app process, temporary database and browser session.
+Scenarios cannot rely on data created by another scenario. A second visit / within one
 scenario reloads while preserving that session's storage; use it for reload and
 no-saved-state checks. Do not mark reload behavior unsupported.
 Observe the changed state BEFORE a reload and the required result immediately AFTER
