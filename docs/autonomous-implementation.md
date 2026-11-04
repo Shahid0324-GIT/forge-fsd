@@ -1496,3 +1496,18 @@ in 129.78 seconds (13 existing warnings). Read-only inspection measured the actu
 notes correction packet at **8,904 characters**, retaining all seven criteria and
 the prior suite. This changes prompt construction, not frozen test expectations or
 app acceptance requirements. The saved QA task resumes in the same job.
+
+## Increment 44: fit completion reservation from exact provider capacity
+
+QA's corrected suite grew and another request reserved 8,216 tokens against the
+provider's 8,000-token cap. The adapter now uses the exact numeric 413 receipt to
+reduce only completion reservation once, leaving a safety margin and a minimum
+1,024-token completion budget. Prompt messages, schemas, requirements and assertions
+are unchanged. Inputs that cannot fit remain resource pauses. Incomplete outputs
+still cannot become source edits or accepted contracts. Traces retain the originally
+requested budget and the provider metadata records the effective budget and adjustment.
+
+Provider and raw-source completion selection: **46 passed**, exit 0 (13 existing
+warnings). The regression verifies 3,000 -> 2,720 reserved completion tokens for this
+overage, identical messages/schema, one adjustment only, and no retry for an input
+that cannot fit. This is provider-budget accounting, not an app-specific exception.

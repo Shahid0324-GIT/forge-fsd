@@ -91,7 +91,7 @@ class GroqChat(BaseChatModel):
             remaining,limit,deadline=budget
             # UTF-8 bytes are a conservative upper bound, not a tokenizer estimate.
             # Large requests wait for refill; small requests can use known capacity.
-            required=min(limit,len(body)+self.num_predict)
+            required=min(limit,len(body)+payload.get('max_completion_tokens',self.num_predict))
             delay=deadline-time.monotonic()
             if remaining<required and delay>0:
                 if delay>60:raise ProviderResourceError('Groq token refill exceeds the bounded wait. Resume after the provider capacity resets.')
@@ -128,6 +128,17 @@ class GroqChat(BaseChatModel):
             payload['response_format']={'type':'json_schema','json_schema':{'name':kwargs['schema_name'],
                 'strict':strict,'schema':kwargs['response_schema']}}
         status,retry,raw=self._post(payload)
+        # The provider cap includes reserved completion tokens. Fit that reserve
+        # from its exact numeric receipt, never by truncating the prompt/schema.
+        # One adjustment only; a genuinely oversized input remains a saved pause.
+        if status==413:
+            limits=re.search(rb'Limit\s+(\d+).*?Requested\s+(\d+)',raw,re.I|re.S)
+            if limits:
+                limit,requested=map(int,limits.groups())
+                fitted=self.num_predict-(requested-limit)-64
+                if requested>limit>0 and 1024<=fitted<self.num_predict:
+                    payload={**payload,'max_completion_tokens':fitted}
+                    status,retry,raw=self._post(payload)
         # One bounded provider wait, not a coding retry or a silent provider fallback.
         if status==429:
             try:delay=float(retry)
@@ -161,7 +172,8 @@ class GroqChat(BaseChatModel):
             if not isinstance(content,str):raise ValueError('Missing text completion')
             message=AIMessage(content=content,response_metadata={'model':self.model_name,'provider':'groq',
                 'done_reason':choice['finish_reason'],'request_id':result.get('id'),
-                'max_completion_tokens':self.num_predict,'reasoning_effort':self.reasoning_effort,
+                'max_completion_tokens':payload['max_completion_tokens'],'reasoning_effort':self.reasoning_effort,
+                'completion_budget_adjusted':payload['max_completion_tokens']!=self.num_predict,
                 'response_format':('json_schema_strict' if payload['response_format']['json_schema']['strict'] else 'json_schema_best_effort') if 'response_format' in payload else 'text'},
                 usage_metadata={'input_tokens':usage.get('prompt_tokens',0),'output_tokens':usage.get('completion_tokens',0),
                     'total_tokens':usage.get('total_tokens',0)})

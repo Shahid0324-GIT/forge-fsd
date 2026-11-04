@@ -119,6 +119,30 @@ def test_request_limit_reports_only_numeric_capacity_not_provider_body(monkeypat
     assert 'private' not in str(error.value)
 
 
+def test_request_cap_fits_only_output_reserve_and_preserves_complete_input(monkeypatch):
+    payloads=[]
+    def post(self,payload):
+        payloads.append(payload)
+        return (413,None,b'Limit 8000, Requested 8216') if len(payloads)==1 else (200,None,response())
+    monkeypatch.setattr(provider.GroqChat,'_post',post)
+    model=provider.GroqChat(num_predict=3000)
+    result=model.with_structured_output(Answer,include_raw=True).invoke([('human','Complete original requirements')])
+    assert result['parsed'].value==3 and len(payloads)==2
+    assert payloads[0]['max_completion_tokens']==3000 and payloads[1]['max_completion_tokens']==2720
+    assert payloads[0]['messages']==payloads[1]['messages'] and payloads[0]['response_format']==payloads[1]['response_format']
+    assert result['raw'].response_metadata['max_completion_tokens']==2720
+    assert result['raw'].response_metadata['completion_budget_adjusted'] is True
+
+
+def test_request_cap_does_not_repeatedly_shrink_or_retry_an_unfittable_input(monkeypatch):
+    from forge.provider_errors import ProviderResourceError
+    calls=[]
+    def post(self,payload):calls.append(payload);return 413,None,b'Limit 8000, Requested 12000'
+    monkeypatch.setattr(provider.GroqChat,'_post',post)
+    with pytest.raises(ProviderResourceError):provider.GroqChat(num_predict=3000).invoke([('human','Oversized input')])
+    assert len(calls)==1
+
+
 @pytest.mark.parametrize('dimension',['tokens per minute','tokens per day','requests per day'])
 def test_rate_limit_reports_safe_dimension_and_numeric_capacity(monkeypatch,dimension):
     from forge.provider_errors import ProviderResourceError
