@@ -103,7 +103,7 @@ class TaskCoordinator:
         try:checks=self.workers[current.task.owner](dispatched)
         except TaskConflict:raise
         except ProviderResourceError as exc:
-            self.ledger.pause(dispatched,str(exc),action_finished=True)
+            self.ledger.pause(dispatched,str(exc),action_finished=True,kind='provider_resource')
             return {}
         except Exception as exc:error=f'{type(exc).__name__}: {exc}'[:4000]
         try:
@@ -141,8 +141,8 @@ class TaskCoordinator:
             if plan.action=='request_input' and not current.task.allow_review_questions:raise ValueError('User-question authority was not delegated for this review')
             if plan.action=='retry' and plan.owner!=current.task.owner:raise ValueError('Ownership changes require reassign')
         except ProviderResourceError as exc:
-            self.ledger.pause(child,str(exc),action_finished=True)
-            self.ledger.pause(dispatched,str(exc),action_finished=True)
+            self.ledger.pause(child,str(exc),action_finished=True,kind='provider_resource')
+            self.ledger.pause(dispatched,str(exc),action_finished=True,kind='provider_resource')
             return {}
         except Exception as exc:error=f'{type(exc).__name__}: {exc}'[:4000]
         directory=self.ledger.store.path.parent/'task-reviews'/self.ledger.job_id

@@ -185,3 +185,40 @@ def test_blocked_coverage_can_be_re_evaluated_without_rewriting_old_contract(rea
     result=run_app_tests(job,agent,store,retry_coverage=True,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([True]))
     assert result['status']=='AUTONOMOUS_APP_CHECKS_PASSED' and path.read_bytes()==original
     assert source_fingerprint(boundary/job)==source and len(agent.qa_contexts)==2
+
+
+def test_resource_resume_repairs_current_failure_before_retesting_instead_of_repeating_review(ready):
+    from forge.provider_errors import ProviderResourceError
+    store,job,agent,boundary,_=ready;generate=agent.generate;seen=[]
+    def quota(schema,*args,**kwargs):
+        if schema.__name__=='RepairFocus':raise ProviderResourceError('Provider quota pause')
+        return generate(schema,*args,**kwargs)
+    agent.generate=quota
+    paused=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([False],seen))
+    assert paused['status']=='AUTONOMOUS_TEST_PAUSED' and len(seen)==1
+    agent.generate=generate
+    result=run_app_tests(job,agent,store,resume=True,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([True],seen))
+    assert result['status']=='AUTONOMOUS_APP_CHECKS_PASSED'
+    assert len(agent.repair_contracts)==1 and len(seen)==2
+    assert evidence_current(result,store,workspace_boundary=boundary)
+
+
+@pytest.mark.parametrize('change',[None,'source','browser','build','contract'])
+def test_failed_evidence_reuse_requires_current_source_contract_and_intact_reports(ready,change):
+    from forge.provider_errors import ProviderResourceError
+    from forge.autonomous_testing import current_failure_for_repair
+    from forge.autonomous_acceptance import load_acceptance
+    store,job,agent,boundary,review=ready;generate=agent.generate
+    def quota(schema,*args,**kwargs):
+        if schema.__name__=='RepairFocus':raise ProviderResourceError('Provider quota pause')
+        return generate(schema,*args,**kwargs)
+    agent.generate=quota
+    result=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([False]))
+    ledger=TaskLedger(store,job);pending=result['events'][-1]['payload'];state=ledger.read(pending['task_id'])
+    qa=next(t for t in ledger.list() if t.task.inputs.get('stage')=='acceptance_plan')
+    contract=load_acceptance(ledger,qa,review);report=json.loads(Path(state.observations[-1].checks[0].report).read_text(encoding='utf-8'))
+    if change=='source':(boundary/job/'app/page.tsx').write_text('changed',encoding='utf-8')
+    if change=='browser':Path(report['acceptance_report']).write_text('{}',encoding='utf-8')
+    if change=='build':Path(report['build_report']).write_text('{}',encoding='utf-8')
+    if change=='contract':contract={**contract,'fingerprint':'stale'}
+    assert current_failure_for_repair(state,boundary/job,contract)==(change is None)

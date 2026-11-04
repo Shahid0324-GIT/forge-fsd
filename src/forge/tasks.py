@@ -85,6 +85,7 @@ class TaskState(Envelope):
     recovery: RecoveryPlan | None = None
     review_error: str = ''
     pause_reason: str = ''
+    pause_kind: Literal['','provider_resource'] = ''
 
 
 class TaskConflict(ValueError):
@@ -222,10 +223,11 @@ class TaskLedger:
             current.reviewed_observations=0;current.no_progress=0
         return self.update(state.task.id,state.version,'TASK_REASSIGNED',reason,mutate)
 
-    def pause(self,state,reason,*,action_finished=False):
+    def pause(self,state,reason,*,action_finished=False,kind=''):
+        if kind not in {'','provider_resource'}:raise ValueError('Unknown pause kind')
         def mutate(current,_):
             if current.status not in {'queued','running','paused'}:raise TaskConflict('Task cannot pause in its current state')
-            current.status='paused';current.pause_reason=reason
+            current.status='paused';current.pause_reason=reason;current.pause_kind=kind
             if action_finished:current.inflight_role=None
         return self.update(state.task.id,state.version,'TASK_PAUSED',reason,mutate)
 
@@ -235,7 +237,7 @@ class TaskLedger:
             if current.status!='paused':raise TaskConflict('Only paused tasks can resume')
             if current.inflight_role is not None and not reconciled:raise TaskConflict('Inspect interrupted action outcomes before resuming')
             current.inflight_role=None
-            current.action_limit+=additional_actions;current.status='queued';current.pause_reason=''
+            current.action_limit+=additional_actions;current.status='queued';current.pause_reason='';current.pause_kind=''
         return self.update(state.task.id,state.version,'TASK_RESUMED','Resumed saved work without discarding attempts or review.',mutate)
 
     def revise(self,state,task):
@@ -247,7 +249,7 @@ class TaskLedger:
             self._dependencies(task,states)
             current.task=task;current.revision+=1;current.version+=1;current.status='queued'
             current.inflight_role=None
-            current.no_progress=0;current.recovery=None;current.review_error='';current.pause_reason=''
+            current.no_progress=0;current.recovery=None;current.review_error='';current.pause_reason='';current.pause_kind=''
             self._save(db,current,'TASK_REVISED','Inputs revised; previous evidence does not complete this revision.')
             changed={current.task.id}
             pending=True

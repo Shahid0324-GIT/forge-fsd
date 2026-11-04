@@ -38,6 +38,27 @@ def tests_resumable(record,store,*,workspace_boundary=None):
     except (ValueError,OSError,KeyError,TypeError,StopIteration):return False
 
 
+def current_failure_for_repair(state,root,contract):
+    """Reuse only intact failed evidence for diagnosis, never as passing evidence."""
+    try:
+        observation=state.observations[-1]
+        if observation.revision!=state.revision or observation.error or observation.fingerprint!=source_fingerprint(root):return False
+        check=observation.checks[0]
+        if check.check!='isolated_build' or check.exit_code==0:return False
+        result=json.loads(Path(check.report).read_text(encoding='utf-8'))
+        build=Path(result['build_report']);browser=Path(result['acceptance_report'])
+        built=json.loads(build.read_text(encoding='utf-8'));seen=json.loads(browser.read_text(encoding='utf-8'))
+        return bool(result['passed'] is False and built['passed'] is True and seen['passed'] is False and not result['cleanup_errors']
+            and result['source_fingerprint']==observation.fingerprint==built['source_fingerprint']==seen['source_fingerprint']
+            and result['contract_fingerprint']==contract['fingerprint']==seen['contract_fingerprint']
+            and hashlib.sha256(build.read_bytes()).hexdigest()==result['build_report_sha256']
+            and hashlib.sha256(browser.read_bytes()).hexdigest()==result['acceptance_report_sha256']
+            and built['harness_fingerprint']==build_harness_fingerprint()
+            and result['acceptance_harness_fingerprint']==seen['harness_fingerprint']==harness_fingerprint()
+            and result['image']==built['image']==seen['app_image'])
+    except (ValueError,OSError,KeyError,TypeError,IndexError):return False
+
+
 def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,run_selected=False,additional_actions=8,workspace_boundary=None,
              check_runner=run_source_checks,browser_runner=run_acceptance_browser):
     record=store.read(job_id)
@@ -52,10 +73,13 @@ def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,run_selecte
         if approved_review(job_id,store)['fingerprint']!=review['fingerprint'] or not _runtime_unchanged(root):
             raise ValueError('Approved plan or workspace runtime changed during app checks')
     authorize()
+    resource_resume=False
     if resume:
         if not tests_resumable(record,store,workspace_boundary=boundary):raise ValueError('Inspect interrupted QA work before resuming')
         pending=next(e['payload'] for e in reversed(record['events']) if e['status']=='AUTONOMOUS_TEST_PAUSED')
-        ledger.resume(ledger.read(pending['task_id']),additional_actions=additional_actions)
+        paused_state=ledger.read(pending['task_id'])
+        resource_resume=paused_state.pause_kind=='provider_resource'
+        ledger.resume(paused_state,additional_actions=additional_actions)
     parents=[state for state in ledger.list() if state.task.inputs.get('stage')=='approved_acceptance']
     if len(parents)>1:raise ValueError('Duplicate acceptance execution needs reconciliation')
     if not parents:
@@ -135,7 +159,7 @@ def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,run_selecte
     state=child('acceptance_verify',sorted(owners)[0],'Make the approved app pass frozen independent assertions without editing those assertions.',
         {'mode':'repair_build','acceptance_contract':contract['suite']},[Dependency(task_id=qa.task.id,revision=qa.revision)],['isolated_build'])
     if run_selected and state.status=='completed':state=ledger.revise(state,state.task)
-    fresh_check=resume or retry_coverage or run_selected
+    fresh_check=retry_coverage or run_selected or (resume and not (resource_resume and current_failure_for_repair(state,root,contract)))
     def verify_or_repair(current):
         nonlocal fresh_check
         authorize();load_acceptance(ledger,ledger.read(qa.task.id),review)
