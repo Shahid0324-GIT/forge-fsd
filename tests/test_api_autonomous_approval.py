@@ -130,7 +130,8 @@ def test_frozen_contract_report_rejects_changed_bytes(client,tmp_path):
     assert browser.get(f'/api/jobs/{job}/reports/{sequence}').status_code==409
 
 
-def test_blocked_coverage_routes_to_independent_re_evaluation(client,monkeypatch):
+@pytest.mark.parametrize('action,options',[('retry_coverage',{'retry_coverage':True}),('test_selected',{'run_selected':True})])
+def test_blocked_coverage_routes_to_the_requested_verification_action(client,monkeypatch,action,options):
     import forge.autonomous_testing as testing
     from forge.autonomous_review import decide_plan
     browser,app=client;headers=session(browser);calls=fake_submit(app,monkeypatch)
@@ -139,7 +140,7 @@ def test_blocked_coverage_routes_to_independent_re_evaluation(client,monkeypatch
     received=[]
     def retry(job_id,*args,**kwargs):received.append(kwargs);return app.state.store.read(job_id)
     monkeypatch.setattr(testing,'test_app',retry)
-    assert send(browser,headers,job,'retry_coverage').status_code==202
-    execute(job,'retry_coverage',calls[-1][2],app.state.store,agent)
-    assert received==[{'retry_coverage':True}]
+    assert send(browser,headers,job,action).status_code==202
+    execute(job,action,calls[-1][2],app.state.store,agent)
+    assert received==[options]
     assert send(browser,headers,job,'preview_start').status_code==409

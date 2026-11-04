@@ -37,11 +37,11 @@ def tests_resumable(record,store,*,workspace_boundary=None):
     except (ValueError,OSError,KeyError,TypeError,StopIteration):return False
 
 
-def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,additional_actions=8,workspace_boundary=None,
+def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,run_selected=False,additional_actions=8,workspace_boundary=None,
              check_runner=run_source_checks,browser_runner=run_acceptance_browser):
     record=store.read(job_id)
-    if resume and retry_coverage:raise ValueError('Choose saved resource resume or coverage re-evaluation')
-    expected='AUTONOMOUS_CHECKS_BLOCKED' if retry_coverage else 'AUTONOMOUS_TEST_PAUSED' if resume else 'AUTONOMOUS_BUILD_CHECKS_PASSED'
+    if sum(map(bool,[resume,retry_coverage,run_selected]))>1:raise ValueError('Choose one saved verification action')
+    expected='AUTONOMOUS_CHECKS_BLOCKED' if retry_coverage or run_selected else 'AUTONOMOUS_TEST_PAUSED' if resume else 'AUTONOMOUS_BUILD_CHECKS_PASSED'
     if record['status']!=expected:raise ValueError('App checks require a built approved app or explicit saved test resume')
     review=approved_review(job_id,store)
     if agents.model_name!=review['binding']['model']:raise ValueError('Use the approved job model for QA/repair')
@@ -64,6 +64,7 @@ def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,additional_
             dependencies=[Dependency(task_id=built['task_id'],revision=ledger.read(built['task_id']).revision)],required_checks=['isolated_build'])))
     else:parent=parents[0]
     if parent.task.inputs['review_fingerprint']!=review['fingerprint']:raise ValueError('Acceptance run belongs to another review')
+    if run_selected and parent.status=='completed':parent=ledger.start(ledger.revise(parent,parent.task))
     context={key:review['binding']['inputs'].get(key,[] if key!='original_request' else '')
         for key in ['original_request','human_clarifications','human_review_feedback']}
     store.event(job_id,'AUTONOMOUS_TESTING',{'task_id':parent.task.id,
@@ -98,7 +99,7 @@ def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,additional_
     contract=load_acceptance(ledger,qa,review)
     store.event(job_id,'AUTONOMOUS_ACCEPTANCE_FROZEN',{'task_id':qa.task.id,'report':contract['report'],
         'contract_fingerprint':contract['fingerprint'],'scope':'Assertions frozen outside app source; coverage references are QA proposals.'},update_status=False)
-    if contract['suite']['uncovered']:
+    if contract['suite']['uncovered'] and not contract['suite']['scenarios']:
         store.event(job_id,'AUTONOMOUS_CHECKS_BLOCKED',{'report':contract['report'],'uncovered':contract['suite']['uncovered'],
             'reason':'Some approved criteria need checks outside the current browser protocol. No complete app-check pass is claimed.'})
         return store.read(job_id)
@@ -132,7 +133,8 @@ def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,additional_
     worker=SourceAgent(ledger,agents,root,draft,workspace_boundary=boundary,check_runner=verify,authorization=authorize)
     state=child('acceptance_verify',sorted(owners)[0],'Make the approved app pass frozen independent assertions without editing those assertions.',
         {'mode':'repair_build','acceptance_contract':contract['suite']},[Dependency(task_id=qa.task.id,revision=qa.revision)],['isolated_build'])
-    fresh_check=resume or retry_coverage
+    if run_selected and state.status=='completed':state=ledger.revise(state,state.task)
+    fresh_check=resume or retry_coverage or run_selected
     def verify_or_repair(current):
         nonlocal fresh_check
         authorize();load_acceptance(ledger,ledger.read(qa.task.id),review)
@@ -156,17 +158,22 @@ def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,additional_
     if not result['passed'] or result.get('contract_fingerprint')!=contract['fingerprint']:
         raise ValueError('App checks lack current combined acceptance evidence')
     ledger.observe(ledger.read(parent.task.id),Observation(revision=parent.revision,fingerprint=fingerprint,checks=checks))
-    store.event(job_id,'AUTONOMOUS_APP_CHECKS_PASSED',{'task_id':state.task.id,'qa_task_id':qa.task.id,
+    partial=bool(contract['suite']['uncovered'])
+    store.event(job_id,'AUTONOMOUS_CHECKS_BLOCKED' if partial else 'AUTONOMOUS_APP_CHECKS_PASSED',{'task_id':state.task.id,'qa_task_id':qa.task.id,
         'verification_revision':state.revision,'verification_version':state.version,
         'source_fingerprint':fingerprint,'review_fingerprint':review['fingerprint'],'contract_fingerprint':contract['fingerprint'],
         'report':str(report_path),'report_sha256':hashlib.sha256(report_path.read_bytes()).hexdigest(),
-        'coverage':result['coverage'],'scope':'Selected requirements-derived browser checks passed; no READY, security, restart-persistence or release claim.'})
+        'coverage':result['coverage'],
+        **({'selected_checks_passed':True,'uncovered':contract['suite']['uncovered'],
+            'reason':'Supported frozen assertions passed. Other approved criteria remain uncovered; no complete app-check pass is claimed.'} if partial else {}),
+        'scope':'Selected requirements-derived browser checks passed; no READY, security, restart-persistence or release claim.'})
     return store.read(job_id)
 
 
-def evidence_current(record,store,*,workspace_boundary=None):
+def evidence_current(record,store,*,workspace_boundary=None,selected_only=False):
     try:
-        event=next(e['payload'] for e in reversed(record['events']) if e['status']=='AUTONOMOUS_APP_CHECKS_PASSED')
+        event=next(e['payload'] for e in reversed(record['events']) if e['status']=='AUTONOMOUS_APP_CHECKS_PASSED'
+            or selected_only and e['status']=='AUTONOMOUS_CHECKS_BLOCKED' and e['payload'].get('selected_checks_passed') is True)
         review=approved_review(record['job_id'],store);ledger=TaskLedger(store,record['job_id'])
         contract=load_acceptance(ledger,ledger.read(event['qa_task_id']),review)
         checked=ledger.read(event['task_id'])
@@ -182,5 +189,5 @@ def evidence_current(record,store,*,workspace_boundary=None):
             and build['source_fingerprint']==result['source_fingerprint'] and build['harness_fingerprint']==build_harness_fingerprint()
             and result['image']==browser['app_image']==build['image']
             and result['contract_fingerprint']==contract['fingerprint']==event['contract_fingerprint']
-            and result['acceptance_harness_fingerprint']==harness_fingerprint() and not contract['suite']['uncovered'])
+            and result['acceptance_harness_fingerprint']==harness_fingerprint() and (selected_only or not contract['suite']['uncovered']))
     except (ValueError,OSError,KeyError,TypeError,StopIteration):return False

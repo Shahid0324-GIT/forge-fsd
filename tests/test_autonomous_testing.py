@@ -121,6 +121,54 @@ def test_uncovered_requirements_block_promotion_without_running_superficial_chec
     assert result['events'][-1]['payload']['uncovered'] and not evidence_current(result,store,workspace_boundary=boundary)
 
 
+@pytest.fixture
+def partially_covered(tmp_path):
+    from forge.autonomous_planning import plan_app
+    from forge.autonomous_review import review_snapshot
+    from forge.persistence import JobStore
+    from test_autonomous_planning import draft
+    proposal=draft().model_copy(update={'acceptance_criteria':['Display the calculated result','Persist state after server restart']})
+    class PartialQA(QAAgent):
+        def generate(self,schema,instruction,data,**kwargs):
+            if schema.__name__=='AcceptanceSuite':
+                return schema.model_validate({'scenarios':[{'id':'result','criteria':[1],'steps':[
+                    {'action':'visit','path':'/'},{'action':'assert_visible','target':{'by':'text','value':'3'}}]}],
+                    'uncovered':[{'criterion':2,'reason':'Requires server restart, outside browser protocol'}]})
+            return super().generate(schema,instruction,data,**kwargs)
+    agent=PartialQA(proposal);store=JobStore(tmp_path/'artifacts/jobs.sqlite3')
+    job=plan_app('Display the calculated result and retain state after server restart.',agent,store)['job_id']
+    approve(store,job,review_snapshot(job,store));boundary=tmp_path/'workspace'
+    build_app(job,agent,store,workspace_boundary=boundary,check_runner=runner())
+    return store,job,agent,boundary
+
+
+@pytest.mark.parametrize('changed',[None,'source','contract','report'])
+def test_supported_checks_execute_without_waiving_uncovered_requirements(partially_covered,changed):
+    store,job,agent,boundary=partially_covered;seen=[]
+    result=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([True],seen))
+    assert result['status']=='AUTONOMOUS_CHECKS_BLOCKED' and len(seen)==1
+    event=result['events'][-1]['payload']
+    assert event['selected_checks_passed'] and event['uncovered'][0]['criterion']==2
+    assert not evidence_current(result,store,workspace_boundary=boundary)
+    assert evidence_current(result,store,workspace_boundary=boundary,selected_only=True)
+    if changed=='source':(boundary/job/'app/page.tsx').write_text('Changed after checks')
+    if changed=='contract':
+        qa=TaskLedger(store,job).read(event['qa_task_id'])
+        Path(qa.observations[-1].checks[0].report).write_text('{}')
+    if changed=='report':Path(event['report']).write_text('{}')
+    if changed:assert not evidence_current(result,store,workspace_boundary=boundary,selected_only=True)
+    assert not any(e['status'] in {'AUTONOMOUS_APP_CHECKS_PASSED','READY'} for e in result['events'])
+
+
+def test_selected_checks_repair_against_same_contract_and_can_be_rerun(partially_covered):
+    store,job,agent,boundary=partially_covered;seen=[]
+    result=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([False,True],seen))
+    assert result['status']=='AUTONOMOUS_CHECKS_BLOCKED' and agent.repair_contracts and len(set(seen))==1
+    result=run_app_tests(job,agent,store,run_selected=True,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([True],seen))
+    assert len(seen)==3 and len(set(seen))==1 and result['status']=='AUTONOMOUS_CHECKS_BLOCKED'
+    assert evidence_current(result,store,workspace_boundary=boundary,selected_only=True)
+
+
 def test_supported_coverage_claim_is_reviewed_before_any_contract_is_frozen(ready):
     store,job,agent,boundary,_=ready;agent.uncovered=True;agent.coverage_supported=True
     result=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([True]))

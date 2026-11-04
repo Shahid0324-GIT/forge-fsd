@@ -37,7 +37,7 @@ class NewJob(ApplicationRequest):
 
 
 class Action(Boundary):
-    action: Literal['answer','approve','reject','continue','preview_start','preview_stop','preview_status','report','security','retry_plan','retry_build','browser_check','prepare_release','publish_release','deploy_release','release_status','resume_planning','revise_plan','resume_build','test_app','resume_tests','retry_coverage']
+    action: Literal['answer','approve','reject','continue','preview_start','preview_stop','preview_status','report','security','retry_plan','retry_build','browser_check','prepare_release','publish_release','deploy_release','release_status','resume_planning','revise_plan','resume_build','test_app','resume_tests','retry_coverage','test_selected']
     request_id: str = Field(pattern=r'^[a-f0-9-]{32,36}$')
     expected_sequence: int = Field(ge=1)
     fingerprint: str | None = Field(default=None,pattern=r'^[a-f0-9]{64}$')
@@ -57,6 +57,7 @@ ALLOWED={
     'revise_plan':{'AUTONOMOUS_DRAFT_READY'},'resume_build':{'AUTONOMOUS_BUILD_PAUSED'},
     'test_app':{'AUTONOMOUS_BUILD_CHECKS_PASSED'},'resume_tests':{'AUTONOMOUS_TEST_PAUSED'},
     'retry_coverage':{'AUTONOMOUS_CHECKS_BLOCKED'},
+    'test_selected':{'AUTONOMOUS_CHECKS_BLOCKED'},
     'continue':{'APPROVED','GENERATED_UNVERIFIED','VERIFICATION_FAILED','FUNCTIONALLY_VERIFIED','SECURITY_BLOCKED','SECURITY_PASSED','AUTONOMOUS_APPROVED'},
     'preview_start':{'SECURITY_PASSED','PREVIEW_STOPPED','PREVIEW_FAILED'},
     'preview_stop':{'PREVIEW_RUNNING','PREVIEW_STARTING','PREVIEW_FAILED'},
@@ -124,6 +125,7 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
         job['build_resumable']=build_resumable(job,store,workspace_boundary=PROJECT/'workspace')
         job['tests_resumable']=tests_resumable(job,store,workspace_boundary=PROJECT/'workspace')
         if job['status']=='AUTONOMOUS_APP_CHECKS_PASSED':job['app_evidence_current']=evidence_current(job,store,workspace_boundary=PROJECT/'workspace')
+        if job['status']=='AUTONOMOUS_CHECKS_BLOCKED':job['selected_evidence_current']=evidence_current(job,store,workspace_boundary=PROJECT/'workspace',selected_only=True)
         if job['workflow']=='autonomous' and job['status']=='AUTONOMOUS_DRAFT_READY':
             try:job['review_fingerprint']=review_snapshot(job['job_id'],store)['fingerprint']
             except (ValueError,OSError,KeyError) as exc:job['review_error']=str(exc)
@@ -226,7 +228,7 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
             return {'operation':manager.read(existing[0])}
         if current['status'] not in ALLOWED[body.action]:raise HTTPException(409,'That action is unavailable in the current job state')
         autonomous=uses_autonomous_planning(current)
-        if autonomous and body.action not in {'answer','resume_planning','approve','reject','revise_plan','continue','resume_build','test_app','resume_tests','retry_coverage'}:
+        if autonomous and body.action not in {'answer','resume_planning','approve','reject','revise_plan','continue','resume_build','test_app','resume_tests','retry_coverage','test_selected'}:
             raise HTTPException(409,'This workflow does not yet support preview or publishing')
         if body.action=='resume_planning' and not resumable_planning(current,store):
             raise HTTPException(409,'Planning needs saved-task inspection before it can resume')

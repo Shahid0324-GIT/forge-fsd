@@ -1319,3 +1319,23 @@ nonsensitive synthetic `RepairFocus` probe returned and locally validated all re
 fields under strict decoding. The preceding notes worker (started before this change)
 also completed its source repair and isolated build; independent QA is in progress.
 Reference: https://console.groq.com/docs/structured-outputs
+
+## Increment 34: execute supported frozen assertions with explicit coverage gaps
+
+QA correctly identified notes criteria outside the browser protocol. Previously any
+uncovered criterion prevented every otherwise valid scenario from running. Reviewed,
+nonempty suites now execute and repair against the same frozen contract even with
+coverage gaps. Successful execution retains `AUTONOMOUS_CHECKS_BLOCKED`, records the
+uncovered criteria and selected-check evidence, and never emits a complete app pass.
+An entirely unsupported suite still executes nothing.
+
+The dashboard can run an existing supported suite without regenerating its assertions.
+Its success display checks current source, contract and report hashes; stale partial
+evidence is identified explicitly. Re-runs create a new execution revision while
+preserving the frozen contract. Preview and publication gates remain separate.
+
+Complete controller suite: **538 passed**, exit 0, in 287.50 seconds (13 existing
+warnings). Focused partial-execution/tampering/repair/rerun checks: **5 passed**;
+dashboard action/approval selection: **11 passed**. Dashboard TypeScript and production
+build passed. An earlier focused run caught a completed-parent re-observation error;
+the execution parent now starts a new revision before a selected-check re-run.

@@ -56,6 +56,7 @@ def execute(job_id,action,payload,store,agents):
         if action=='test_app':return test_app(job_id,agents,store)
         if action=='resume_tests':return test_app(job_id,agents,store,resume=True)
         if action=='retry_coverage':return test_app(job_id,agents,store,retry_coverage=True)
+        if action=='test_selected':return test_app(job_id,agents,store,run_selected=True)
         raise ValueError('This autonomous workflow does not yet support preview or publishing')
     if action in {'prepare_release','publish_release','deploy_release','release_status'}:
         from forge.releases import prepare_release,publish_release,deploy_release,refresh_release
