@@ -63,8 +63,18 @@ def start_preview(job_id,store,approved=False,actor='local_cli'):
     if approved is not True:raise ValueError('Explicit local preview approval is required')
     record=store.read(job_id);root=PROJECT/'workspace'/job_id
     safe_path(root,'package.json')
-    fingerprint=check_preview_gate(record,root)
-    verified=next(e['payload'] for e in reversed(record['events']) if e['status']=='FUNCTIONALLY_VERIFIED')
+    from forge.autonomous_planning import uses_autonomous_planning
+    from forge.autonomous_testing import evidence_current
+    autonomous=uses_autonomous_planning(record)
+    if autonomous:
+        if record['status'] not in {'AUTONOMOUS_APP_CHECKS_PASSED','PREVIEW_STOPPED','PREVIEW_FAILED'}:
+            raise ValueError('Autonomous preview requires a complete current app-check pass and no active preview')
+        if not evidence_current(record,store,workspace_boundary=PROJECT/'workspace'):raise ValueError('Autonomous preview requires current build and frozen browser evidence')
+        verified=next(e['payload'] for e in reversed(record['events']) if e['status']=='AUTONOMOUS_APP_CHECKS_PASSED')
+        fingerprint=verified['source_fingerprint']
+    else:
+        fingerprint=check_preview_gate(record,root)
+        verified=next(e['payload'] for e in reversed(record['events']) if e['status']=='FUNCTIONALLY_VERIFIED')
     functional=json.loads(open(verified['report'],encoding='utf-8').read())
     image=functional['image']
     suffix=uuid4().hex[:12]
@@ -96,7 +106,7 @@ def start_preview(job_id,store,approved=False,actor='local_cli'):
                     '--user=1000:1000','--memory=128m','--cpus=1','--pids-limit=32',
                     '--env',f'APP_HOST={resources["container"]}',
                     '--mount',f'type=bind,source={PROJECT / "tests/acceptance/proxy.mjs"},target=/proxy.mjs,readonly',
-                    'node:24-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c',
+                    image if autonomous else 'node:24-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c',
                     'node','/proxy.mjs']
         execution=bounded_command(proxy_args,timeout=45)
         if execution['exit_code']!=0 or execution['stopped']:raise RuntimeError(execution['output'])
@@ -116,10 +126,11 @@ def start_preview(job_id,store,approved=False,actor='local_cli'):
         if not ready:raise RuntimeError('Preview did not become healthy within 180 seconds')
         smoke={}
         review=next((e['payload'] for e in reversed(record['events']) if e['status']=='PLAN_REVIEW'),{})
-        routes=review.get('requirements',{}).get('pages',['/']) if review.get('requirements',{}).get('spec_version')==2 else ['/','/api/tasks']
+        routes=['/'] if autonomous else review.get('requirements',{}).get('pages',['/']) if review.get('requirements',{}).get('spec_version')==2 else ['/','/api/tasks']
         for route in routes:
             with urlopen(url+route,timeout=5) as response:smoke[route]=response.status
         if not all(status==200 for status in smoke.values()):raise RuntimeError('Preview smoke test failed')
+        if autonomous and not evidence_current(store.read(job_id),store,workspace_boundary=PROJECT/'workspace'):raise ValueError('App-check evidence changed during preview startup')
         info=json.loads(docker('inspect',resources['container']))[0]
         expires=(datetime.now(timezone.utc)+timedelta(minutes=30)).isoformat()
         directory=PROJECT/'artifacts/preview'/job_id;directory.mkdir(parents=True,exist_ok=True)
@@ -127,7 +138,8 @@ def start_preview(job_id,store,approved=False,actor='local_cli'):
         log_path.write_text(docker('logs','--tail','100',resources['container']),encoding='utf-8')
         store.event(job_id,'PREVIEW_RUNNING',{'preview':resources,'url':url,'source_fingerprint':fingerprint,
                     'container_id':info['Id'],'container_pid':info['State']['Pid'],'expires_no_later_than':expires,
-                    'smoke_tests':smoke,'startup_logs':str(log_path),'data':'Disposable preview database; removed on stop/expiry'})
+                    'smoke_tests':smoke,'startup_logs':str(log_path),'data':'Disposable preview database; removed on stop/expiry',
+                    **({'verification_scope':'Current build and frozen browser assertions. Security, database restart and cloud deployment are not verified.'} if autonomous else {})})
     except Exception as exc:
         try:cleanup(resources,job_id)
         except Exception:pass

@@ -1395,3 +1395,27 @@ selection: **44 passed**, exit 0 (13 existing warnings). Prompt guidance is not 
 semantic guarantee: the separate 120B notes proposal still required runtime review
 before the user explicitly approved its exact corrected plan. That new run is
 generating source; the exhausted 20B run remains preserved.
+
+## Increment 39: bridge complete autonomous evidence to local preview
+
+The existing isolated preview lifecycle now accepts autonomous apps only after a
+complete current build/browser-contract pass and separate explicit preview approval.
+Partial evidence is insufficient. Startup rechecks source and contract evidence,
+uses the verified immutable dependency image for both app and fixed-target proxy,
+and smoke-tests the generic home route instead of assuming a task API. Existing
+localhost binding, internal app network, read-only source, disposable database,
+resource labels, stop/expiry and cleanup controls remain. Legacy security gates and
+release preparation are not changed; autonomous preview explicitly records its
+verification scope without claiming security audits or deployment readiness.
+
+New dashboard apps default to the demonstrated autonomous workflow; model selection
+remains local 7B unless the user explicitly chooses hosted/hybrid inference. The
+dashboard exposes preview only with current complete app evidence and hides the
+unintegrated legacy release controls for autonomous previews.
+
+Preview/API/approval selection: **34 passed**, exit 0; subsequent pinned-image preview
+selection: **11 passed**, exit 0 (13 existing warnings). TypeScript and production
+dashboard build passed. The focused tests cover source/contract changes during
+startup, invalid evidence before Docker, explicit consent, cleanup and stop. A test
+initially caught a workspace-boundary mismatch, corrected by passing the selected
+boundary explicitly. Live preview remains pending separate user approval.

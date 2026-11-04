@@ -107,7 +107,7 @@ def test_managed_approval_continues_from_build_to_independent_qa(client,monkeypa
     monkeypatch.setattr(build,'build_app',generated);monkeypatch.setattr(testing,'test_app',checked)
     result=execute(job,'approve',{'fingerprint':token,'approved':True},app.state.store,agent)
     assert result['status']=='AUTONOMOUS_APP_CHECKS_PASSED' and calls==[job]
-    with pytest.raises(ValueError,match='preview or publishing'):
+    with pytest.raises(ValueError,match='approval'):
         execute(job,'preview_start',{},app.state.store,agent)
 
 
@@ -116,6 +116,15 @@ def test_test_resume_requires_a_saved_safe_qa_task(client,monkeypatch):
     job,_,_,_=prepare(browser,app)
     app.state.store.event(job,'AUTONOMOUS_TEST_PAUSED',{'task_id':'missing','reason':'Interrupted fixture'})
     assert send(browser,headers,job,'resume_tests').status_code==409 and not calls
+
+
+@pytest.mark.parametrize('approved,status',[(False,422),(True,409)])
+def test_autonomous_preview_requires_consent_and_current_evidence_before_dispatch(client,monkeypatch,approved,status):
+    browser,app=client;headers=session(browser);calls=fake_submit(app,monkeypatch)
+    job,_,_,_=prepare(browser,app)
+    app.state.store.event(job,'AUTONOMOUS_APP_CHECKS_PASSED',{'scope':'An assertion is not evidence'})
+    assert send(browser,headers,job,'preview_start',approved=approved).status_code==status
+    assert not calls
 
 
 def test_frozen_contract_report_rejects_changed_bytes(client,tmp_path):

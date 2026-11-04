@@ -57,7 +57,10 @@ def execute(job_id,action,payload,store,agents):
         if action=='resume_tests':return test_app(job_id,agents,store,resume=True)
         if action=='retry_coverage':return test_app(job_id,agents,store,retry_coverage=True)
         if action=='test_selected':return test_app(job_id,agents,store,run_selected=True)
-        raise ValueError('This autonomous workflow does not yet support preview or publishing')
+        if action=='preview_start':return start_preview(job_id,store,approved=payload.get('approved') is True,actor='local_dashboard')
+        if action=='preview_stop':return stop_preview(job_id,store)
+        if action=='preview_status':return preview_status(job_id,store)
+        raise ValueError('This autonomous workflow does not yet support publishing')
     if action in {'prepare_release','publish_release','deploy_release','release_status'}:
         from forge.releases import prepare_release,publish_release,deploy_release,refresh_release
         if action=='prepare_release':return prepare_release(job_id,agents,store,payload['repository'])
