@@ -56,7 +56,6 @@ class RepairFocus(Envelope):
 
 class SourceTarget(Envelope):
     path: str
-    change: str = Field(min_length=1,max_length=500,description='Concise intended correction, not private reasoning.')
 
 
 SOURCE_TEXT_INSTRUCTION='''Implement or repair the one file named by write_target.
@@ -66,7 +65,7 @@ function and JSX element; do not copy an unfinished file ending from the current
 Preserve the original user request, clarification answers, review feedback and frozen
 acceptance assertions. Choose app-owned types and implementation details yourself.
 Use actual other files' exports and props, the supported runtime references and real
-compiler/browser evidence. repair_focus, selected_change and fresh_review are advisory;
+compiler/browser evidence. repair_focus and fresh_review are advisory;
 correct their hypothesis when the actual source/evidence disagrees. Never weaken tests,
 add dependencies, replace the requested app with a placeholder or claim execution.
 Use quoted 'use client'; before imports for interactive React modules. HTTP route and
@@ -290,7 +289,7 @@ class SourceAgent:
         return build_evidence(tools)
 
     def _raw_proposal(self,state,data,targets,tools,fingerprint,repairing,snapshot):
-        previous=getattr(self.agents,'activity',None);target=targets[0];change=None
+        previous=getattr(self.agents,'activity',None);target=targets[0]
         try:
             self.agents.activity=lambda status,payload:self.ledger.store.event(self.ledger.job_id,status,payload,update_status=False)
             if repairing and len(targets)>1:
@@ -299,11 +298,11 @@ class SourceAgent:
                     'Select an owned repair target from actual source and check evidence.',data,
                     agents=self.agents,task_id=state.task.id,parent_task_id=state.task.parent_id,task_state=state)
                 selected=schema.model_validate(self.agents.generate(schema,
-                    'Choose the owned file that needs correction. QA focus is advisory; use actual evidence. Return only target metadata, not source or an execution claim.',data,coding=True))
-                target=selected.path;change=selected.change
+                    'Choose the owned file that needs correction. QA focus is advisory; use actual evidence. Return only the path property from the schema. Source generation follows separately; do not add an explanation or execution claim.',data,coding=True))
+                target=selected.path
             tools.describe()
             if source_fingerprint(tools.root)!=fingerprint:raise ValueError('Workspace context changed during target selection; retrieve fresh source')
-            context={**data,'write_target':target,'file':target,'selected_change':change,'source_transport':'raw_complete_file'}
+            context={**data,'write_target':target,'file':target,'source_transport':'raw_complete_file'}
             context['source'],context['context_omitted'],context['source_inventory']=scope_source(snapshot,[target],tools.owners)
             context.pop('replace_rejected_patch',None);context.pop('edit_guidance',None)
             if repairing and data.get('rejected_state'):

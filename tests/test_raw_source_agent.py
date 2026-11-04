@@ -14,7 +14,9 @@ from test_workspace_tools import tools
 class RawAgent(Agent):
     def __init__(self,content,target=None):super().__init__(content);self.target=target;self.raw_calls=[]
     def generate(self,schema,instruction,data,**kwargs):
-        if schema.__name__=='SourceTarget':return schema.model_validate({'path':self.target or data['allowed_targets'][0],'change':'Correct the observed failure'})
+        if schema.__name__=='SourceTarget':
+            assert set(schema.model_fields)=={'path'}
+            return schema.model_validate({'path':self.target or data['allowed_targets'][0]})
         assert schema.__name__!='SourceEdit','Raw source must not be generated as a JSON tool body'
         return super().generate(schema,instruction,data,**kwargs)
     def generate_source(self,instruction,data):

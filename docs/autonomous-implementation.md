@@ -1286,3 +1286,19 @@ Provider and hybrid selection: **40 passed**, exit 0, with 13 existing warnings.
 Separately, the explicitly approved live hybrid counter generated its page using
 local 7B and passed its isolated TypeScript/production build; independent QA is still
 in progress. This is not yet an app-check or deployment pass.
+
+## Increment 32: keep repair selection metadata executable and minimal
+
+The next notes attempt selected a valid file but rejected its free-form `change`
+explanation because it exceeded 500 characters. Selecting a path does not require
+another prose repair plan: QA advice and current source/diagnostics already accompany
+the subsequent body call. `SourceTarget` now contains only the owned path. The builder
+can still override QA's target, and source/task/hash checks remain in place. This
+removes a nonessential failure mode without enlarging output limits or editing app
+source manually.
+
+Raw source, source ownership/context and hybrid regression selection: **59 passed**,
+exit 0, with the existing 13 warnings. The separate approved hybrid counter completed
+independent QA, including a real browser failure, rejected unchanged local repair and
+Groq escalation. Its final source and frozen contract passed `evidence_current` and
+the verification containers reported no cleanup errors. Notes QA is still pending.
