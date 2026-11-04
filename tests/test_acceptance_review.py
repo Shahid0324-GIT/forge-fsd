@@ -107,6 +107,17 @@ def test_optional_coverage_suggestions_do_not_block_required_scope(context):
     assert load_quality_review(ledger,state,review,suite.model_dump(),reference).suggestions
 
 
+def test_changed_review_protocol_cannot_reuse_old_approval(context,monkeypatch):
+    import forge.acceptance_review as module
+    ledger,state,review,_=context;agent=Reviewer();suite=AcceptanceSuite.model_validate(proposal())
+    reference=review_suite(ledger,state,agent,review,suite,lambda:None)
+    monkeypatch.setattr(module,'_protocol_hash',lambda:'e'*64)
+    with pytest.raises(ValueError,match='binding'):
+        load_quality_review(ledger,state,review,suite.model_dump(),reference)
+    fresh=review_suite(ledger,state,agent,review,suite,lambda:None)
+    assert fresh['report']!=reference['report'] and len(agent.calls)==2
+
+
 def test_scope_review_demotes_unrequested_blocker_and_preserves_its_evidence(context):
     ledger,state,review,_=context
     agent=Reviewer([{'criterion':2,'scenario':'counter_actions','reason':'Missing an unrequested feature',

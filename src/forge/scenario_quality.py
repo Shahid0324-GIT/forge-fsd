@@ -19,6 +19,27 @@ def _observations(steps):
     return dict(observed for step in steps if (observed:=_observation(step)) is not None)
 
 
+def exact_observation_conflicts(suite):
+    """Review obligations, not automatic failures: asynchronous UI can change itself."""
+    conflicts=[]
+    for case in suite['scenarios']:
+        seen={}
+        for index,step in enumerate(case['steps']):
+            if step['action'] in INTERACTIONS|{'visit'}:
+                seen.clear()
+            observed=_observation(step)
+            if observed is None or step['action']!='assert_text':continue
+            key,value=observed
+            if key in seen and seen[key][1]!=value:
+                previous,expected=seen[key]
+                conflicts.append({'scenario':case['id'],'steps':[previous+1,index+1],
+                    'target':step['target'],'exact_values':[expected,value],
+                    'review_question':'No interaction or navigation separates these different exact full-text expectations. '
+                        'Does an approved asynchronous state transition explain them? Otherwise require one complete container expectation or smaller semantic targets.'})
+            seen[key]=(index,value)
+    return conflicts
+
+
 def quality_findings(suite):
     """Find missing observations and provably unchallenged same-page reloads.
 

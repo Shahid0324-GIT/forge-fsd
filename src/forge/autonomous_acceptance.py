@@ -70,7 +70,7 @@ class ValueRoleTarget(RoleTarget):
 class Text(Envelope):
     action: Literal['assert_text']
     target: Annotated[TextRoleTarget | TextTarget,Field(discriminator='by')]
-    value: str = Field(max_length=600)
+    value: str = Field(max_length=600,description='Exact full visible innerText of the target, including all descendant text; whitespace is normalized. Not substring matching. For a region, include its heading and all rows, or target one smaller semantic element.')
 
 
 class Value(Envelope):
@@ -148,6 +148,10 @@ the desired behavior. 'No saved data' means no persistence across reloads, inclu
 browser storage as well as a database. Choose concrete
 inputs/expected results, not CSS selectors or JavaScript. The builder will receive
 this frozen contract so it can provide appropriate accessible controls.
+assert_text compares the complete visible text of its target, including descendants,
+with normalized whitespace. It is not a substring assertion. For a results region,
+assert its full text in one expectation or use smaller semantic targets; do not ask
+the same unchanged region to equal several different row values.
 Use a few concise scenarios with actual assertions. Each scenario starts at visit /
 or another approved app route in a fresh session. Use role/button/name for controls,
 label for labelled inputs, text for visible content, and assert_value for input values.

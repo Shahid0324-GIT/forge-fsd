@@ -2,12 +2,14 @@
 from forge.execution_models import execution_model
 import hashlib
 import json
+from pathlib import Path
 from typing import Annotated,Literal
 
 from pydantic import Field
 
 from forge.handoffs import record_handoff
 from forge.browser_capabilities import browser_capabilities
+from forge.scenario_quality import exact_observation_conflicts
 from forge.tasks import CheckEvidence,Envelope,Observation,Task
 
 
@@ -83,6 +85,14 @@ An uncovered entry with coverage=partial explicitly limits that criterion's scen
 claim to checked_behavior. Assess the effectiveness of that executable part, not the
 disclosed unverified remainder. Do not demand removing useful assertions or promote
 partial coverage to complete coverage. Missing supported behavior still blocks review.
+Use verification_capabilities.assertion_semantics: assert_text compares the target's
+ENTIRE visible innerText exactly after whitespace normalization, never a substring.
+For a named region containing headings and several rows, a single-row expected value
+does not match that region. Check exact_observation_conflicts: different exact values
+for the same target with no intervening action require an explicitly requested
+asynchronous transition; otherwise block the inconsistent proposal. Do not ask the
+builder to change correct app behavior to satisfy incompatible assertions. Request
+one full-region expectation or appropriate smaller semantic targets instead.
 Return assessed_criteria containing exactly the covered indices. Return issues with
 existing criterion/scenario references and concrete corrections; issues=[] only when
 you find no material gaps against the actual agreed scope. Do not rewrite tests or claim execution,
@@ -103,8 +113,14 @@ def _validate(decision,suite):
         raise ValueError('Quality findings must reference a scenario covering that criterion')
 
 
-def _path(ledger,state,digest):
-    return ledger.store.path.parent/'acceptance-plans'/ledger.job_id/f'quality-v2-{state.task.id}-r{state.revision}-{digest}.json'
+def _protocol_hash():
+    return hashlib.sha256(b''.join(Path(__file__).with_name(name).read_bytes() for name in
+        ['acceptance_review.py','browser_capabilities.py','scenario_quality.py'])).hexdigest()
+
+
+def _path(ledger,state,digest,version=3):
+    prefix='quality-v2' if version==2 else 'quality-v3-'+_protocol_hash()
+    return ledger.store.path.parent/'acceptance-plans'/ledger.job_id/f'{prefix}-{state.task.id}-r{state.revision}-{digest}.json'
 
 
 def _scoped_decision(original,assessment,review):
@@ -135,14 +151,19 @@ def _check_task(ledger,task_id,owner,parent,inputs,check,fingerprint,path):
 
 
 def load_quality_review(ledger,state,review,suite,reference):
-    digest=proposal_hash(suite);path=_path(ledger,state,digest)
-    if reference.get('report')!=str(path.resolve()) or path.stat().st_size>100000:
+    digest=proposal_hash(suite)
+    paths={str(_path(ledger,state,digest,v).resolve()):v for v in (2,3)}
+    if reference.get('report') not in paths:
         raise ValueError('Quality review report is outside its proposal binding')
+    path=Path(reference['report']);version=paths[str(path)]
+    if path.stat().st_size>100000:raise ValueError('Quality review exceeds its artifact budget')
     raw=path.read_bytes();fingerprint=hashlib.sha256(raw).hexdigest();packet=json.loads(raw)
-    expected={'version':2,'job_id':ledger.job_id,'parent_task_id':state.task.id,'parent_revision':state.revision,
+    expected={'version':version,'job_id':ledger.job_id,'parent_task_id':state.task.id,'parent_revision':state.revision,
         'review_fingerprint':review['fingerprint'],'proposal_fingerprint':digest,'task_id':reference['task_id']}
     if any(packet.get(key)!=value for key,value in expected.items()) or reference.get('fingerprint')!=fingerprint:
         raise ValueError('Quality review belongs to another proposal/revision or its evidence changed')
+    if version==3 and packet.get('review_protocol_sha256')!=_protocol_hash():
+        raise ValueError('Quality review belongs to another verification protocol')
     inputs={'parent_revision':state.revision,'review_fingerprint':review['fingerprint'],'proposal_fingerprint':digest}
     _check_task(ledger,packet['task_id'],'acceptance_reviewer',state.task.id,inputs,'scenario_review',fingerprint,path)
     original=AcceptanceCritique.model_validate(packet['original_decision']);_validate(original,suite)
@@ -176,6 +197,7 @@ def review_suite(ledger,state,agents,review,suite,authorize):
             'human_review_feedback':inputs.get('human_review_feedback',[]),
             'approved_criteria':review['draft']['acceptance_criteria'],
             'verification_capabilities':browser_capabilities(),
+            'exact_observation_conflicts':exact_observation_conflicts(data),
             'proposed_suite':data,'review_fingerprint':review['fingerprint'],'proposal_fingerprint':digest}
         if len(json.dumps(context,separators=(',',':')))>22000:
             ledger.pause(child,'Scenario review exceeds context budget',action_finished=True)
@@ -203,7 +225,7 @@ def review_suite(ledger,state,agents,review,suite,authorize):
                 assessment=ScopeAssessment.model_validate(agents.generate(ScopeAssessment,SCOPE_INSTRUCTION,scope_context,coding=True))
                 authorize();ledger.assert_active(state);decision=_scoped_decision(original,assessment,review)
                 scope={'task_id':scope_child.task.id,'decision':assessment.model_dump()}
-            packet={'version':2,'job_id':ledger.job_id,'parent_task_id':state.task.id,'parent_revision':state.revision,
+            packet={'version':3,'review_protocol_sha256':_protocol_hash(),'job_id':ledger.job_id,'parent_task_id':state.task.id,'parent_revision':state.revision,
                 'review_fingerprint':review['fingerprint'],'proposal_fingerprint':digest,'task_id':child.task.id,
                 'original_decision':original.model_dump(),'decision':decision.model_dump(),'scope_assessment':scope,
                 'scope':'Test-quality and requirements-scope model review only; no execution or app success.'}

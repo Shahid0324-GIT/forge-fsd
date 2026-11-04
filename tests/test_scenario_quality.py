@@ -45,3 +45,15 @@ def test_static_page_assertions_do_not_require_artificial_interactions():
 
 def test_unknown_initial_state_is_not_invented():
     validate_quality(suite(visit(),fill('text'),value('text'),visit(),value('text')))
+
+
+def test_different_exact_region_values_without_actions_are_flagged_for_scope_review():
+    from forge.scenario_quality import exact_observation_conflicts
+    def text(expected):return {'action':'assert_text','target':{'by':'role','value':'region','name':'Summary'},'value':expected}
+    data=suite(visit(),text('Subtotal 10'),text('Total 12'))
+    findings=exact_observation_conflicts(data)
+    assert findings[0]['steps']==[2,3] and findings[0]['exact_values']==['Subtotal 10','Total 12']
+    assert 'asynchronous' in findings[0]['review_question']
+    validate_quality(data)  # Timing behavior is a requirements judgment, not guessed by structure checks.
+    assert not exact_observation_conflicts(suite(visit(),text('10'),click('Update'),text('12')))
+    assert not exact_observation_conflicts(suite(visit(),text('10'),visit(),text('12')))

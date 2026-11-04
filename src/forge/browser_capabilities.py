@@ -6,6 +6,12 @@ def browser_capabilities():
         'actions':['visit/reload within one session','click','fill','select','check',
             'assert_visible','assert_text','assert_value','assert_count','assert_title'],
         'targets':['accessible role and name','label','text','placeholder'],
+        'assertion_semantics':{
+            'assert_text':'Exact complete visible innerText of one semantic target, including descendants; whitespace normalized. '
+                'A container with multiple rows cannot equal just one row. Combine its entire expected text into one assertion or target a smaller element. No substring operator.',
+            'assert_value':'Exact input value, not visible text or an accessible name.',
+            'assert_count':'Exact number of matches; it does not inspect attributes.',
+            'target_matching':'Exact accessible name, label, text or placeholder. Accessible names do not replace innerText.'},
         'unsupported':['CSS/XPath selectors','attribute assertions','keyboard actions',
             'storage/cookie inspection','screen-reader execution','server/container restart',
             'database filesystem inspection','security scans','cloud deployment'],

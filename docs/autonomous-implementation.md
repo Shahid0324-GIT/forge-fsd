@@ -1555,4 +1555,16 @@ controller blocker and saves the new proposal for inspection. It does not trigge
 another reviewer call, consume the remaining action budget in a loop, misclassify
 the problem as provider quota, or fabricate an app-runtime failure.
 
+Live calculator verification exposed another protocol misunderstanding: QA froze
+several different single-row `assert_text` expectations against the same results
+region. The runner correctly compares full normalized innerText, so correct totals
+could not satisfy those tests. Source repair was paused before spending calls on
+changing the app. Assertion semantics are now explicit in the response schema and
+shared QA/review context. A structural scan highlights different exact-text
+expectations without intervening interactions for requirements-aware review; it does
+not automatically reject legitimate asynchronous UI transitions. New quality reviews
+bind a protocol hash so an earlier review cannot be reused under changed semantics.
+Legacy reports remain readable as historical evidence; existing frozen tests are not
+silently edited or converted to substring matching.
+
 The unchanged counter was also rechecked against the new harness with inference and repairs disabled. Its complete current evidence passed, retaining source `c8ea02ef…` and frozen contract `25fa64a2…`. Hosted CI at the published commit remains successful. `test_app(recheck=True)` refreshes completed/stopped-preview evidence without regenerating its contract; a running preview is not eligible. No further paid-provider requests were made.
