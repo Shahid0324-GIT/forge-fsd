@@ -11,7 +11,10 @@ def browser_capabilities():
                 'A container with multiple rows cannot equal just one row. Combine its entire expected text into one assertion or target a smaller element. No substring operator.',
             'assert_value':'Exact input value, not visible text or an accessible name.',
             'assert_count':'Exact number of matches; it does not inspect attributes.',
-            'target_matching':'Exact accessible name, label, text or placeholder. Accessible names do not replace innerText.'},
+            'target_matching':'Exact accessible name, label, text or placeholder. Accessible names do not replace innerText. '
+                'Single-element actions require one match; assert_count intentionally allows multiple matches. '
+                'Framework accessibility nodes may share roles with app nodes: Next.js can supply a route-announcer alert. '
+                'Do not assume an unnamed alert target identifies only the app validation message; choose unambiguous names or exact visible text.'},
         'unsupported':['CSS/XPath selectors','attribute assertions','keyboard actions',
             'storage/cookie inspection','screen-reader execution','server/container restart',
             'database filesystem inspection','security scans','cloud deployment'],

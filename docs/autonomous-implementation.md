@@ -1574,4 +1574,10 @@ not only hybrid routing. Unversioned helper handoffs clear inherited revision fi
 Revising a QA task therefore cannot revive an expired completion or its old critic
 feedback, while ordinary same-revision correction still retains useful context.
 
+The same live browser reports showed an additional targeting limitation: unnamed
+`role=alert` matched both an app error and Next.js's route announcer. Shared target
+semantics now explain single-match requirements and framework-provided accessibility
+roles. This is runtime context for all generated apps, not a change to the calculator
+or a hidden exclusion in the browser runner. The failed evidence remains failed.
+
 The unchanged counter was also rechecked against the new harness with inference and repairs disabled. Its complete current evidence passed, retaining source `c8ea02ef…` and frozen contract `25fa64a2…`. Hosted CI at the published commit remains successful. `test_app(recheck=True)` refreshes completed/stopped-preview evidence without regenerating its contract; a running preview is not eligible. No further paid-provider requests were made.
