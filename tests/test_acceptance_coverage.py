@@ -23,3 +23,27 @@ def test_coverage_review_receives_exact_protocol_and_ignores_old_unbound_cache(c
     assert data['browser_capabilities_sha256']
     review_coverage(ledger,state,agent,review,suite,lambda:None)
     assert len(calls)==1
+
+
+def test_coverage_cache_is_bound_to_changed_limitation_and_checked_behavior(context):
+    ledger,state,review,agent=context;calls=[]
+    def generate(schema,instruction,data,**options):
+        calls.append(data)
+        assert 'REMAINING limitation' in instruction
+        return schema.model_validate({'can_check':False,'reason':'No screen reader execution','strategy':[]})
+    agent.generate=generate
+    data=proposal();data['uncovered']=[{'criterion':3,'reason':'Restart unavailable'},
+        {'criterion':2,'coverage':'partial','checked_behavior':'Visible increment',
+         'reason':'Screen reader announcement unavailable'}]
+    suite=AcceptanceSuite.model_validate(data)
+    review_coverage(ledger,state,agent,review,suite,lambda:None)
+    review_coverage(ledger,state,agent,review,suite,lambda:None)
+    assert len(calls)==2
+    assert calls[-1]['coverage_claim']['checked_behavior']=='Visible increment'
+    assert calls[-1]['existing_scenarios']==[suite.scenarios[0].model_dump()]
+    suite.uncovered[-1].reason='ARIA attribute inspection unavailable'
+    review_coverage(ledger,state,agent,review,suite,lambda:None)
+    assert len(calls)==3 and calls[-1]['qa_claim']=='ARIA attribute inspection unavailable'
+    suite.scenarios[0].steps[-1].target.value='Count: 2'
+    review_coverage(ledger,state,agent,review,suite,lambda:None)
+    assert len(calls)==4

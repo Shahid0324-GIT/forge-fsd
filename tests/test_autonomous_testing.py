@@ -121,19 +121,24 @@ def test_uncovered_requirements_block_promotion_without_running_superficial_chec
     assert result['events'][-1]['payload']['uncovered'] and not evidence_current(result,store,workspace_boundary=boundary)
 
 
-@pytest.fixture
-def partially_covered(tmp_path):
+@pytest.fixture(params=['separate','mixed'])
+def partially_covered(tmp_path,request):
     from forge.autonomous_planning import plan_app
     from forge.autonomous_review import review_snapshot
     from forge.persistence import JobStore
     from test_autonomous_planning import draft
-    proposal=draft().model_copy(update={'acceptance_criteria':['Display the calculated result','Persist state after server restart']})
+    mixed=request.param=='mixed'
+    proposal=draft().model_copy(update={'acceptance_criteria':
+        ['Display the calculated result and announce it to screen readers'] if mixed else
+        ['Display the calculated result','Persist state after server restart']})
     class PartialQA(QAAgent):
         def generate(self,schema,instruction,data,**kwargs):
             if schema.__name__=='AcceptanceSuite':
                 return schema.model_validate({'scenarios':[{'id':'result','criteria':[1],'steps':[
                     {'action':'visit','path':'/'},{'action':'assert_visible','target':{'by':'text','value':'3'}}]}],
-                    'uncovered':[{'criterion':2,'reason':'Requires server restart, outside browser protocol'}]})
+                    'uncovered':[{'criterion':1,'coverage':'partial','checked_behavior':'Visible calculated result',
+                        'reason':'Screen reader execution unavailable'}] if mixed else
+                        [{'criterion':2,'reason':'Requires server restart, outside browser protocol'}]})
             return super().generate(schema,instruction,data,**kwargs)
     agent=PartialQA(proposal);store=JobStore(tmp_path/'artifacts/jobs.sqlite3')
     job=plan_app('Display the calculated result and retain state after server restart.',agent,store)['job_id']
@@ -148,7 +153,7 @@ def test_supported_checks_execute_without_waiving_uncovered_requirements(partial
     result=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([True],seen))
     assert result['status']=='AUTONOMOUS_CHECKS_BLOCKED' and len(seen)==1
     event=result['events'][-1]['payload']
-    assert event['selected_checks_passed'] and event['uncovered'][0]['criterion']==2
+    assert event['selected_checks_passed'] and event['uncovered']
     assert not evidence_current(result,store,workspace_boundary=boundary)
     assert evidence_current(result,store,workspace_boundary=boundary,selected_only=True)
     if changed=='source':(boundary/job/'app/page.tsx').write_text('Changed after checks')

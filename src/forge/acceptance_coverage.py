@@ -37,6 +37,11 @@ storage/cookie inspection or screen-reader execution. assert_count does not gran
 selector or DOM-attribute access. A conditional strategy that would work only if an
 unavailable capability existed is NOT supported: return can_check=false. Preserve
 manual/unsupported requirements honestly; do not invent capabilities to force coverage.'''
+INSTRUCTION+=''' For coverage=partial, checked_behavior is already exercised by the
+supplied scenarios. Decide whether the REMAINING limitation in qa_claim can be checked
+with this protocol. can_check=true requires a strategy for that missing part; merely
+repeating checked_behavior is not a correction. A mixed criterion may have valid
+scenarios and an honest uncovered remainder without any contradiction.'''
 
 
 def review_coverage(ledger,state,agents,review,suite,authorize):
@@ -47,13 +52,18 @@ def review_coverage(ledger,state,agents,review,suite,authorize):
     capability_hash=hashlib.sha256(json.dumps(browser_schema,sort_keys=True).encode()).hexdigest()
     for item in suite.uncovered:
         authorize();ledger.assert_active(state)
-        path=ledger.store.path.parent/'acceptance-plans'/ledger.job_id/f'coverage-{state.task.id}-r{state.revision}-c{item.criterion}-{capability_hash[:16]}.json'
+        claim={'criterion':review['draft']['acceptance_criteria'][item.criterion-1],
+            'limitation':item.model_dump(),'scenarios':[case.model_dump() for case in suite.scenarios if item.criterion in case.criteria],
+            'review_fingerprint':review['fingerprint'],'browser_capabilities_sha256':capability_hash}
+        claim_hash=hashlib.sha256(json.dumps(claim,sort_keys=True).encode()).hexdigest()
+        path=ledger.store.path.parent/'acceptance-plans'/ledger.job_id/f'coverage-{state.task.id}-r{state.revision}-c{item.criterion}-{claim_hash}.json'
         if path.is_file():
             packet=json.loads(path.read_text(encoding='utf-8'));child=ledger.read(packet['task_id'])
             if child.status!='completed' or child.observations[-1].fingerprint!=hashlib.sha256(path.read_bytes()).hexdigest():
                 raise ValueError('Coverage-review evidence changed')
             decision=CoverageDecision.model_validate(packet['decision'])
             if packet.get('browser_capabilities_sha256')!=capability_hash:raise ValueError('Coverage review belongs to another browser protocol')
+            if packet.get('claim_sha256')!=claim_hash:raise ValueError('Coverage review belongs to another limitation or scenario')
         else:
             child=ledger.reserve_action(ledger.start(ledger.create(Task(parent_id=state.task.id,owner='coverage_reviewer',
                 goal='Review a claimed unsupported browser requirement.',inputs={'criterion':item.criterion,'review_fingerprint':review['fingerprint']},
@@ -62,6 +72,7 @@ def review_coverage(ledger,state,agents,review,suite,authorize):
                 'original_request':review['binding']['inputs']['original_request'],
                 'human_clarifications':review['binding']['inputs'].get('human_clarifications',[]),
                 'human_review_feedback':review['binding']['inputs'].get('human_review_feedback',[]),
+                'coverage_claim':item.model_dump(),'existing_scenarios':claim['scenarios'],
                 'browser_contract_schema':browser_schema,'browser_capabilities_sha256':capability_hash,
                 'available_actions':['visit/reload (same session)','click','fill','select','check',
                     'assert visible','assert text','assert form value','assert count','assert title']}
@@ -74,7 +85,7 @@ def review_coverage(ledger,state,agents,review,suite,authorize):
                 decision=CoverageDecision.model_validate(agents.generate(CoverageDecision,INSTRUCTION,context,coding=True))
                 authorize();ledger.assert_active(state)
                 path.parent.mkdir(parents=True,exist_ok=True)
-                with path.open('x',encoding='utf-8',newline='\n') as out:out.write(json.dumps({'task_id':child.task.id,'decision':decision.model_dump(),'browser_capabilities_sha256':capability_hash},indent=2))
+                with path.open('x',encoding='utf-8',newline='\n') as out:out.write(json.dumps({'task_id':child.task.id,'decision':decision.model_dump(),'browser_capabilities_sha256':capability_hash,'claim_sha256':claim_hash},indent=2))
                 fingerprint=hashlib.sha256(path.read_bytes()).hexdigest()
                 ledger.observe(child,Observation(revision=child.revision,fingerprint=fingerprint,checks=[CheckEvidence(
                     check='coverage_review',exit_code=0,fingerprint=fingerprint,report=str(path.resolve()),summary='Capability review proposal only; no app checks executed.')]))

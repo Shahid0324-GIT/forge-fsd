@@ -162,3 +162,29 @@ def test_legacy_contract_is_readable_without_claiming_new_quality_validation(con
 def test_test_protocol_rejects_external_navigation_code_empty_assertions_and_incomplete_coverage(change):
     data=proposal();change(data)
     with pytest.raises(ValueError):validate_coverage(AcceptanceSuite.model_validate(data),3)
+
+
+def test_partial_contract_preserves_executable_assertions_and_unverified_remainder(context):
+    ledger,state,review,agent=context
+    review['draft']['acceptance_criteria'][1]='Increment adds one and announces the result to screen readers'
+    data=proposal();data['uncovered'].append({'criterion':2,'coverage':'partial',
+        'checked_behavior':'Increment changes the visible count from zero to one',
+        'reason':'Screen-reader announcements cannot be exercised by this browser protocol'})
+    agent.generate=lambda schema,*args,**kwargs:schema.model_validate(data)
+    _,contract=freeze(context)
+    assert contract['suite']['scenarios']==AcceptanceSuite.model_validate(data).model_dump()['scenarios']
+    assert contract['suite']['uncovered']==data['uncovered']
+    assert contract['suite']['uncovered'][1]['coverage']=='partial'
+
+
+@pytest.mark.parametrize('change',[
+    lambda d:d['uncovered'][-1].update(checked_behavior=''),
+    lambda d:d['uncovered'][-1].update(criterion=3),
+    lambda d:d['uncovered'][-1].update(coverage='complete'),
+])
+def test_partial_coverage_needs_explicit_behavior_and_real_scenario(change):
+    data=proposal();data['uncovered']=[{'criterion':3,'reason':'Restart unavailable'},
+        {'criterion':2,'coverage':'partial','checked_behavior':'Visible increment',
+         'reason':'Screen reader execution unavailable'}]
+    change(data)
+    with pytest.raises(ValueError):validate_coverage(AcceptanceSuite.model_validate(data),3)

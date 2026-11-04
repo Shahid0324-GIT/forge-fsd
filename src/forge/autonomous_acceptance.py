@@ -110,9 +110,16 @@ class Uncovered(Envelope):
     reason: str = Field(min_length=1,max_length=400)
 
 
+class PartialCoverage(Uncovered):
+    coverage: Literal['partial']
+    checked_behavior: str = Field(min_length=1,max_length=400,
+        description='The specific observable part exercised by scenarios. reason describes the remaining unverified part, not the entire criterion.')
+
+
 class AcceptanceSuite(Envelope):
     scenarios: list[Scenario] = Field(max_length=6)
-    uncovered: list[Uncovered] = Field(default_factory=list,max_length=20)
+    uncovered: list[PartialCoverage | Uncovered] = Field(default_factory=list,max_length=20,
+        description='Unverified criteria or remaining parts. Partial entries also need real scenarios and never count as complete coverage.')
 
 
 def validate_coverage(suite,criterion_count):
@@ -121,8 +128,10 @@ def validate_coverage(suite,criterion_count):
     covered={index for case in suite.scenarios for index in case.criteria}
     missing=[item.criterion for item in suite.uncovered]
     if len(set(missing))!=len(missing):raise ValueError('Uncovered criterion indices must be unique')
-    overlap=covered.intersection(missing)
-    if overlap:raise ValueError(f'Criteria {sorted(overlap)} are both covered and uncovered. Reference each only in scenarios OR uncovered, never both; preserve real assertions.')
+    partial={item.criterion for item in suite.uncovered if isinstance(item,PartialCoverage)}
+    overlap=covered.intersection(missing)-partial
+    if overlap:raise ValueError(f'Criteria {sorted(overlap)} are both covered and uncovered without an explicit partial coverage declaration. Use coverage=partial and checked_behavior for mixed criteria; preserve real assertions and explain the unverified remainder in reason.')
+    if partial-covered:raise ValueError(f'Partial criteria {sorted(partial-covered)} need scenarios exercising checked_behavior; otherwise declare them entirely uncovered.')
     if covered|set(missing)!=set(range(1,criterion_count+1)):
         expected=set(range(1,criterion_count+1));actual=covered|set(missing)
         raise ValueError(f'Every criterion needs a scenario or uncovered reason. Missing: {sorted(expected-actual)}; invalid indices: {sorted(actual-expected)}. Indices are one-based.')
@@ -160,7 +169,13 @@ actions, mark it uncovered with a factual reason; do not substitute a superficia
 check or claim that a database restart, security or deployment was verified.
 Tests execute only after source generation/build. Return a test contract, not code,
 private reasoning or claims of execution. Correct reported protocol errors without
-dropping assertions or requested functionality.'''
+dropping assertions or requested functionality.
+For a criterion combining supported and unsupported checks, keep its executable part
+in scenarios and add an uncovered entry with coverage="partial", checked_behavior
+describing exactly what those scenarios check, and reason describing the unverified
+remainder. Do not drop valid checks or pretend the whole criterion is verified.
+Entirely unsupported criteria use ordinary uncovered entries without coverage or
+checked_behavior. Neither kind of uncovered entry permits a complete-success claim.'''
 
 
 def suite_path(ledger,state):

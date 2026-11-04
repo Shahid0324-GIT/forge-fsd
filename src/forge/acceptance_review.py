@@ -49,7 +49,10 @@ requirements. Adding two valid numbers does not require a non-numeric-input erro
 unless validation was requested. Missing the requested Add interaction or sum assertion
 does prevent testing the addition requirement and IS required. Optional edge coverage
 belongs in suggestions, not blocking requirements. Scope review does not assess app
-source or excuse missing requested functionality. Return one finding per zero-based
+source or excuse missing requested functionality. coverage_limitations with
+coverage=partial disclose checks the protocol cannot execute: do not require those
+as browser assertions or treat the executable part as a complete criterion pass.
+Return one finding per zero-based
 issue index. classification=required_behavior needs an exact relevant requirement
 quote from the provided requirements/criteria/feedback. classification=optional_coverage
 means the finding exceeds the agreed scope and cannot block QA. For optional findings explain that they exceed
@@ -75,6 +78,10 @@ Browser UI behavior alone cannot prove internal database technology, absence of 
 storage, database integrity, a server restart, security or deployment. If such a claim
 is assigned browser-only coverage, request an uncovered limitation or appropriate
 separate evidence instead of approving a superficial assertion.
+An uncovered entry with coverage=partial explicitly limits that criterion's scenario
+claim to checked_behavior. Assess the effectiveness of that executable part, not the
+disclosed unverified remainder. Do not demand removing useful assertions or promote
+partial coverage to complete coverage. Missing supported behavior still blocks review.
 Return assessed_criteria containing exactly the covered indices. Return issues with
 existing criterion/scenario references and concrete corrections; issues=[] only when
 you find no material gaps against the actual agreed scope. Do not rewrite tests or claim execution,
@@ -186,6 +193,7 @@ def review_suite(ledger,state,agents,review,suite,authorize):
                     required_checks=['scope_assessment']))),'requirements_reviewer')
                 scope_context={key:context[key] for key in ['original_request','human_clarifications','human_review_feedback','approved_criteria','review_fingerprint','proposal_fingerprint']}
                 scope_context['proposed_blockers']=[issue.model_dump() for issue in original.issues]
+                scope_context['coverage_limitations']=data['uncovered']
                 record_handoff(ledger.store,ledger.job_id,'acceptance_reviewer','requirements_reviewer',
                     'Ground proposed blockers in agreed requirements; optional coverage cannot expand app scope.',scope_context,
                     agents=agents,task_id=scope_child.task.id,parent_task_id=child.task.id,task_state=scope_child)

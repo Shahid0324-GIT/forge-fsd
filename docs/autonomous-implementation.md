@@ -1530,4 +1530,20 @@ The final controller checkpoint before this increment passed **587 tests**. Furt
 
 Seventeen isolation/recheck regressions passed. A bounded live notes verification made **zero model calls and zero source repairs**: TypeScript/build and both frozen browser scenarios passed for source `14735f69…`, contract `2114d311…`. Cleanup reported no errors and source remained unchanged. Those genuine reports were adopted through the normal controller checks after the prior dispatch was reconciled, with their paths and hashes recorded. The workflow correctly remains `AUTONOMOUS_CHECKS_BLOCKED`: current selected evidence is valid, while criterion 7 (SQLite file/directory location) is outside browser coverage. No complete readiness, restart, security or deployment claim is made.
 
+## Mixed acceptance criteria and partial browser coverage
+
+A criterion may combine an observable interaction with a check outside the current
+browser protocol. QA can preserve scenarios for the observable part and disclose the
+remainder in `uncovered` using `coverage: "partial"`, `checked_behavior`, and `reason`.
+Such entries require a real scenario referencing that criterion. Ordinary uncovered
+entries still cannot overlap scenario references. Existing contract shapes remain
+readable without adding default fields to their serialized evidence.
+
+Quality review assesses the explicitly checked portion; capability review assesses
+the remaining limitation. Capability review caches bind the exact requirement,
+limitation, scenarios, approved review and browser schema, so changed proposals cannot
+reuse a decision for a different claim. Both entirely and partially uncovered criteria
+keep overall verification blocked after selected checks pass. This does not waive
+requirements or unlock preview, publication, security or deployment gates.
+
 The unchanged counter was also rechecked against the new harness with inference and repairs disabled. Its complete current evidence passed, retaining source `c8ea02ef…` and frozen contract `25fa64a2…`. Hosted CI at the published commit remains successful. `test_app(recheck=True)` refreshes completed/stopped-preview evidence without regenerating its contract; a running preview is not eligible. No further paid-provider requests were made.
