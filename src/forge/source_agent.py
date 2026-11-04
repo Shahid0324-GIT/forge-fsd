@@ -202,7 +202,7 @@ class SourceAgent:
             'attempt':state.actions_used,'stalled_attempts':state.no_progress,'repair_mode':repairing,
             'previous_build':state.task.inputs.get('build_failure'),
             'recovery_strategy':state.recovery.model_dump() if state.recovery and state.reviewed_observations==len(state.observations) else None}
-        if len(json.dumps(data,separators=(',',':')))>22000:
+        if not repairing and len(json.dumps(data,separators=(',',':')))>22000:
             raise ValueError('Complete source/interface context exceeds this worker budget; split the task instead of silently dropping contracts')
         if getattr(self.agents,'trace_directory',None) is None:
             self.agents.trace_directory=self.ledger.store.path.parent/'model-calls'/self.ledger.job_id
@@ -245,6 +245,11 @@ class SourceAgent:
             # architecture before each correction. Keep all approved criteria.
             data['acceptance_criteria']=self.draft.acceptance_criteria
             data.pop('app_design',None)
+            # Check the actual repair packet after removing redundant planning and
+            # duplicate historical observations, not the temporary assembly above.
+            # Requirements, frozen assertions and current interfaces remain intact.
+            if len(json.dumps(data,separators=(',',':')))>22000:
+                raise ValueError('Focused repair context exceeds the complete-source budget; split the task')
             focus=self._focus(state,data,targets)
             # QA is another model invocation: inputs may have expired while it ran.
             # Revalidate before forwarding its diagnosis and source to the builder.

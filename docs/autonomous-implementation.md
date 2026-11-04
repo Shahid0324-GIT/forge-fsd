@@ -1339,3 +1339,18 @@ warnings). Focused partial-execution/tampering/repair/rerun checks: **5 passed**
 dashboard action/approval selection: **11 passed**. Dashboard TypeScript and production
 build passed. An earlier focused run caught a completed-parent re-observation error;
 the execution parent now starts a new revision before a selected-check re-run.
+
+## Increment 35: apply repair budgets to the packet actually sent
+
+The first notes browser checks reached the UI and found the frozen `Add` button
+target missing (`Add Note` was exposed). The repair then stopped before diagnosis:
+its context-size guard measured a temporary packet containing both architecture and
+duplicate history, before the existing repair-specific cleanup. The guard now runs
+after that cleanup and before QA dispatch. Generation retains its original check;
+the final builder packet is still checked after diagnosis. Full requirements,
+frozen assertions and current source interfaces are retained; limits are unchanged.
+
+Source/raw-repair/context selection: **45 passed**, exit 0, in 67.13 seconds (13 existing
+warnings), including the large-temporary/small-final regression and a truly oversized
+packet that must still stop before inference. The saved notes test task is resumable
+with the same independent contract. No app source was manually corrected.

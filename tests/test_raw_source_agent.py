@@ -101,6 +101,35 @@ def test_raw_source_uses_scoped_writer_and_records_body_call_identity(tools):
     assert report['initiator']=='model' and report['proposal_call_id']=='raw-source-call'
 
 
+def test_repair_budget_checks_final_context_after_removing_duplicate_history(tools):
+    state=configured(tools,'repair_build');fp=source_fingerprint(tools.root)
+    for _ in range(2):
+        state=tools.ledger.observe(state,Observation(revision=state.revision,fingerprint=fp,error='Previous attempt details '*60,
+            checks=[CheckEvidence(check='isolated_build',exit_code=1,fingerprint=fp,report='missing.json',
+                summary='app/page.tsx(1,1): error TS1234: '+('Compiler detail '*100))]))
+        state=tools.ledger.reserve_action(state,'frontend')
+    draft=tools.draft.model_copy(update={'design':'Original architecture details '*390})
+    agent=RawAgent('export default function Page(){return <main>Correct result</main>}')
+    SourceAgent(tools.ledger,agent,tools.root,draft,workspace_boundary=tools.root.parent,check_runner=good_check)(state)
+    context=agent.raw_calls[0]
+    assert context['acceptance_criteria']==draft.acceptance_criteria
+    assert 'app_design' not in context and 'recent_failures' not in context
+    assert context['latest_build_failure']['fingerprint']==fp
+
+
+def test_oversized_final_repair_packet_still_stops_before_model_dispatch(tools):
+    state=configured(tools,'repair_build')
+    task=state.task.model_copy(update={'inputs':{**state.task.inputs,'original_request':'Requirement '*2200}})
+    state=tools.ledger.reserve_action(tools.ledger.start(tools.ledger.revise(state,task)),'frontend')
+    fp=source_fingerprint(tools.root)
+    state=tools.ledger.observe(state,Observation(revision=state.revision,fingerprint=fp,
+        checks=[CheckEvidence(check='isolated_build',exit_code=1,fingerprint=fp,report='missing.json',summary='app/page.tsx(1,1): error TS1234: failure')]))
+    state=tools.ledger.reserve_action(state,'frontend');agent=RawAgent('Must not write')
+    with pytest.raises(ValueError,match='budget'):
+        SourceAgent(tools.ledger,agent,tools.root,tools.draft,workspace_boundary=tools.root.parent,check_runner=good_check)(state)
+    assert not agent.raw_calls and agent.data is None
+
+
 def test_raw_repair_can_choose_another_owned_file_without_following_wrong_qa_target(tools):
     state=configured(tools,'repair_build')
     draft=tools.draft.model_copy(update={'files':[*tools.draft.files,
