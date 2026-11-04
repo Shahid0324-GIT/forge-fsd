@@ -20,6 +20,7 @@ from forge.builders import PROJECT
 from forge.handoffs import record_handoff
 from forge.schemas import Boundary
 from forge.workspace import safe_path, source_fingerprint
+from forge.tasks import TaskLedger,Task,Dependency,CheckEvidence,Observation
 
 CHECKOUT = 'd23441a48e516b6c34aea4fa41551a30e30af803'
 NODE = '249970729cb0ef3589644e2896645e5dc5ba9c38'
@@ -59,31 +60,102 @@ def release_gate(record, root):
     return check_preview_gate(candidate, root)
 
 
+def source_release_gate(job_id,store,root):
+    from forge.autonomous_planning import uses_autonomous_planning
+    from forge.autonomous_testing import evidence_current
+    record=store.read(job_id)
+    if not uses_autonomous_planning(record):return release_gate(record,root)
+    if record['status'] not in {'AUTONOMOUS_APP_CHECKS_PASSED','PREVIEW_RUNNING','PREVIEW_STOPPED','PREVIEW_FAILED'}:
+        raise ValueError('Release preparation requires a complete current app-check pass')
+    if not evidence_current(record,store,workspace_boundary=PROJECT/'workspace'):
+        raise ValueError('Release preparation requires current source-bound build/browser evidence')
+    return next(e['payload']['source_fingerprint'] for e in reversed(record['events']) if e['status']=='AUTONOMOUS_APP_CHECKS_PASSED')
+
+
+def release_notes(agents,store,job_id,role,sender,summary,schema,instruction,context,parent=None):
+    """Bind each autonomous release role to a real task, without shell capabilities."""
+    ledger=TaskLedger(store,job_id)
+    source=next(e['payload'] for e in reversed(store.read(job_id)['events']) if e['status']=='AUTONOMOUS_APP_CHECKS_PASSED')
+    upstream=ledger.read(parent or source['task_id'])
+    context_hash=hashlib.sha256(json.dumps(context,sort_keys=True).encode()).hexdigest()
+    inputs={'source_fingerprint':context['source_fingerprint'],'repository':context['repository'],'context_fingerprint':context_hash}
+    matches=[task for task in ledger.list() if task.task.owner==role and task.task.parent_id==upstream.task.id
+        and task.task.inputs==inputs and any(d.task_id==upstream.task.id and d.revision==upstream.revision for d in task.task.dependencies)
+        and task.status in {'completed','paused'}]
+    if len(matches)>1:raise ValueError('Multiple release role checkpoints need reconciliation')
+    current=matches[0] if matches else None
+    if current and current.status=='completed':
+        path=store.path.parent/'release-notes'/job_id/(current.task.id+'.json');raw=path.read_bytes()
+        if hashlib.sha256(raw).hexdigest()!=current.observations[-1].fingerprint:raise ValueError('Saved release notes changed; inspect the checkpoint')
+        notes=schema.model_validate(json.loads(raw)['notes'])
+        store.event(job_id,'RELEASE_NOTES_REUSED',{'task_id':current.task.id,'context_fingerprint':context_hash},update_status=False)
+        return notes,current.task.id
+    if current:
+        state=ledger.reserve_action(ledger.start(ledger.resume(current,additional_actions=1)),role)
+        context={**context,'previous_role_errors':[o.error for o in state.observations if o.revision==state.revision and o.error][-2:]}
+    else:
+        state=ledger.reserve_action(ledger.start(ledger.create(Task(owner=role,parent_id=upstream.task.id,
+            goal=summary,inputs=inputs,dependencies=[Dependency(task_id=upstream.task.id,revision=upstream.revision)],required_checks=['release_notes']))),role)
+    previous=getattr(agents,'invocation_context',{});activity=getattr(agents,'activity',None)
+    try:
+        record_handoff(store,job_id,sender,role,summary,context,agents=agents,task_id=state.task.id,parent_task_id=upstream.task.id,task_state=state)
+        agents.activity=lambda status,payload:store.event(job_id,status,payload,update_status=False)
+        notes=schema.model_validate(agents.generate(schema,instruction,context))
+        ledger.assert_active(state)
+        path=store.path.parent/'release-notes'/job_id/(state.task.id+'.json');path.parent.mkdir(parents=True,exist_ok=True)
+        path.write_text(json.dumps({'notes':notes.model_dump(),'source_fingerprint':context['source_fingerprint'],
+            'scope':'Validated planning notes only; no CI run or deployment is claimed.'},indent=2),encoding='utf-8')
+        digest=hashlib.sha256(path.read_bytes()).hexdigest()
+        ledger.observe(state,Observation(revision=state.revision,fingerprint=digest,checks=[CheckEvidence(
+            check='release_notes',exit_code=0,fingerprint=digest,report=str(path.resolve()),summary='Planning notes validated; execution is separate.')]))
+        return notes,state.task.id
+    except Exception as exc:
+        try:
+            current=ledger.read(state.task.id)
+            if current.status=='running':
+                current=ledger.observe(current,Observation(revision=current.revision,fingerprint=context['source_fingerprint'],error=f'{type(exc).__name__}: {exc}'[:2000]))
+                ledger.pause(current,'Release role needs correction; no release bundle approved')
+        except Exception:pass
+        raise
+    finally:agents.invocation_context=previous;agents.activity=activity
+
+
 def preparation_graph(agents, store, job_id):
+    ci_task=None
     def ci(state):
-        record_handoff(store, job_id, 'verification_controller', 'ci_agent',
+        nonlocal ci_task
+        if not state['context'].get('autonomous'):record_handoff(store, job_id, 'verification_controller', 'ci_agent',
                        'Prepare generated-app CI from the approved contract and current evidence.', state['context'],agents=agents)
         store.event(job_id, 'CI_PLANNING', {'delegated_to':'ci_agent'}, update_status=False)
-        notes = CINotes.model_validate(agents.generate(CINotes,
+        instruction=(
             'You are the generated-application CI Agent. Explain the supplied fixed CI policy: '
             'locked dependency provisioning, offline Docker typecheck/build, approved HTTP checks, '
             'and applicable restart/database checks. Do not invent execution results or emit YAML/commands. '
             'These are app checks, not Forge controller tests. HTTP acceptance checks assert response '
             'values/statuses; they do NOT authorize user requests or add authentication. Dependency '
             'provisioning uses network access; execution is offline. Do not imply otherwise. '
-            'Discuss database/restart checks only if this supplied app uses SQLite. State limited coverage.', state['context']))
+            'Discuss database/restart checks only if this supplied app uses SQLite. State limited coverage.')
+        if state['context'].get('autonomous'):
+            instruction='Explain only this fixed CI policy: locked dependency provisioning, offline TypeScript/production build and GET / homepage smoke. There are zero hosted API scenarios and no hosted browser replay; browser acceptance already ran locally. Do not claim CI executed, security audits or deployment. Return bounded review notes, never YAML or commands.'
+            notes,ci_task=release_notes(agents,store,job_id,'ci_agent','verification_controller',
+                'Prepare generated-app CI from the current verified source and explicit limited CI policy.',CINotes,instruction,state['context'])
+        else:notes=CINotes.model_validate(agents.generate(CINotes,instruction,state['context']))
         return {'ci':notes.model_dump()}
     def deployment(state):
         context = {**state['context'], 'ci_agent':state['ci']}
-        record_handoff(store, job_id, 'ci_agent', 'deployment_agent',
+        if not context.get('autonomous'):record_handoff(store, job_id, 'ci_agent', 'deployment_agent',
                        'Plan a separate approved Vercel deployment after generated-app CI.', context,agents=agents)
         store.event(job_id, 'DEPLOYMENT_PLANNING', {'delegated_to':'deployment_agent'}, update_status=False)
-        notes = DeploymentNotes.model_validate(agents.generate(DeploymentNotes,
+        instruction=(
             'You are the generated-application Deployment Agent. Target Vercel. Explain only the supplied '
             'deployment eligibility and blockers. SQLite deployment is blocked until a remote database '
             'adapter is implemented; a URL alone is insufficient. Deployment needs its own approval, '
             'passing CI at the published commit and preconfigured Vercel project secrets. '
-            'Never claim deployment has happened or request secret values.', context))
+            'Never claim deployment has happened or request secret values.')
+        if context.get('autonomous'):
+            notes,_=release_notes(agents,store,job_id,'deployment_agent','ci_agent',
+                'Plan a separately approved stateless Vercel deployment after generated-app CI.',DeploymentNotes,instruction,context,parent=ci_task)
+        else:notes=DeploymentNotes.model_validate(agents.generate(DeploymentNotes,instruction,context))
         return {'deployment':notes.model_dump()}
     graph = StateGraph(ReleaseState)
     graph.add_node('ci_agent',ci);graph.add_node('deployment_agent',deployment)
@@ -185,16 +257,24 @@ def _save_report(directory, name, report):
 def prepare_release(job_id, agents, store, repository):
     validate_repository(repository)
     record=store.read(job_id);root=PROJECT/'workspace'/job_id
-    fingerprint=release_gate(record,root)
-    review=next(e['payload'] for e in reversed(record['events']) if e['status']=='PLAN_REVIEW')
+    fingerprint=source_release_gate(job_id,store,root)
+    from forge.autonomous_planning import uses_autonomous_planning
+    autonomous=uses_autonomous_planning(record)
+    if autonomous:
+        from forge.autonomous_review import approved_review
+        approved=approved_review(job_id,store)
+        if approved['draft']['database']!='none':raise ValueError('Autonomous release preparation currently supports stateless apps; SQLite CI/deployment adapters remain pending')
+        review={'requirements':{'spec_version':2,'database':'none','pages':['/'],'entities':[],'scenarios':[]},'plan':approved['draft']}
+    else:review=next(e['payload'] for e in reversed(record['events']) if e['status']=='PLAN_REVIEW')
     database=review['requirements'].get('database','sqlite')
     context={'job_id':job_id,'repository':repository,'source_fingerprint':fingerprint,
              'requirements':review['requirements'],'plan':review['plan'],
              'local_gates':'passed for this source','deployment_allowed':database=='none',
-             'blockers':[] if database=='none' else ['Remote database adapter is not implemented; SQLite cannot persist on Vercel.']}
+             'blockers':[] if database=='none' else ['Remote database adapter is not implemented; SQLite cannot persist on Vercel.'],
+             **({'autonomous':True,'ci_policy':'Offline typecheck/build and homepage HTTP smoke only. Local frozen browser checks are separate; no hosted API scenarios or browser replay.'} if autonomous else {})}
     with tracing_context(enabled=False):
         result=preparation_graph(agents,store,job_id).invoke({'context':context})
-    if release_gate(store.read(job_id),root)!=fingerprint:raise ValueError('Source changed during release preparation')
+    if source_release_gate(job_id,store,root)!=fingerprint:raise ValueError('Source changed during release preparation')
     directory=PROJECT/'artifacts/releases'/job_id/uuid4().hex;bundle=directory/'bundle';bundle.mkdir(parents=True)
     # Explicitly bounded, verified source only; never copy local credentials or build directories.
     for path in root.rglob('*'):
@@ -205,7 +285,7 @@ def prepare_release(job_id, agents, store, repository):
             if path.suffix in {'.db','.sqlite','.sqlite3','.pem','.key'}:raise ValueError('Runtime data or keys cannot be published')
             target=bundle/relative;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(path.read_bytes())
     acceptance=bundle/'.forge/acceptance';acceptance.mkdir(parents=True)
-    for name in ['verify.mjs','application.mjs','tasks.mjs','database.mjs','platform-reference.txt']:
+    for name in ['verify.mjs','application.mjs','tasks.mjs','database.mjs','platform-reference.txt','homepage-smoke.mjs']:
         shutil.copyfile(PROJECT/'tests/acceptance'/name,acceptance/name)
     dependencies=bundle/'.forge/dependencies';dependencies.mkdir()
     shutil.copyfile(PROJECT/'templates/task-app/Dockerfile.dependencies',dependencies/'Dockerfile.dependencies')
@@ -213,9 +293,15 @@ def prepare_release(job_id, agents, store, repository):
         if (root/name).read_bytes()!=(PROJECT/'templates/task-app'/name).read_bytes():raise ValueError('Release dependencies differ from the verified fixed platform')
         shutil.copyfile(root/name,dependencies/name)
     generic=review['requirements'].get('spec_version')==2
-    (bundle/'.forge/contract.json').write_text(json.dumps({'requirements':review['requirements'],'plan':review['plan']}),encoding='utf-8')
+    (bundle/'.forge/contract.json').write_text(json.dumps({'requirements':review['requirements'],'plan':review['plan'],
+        **({'verification_scope':'build-homepage-smoke'} if autonomous else {})}),encoding='utf-8')
     workflows=bundle/'.github/workflows';workflows.mkdir(parents=True)
-    (workflows/'app-ci.yml').write_text(ci_workflow(generic),encoding='utf-8')
+    workflow=ci_workflow(generic)
+    if autonomous:
+        workflow=workflow.replace('name: Generated app CI','name: Generated app build CI').replace(
+            'Typecheck, build and exercise the approved application contract offline',
+            'Typecheck, build and homepage HTTP smoke (browser QA ran locally)')
+    (workflows/'app-ci.yml').write_text(workflow,encoding='utf-8')
     if database=='none':(workflows/'deploy.yml').write_text(deploy_workflow(),encoding='utf-8')
     (bundle/'.gitignore').write_text('node_modules/\n.next/\n.vercel/\n.env*\n!.env.example\ndata/\n*.sqlite*\n',encoding='utf-8')
     report={**context,'ci_agent':result['ci'],'deployment_agent':result['deployment'],
@@ -223,7 +309,7 @@ def prepare_release(job_id, agents, store, repository):
             'workflows':{path.name:path.read_text(encoding='utf-8') for path in sorted(workflows.glob('*.yml'))},
             'required_secret_names':sorted(SECRETS) if database=='none' else [],
             'cloud_deployed':False,'ci_executed':False,
-            'limitations':['Hosted CI includes approved API checks, not a complete security audit or general browser coverage.',
+            'limitations':[('Hosted CI runs typecheck/build and homepage smoke only; local frozen browser checks are not replayed in hosted CI.' if autonomous else 'Hosted CI includes approved API checks, not a complete security audit or general browser coverage.'),
                            'Vercel project creation/linking and project secrets must be configured before deployment.',
                            'Vercel CLI is version-pinned; its transient transitive dependencies are resolved during deployment.']}
     report['release_fingerprint']=hashlib.sha256(json.dumps(report,sort_keys=True).encode()).hexdigest()
@@ -243,7 +329,7 @@ def reviewed_release(job_id,store,fingerprint):
     bundle=Path(report['bundle_directory']);expected=(PROJECT/'artifacts/releases'/job_id).resolve()
     if not bundle.resolve().is_relative_to(expected):raise ValueError('Release bundle is outside its boundary')
     if source_fingerprint(bundle)!=report['bundle_fingerprint']:raise ValueError('Release bundle changed; prepare a new review')
-    if release_gate(record,PROJECT/'workspace'/job_id)!=report['source_fingerprint']:raise ValueError('Generated source changed; prepare a new release')
+    if source_release_gate(job_id,store,PROJECT/'workspace'/job_id)!=report['source_fingerprint']:raise ValueError('Generated source changed; prepare a new release')
     return report,bundle
 
 

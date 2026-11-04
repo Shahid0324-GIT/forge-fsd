@@ -48,7 +48,7 @@ class Action(Boundary):
 
 
 ALLOWED={
-    **{action:{'SECURITY_PASSED','PREVIEW_RUNNING','PREVIEW_STOPPED','PREVIEW_FAILED'} for action in ['prepare_release','publish_release','deploy_release','release_status']},
+    **{action:{'SECURITY_PASSED','PREVIEW_RUNNING','PREVIEW_STOPPED','PREVIEW_FAILED','AUTONOMOUS_APP_CHECKS_PASSED'} for action in ['prepare_release','publish_release','deploy_release','release_status']},
     'browser_check':{'FUNCTIONALLY_VERIFIED','SECURITY_PASSED','PREVIEW_RUNNING','PREVIEW_STOPPED','PREVIEW_FAILED'},
     'retry_build':{'FAILED'},
     'retry_plan':{'FAILED'},
@@ -229,7 +229,7 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
             return {'operation':manager.read(existing[0])}
         if current['status'] not in ALLOWED[body.action]:raise HTTPException(409,'That action is unavailable in the current job state')
         autonomous=uses_autonomous_planning(current)
-        if autonomous and body.action not in {'answer','resume_planning','approve','reject','revise_plan','continue','resume_build','test_app','resume_tests','retry_coverage','test_selected','preview_start','preview_stop','preview_status'}:
+        if autonomous and body.action not in {'answer','resume_planning','approve','reject','revise_plan','continue','resume_build','test_app','resume_tests','retry_coverage','test_selected','preview_start','preview_stop','preview_status','prepare_release','publish_release','deploy_release','release_status'}:
             raise HTTPException(409,'This workflow does not yet support preview or publishing')
         if body.action=='resume_planning' and not resumable_planning(current,store):
             raise HTTPException(409,'Planning needs saved-task inspection before it can resume')

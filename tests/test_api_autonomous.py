@@ -79,7 +79,7 @@ def test_resume_requires_a_safe_saved_planning_pause(client,monkeypatch,interrup
         assert result['job_id']==job and result['status']=='AUTONOMOUS_DRAFT_READY'
 
 
-@pytest.mark.parametrize('action,error',[('preview_start','approval'),('publish_release','does not yet support publishing')])
+@pytest.mark.parametrize('action,error',[('preview_start','approval'),('publish_release','approval')])
 def test_autonomous_jobs_preserve_preview_consent_and_publication_boundary(client,action,error):
     _,app=client;agent=Agent(draft())
     result=plan_app('Build a small interactive page.',agent,app.state.store)

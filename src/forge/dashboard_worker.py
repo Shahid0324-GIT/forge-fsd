@@ -60,6 +60,12 @@ def execute(job_id,action,payload,store,agents):
         if action=='preview_start':return start_preview(job_id,store,approved=payload.get('approved') is True,actor='local_dashboard')
         if action=='preview_stop':return stop_preview(job_id,store)
         if action=='preview_status':return preview_status(job_id,store)
+        if action in {'prepare_release','publish_release','deploy_release','release_status'}:
+            from forge.releases import prepare_release,publish_release,deploy_release,refresh_release
+            if action=='prepare_release':return prepare_release(job_id,agents,store,payload['repository'])
+            if action=='publish_release':return publish_release(job_id,store,payload.get('fingerprint',''),approved=payload.get('approved') is True)
+            if action=='deploy_release':return deploy_release(job_id,store,payload.get('fingerprint',''),approved=payload.get('approved') is True)
+            return refresh_release(job_id,store,payload['fingerprint'])
         raise ValueError('This autonomous workflow does not yet support publishing')
     if action in {'prepare_release','publish_release','deploy_release','release_status'}:
         from forge.releases import prepare_release,publish_release,deploy_release,refresh_release

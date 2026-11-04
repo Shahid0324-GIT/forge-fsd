@@ -3,7 +3,9 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 const results = [];
 const contract=process.env.FORGE_APP_CONTRACT?JSON.parse(readFileSync(process.env.FORGE_APP_CONTRACT,'utf8')):null;
-const harness=contract?'/trusted/application.mjs':'/trusted/tasks.mjs';
+const smokeOnly=contract?.verification_scope==='build-homepage-smoke';
+if (smokeOnly && (contract.requirements.database!=='none' || contract.requirements.scenarios.length)) throw new Error('Homepage smoke scope requires a stateless contract with no API scenarios');
+const harness=smokeOnly?'/trusted/homepage-smoke.mjs':contract?'/trusted/application.mjs':'/trusted/tasks.mjs';
 async function check(name, args, timeout=240000) {
   const started = Date.now();
   const result = await new Promise(resolve => {
@@ -35,7 +37,7 @@ let passed = await check('typecheck',['/opt/forge-deps/node_modules/typescript/b
 if (passed) passed = await check('production_build',['/opt/forge-deps/node_modules/next/dist/bin/next','build','--webpack']);
 if (passed) {
   let server=startServer();
-  try { passed = await check('acceptance',[harness],120000); }
+  try { passed = await check(smokeOnly?'homepage_smoke':'acceptance',[harness],120000); }
   finally { await stopServer(server); }
   if (passed && (!contract || contract.requirements.scenarios.some(item=>item.phase==='restart'))) {
     server=startServer();
