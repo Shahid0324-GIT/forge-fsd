@@ -204,12 +204,14 @@ def proposal_context(ledger,state,review):
         # Recover a pre-proposal-persistence trial using its controller invocation trace.
         call=next((e['payload'] for e in reversed(ledger.store.read(ledger.job_id)['events'])
             if e['status']=='AGENT_CALL_COMPLETED' and e['payload'].get('schema')=='AcceptanceSuite'
-            and e['payload'].get('task_id')==state.task.id and e['payload'].get('report')),None)
+            and e['payload'].get('task_id')==state.task.id and e['payload'].get('task_revision')==state.revision
+            and e['payload'].get('report')),None)
         if call:
             path=Path(call['report']).resolve()
             if path.is_relative_to(ledger.store.path.parent.resolve()) and path.stat().st_size<=160000:
                 trace=json.loads(path.read_text(encoding='utf-8'))
-                if trace.get('job_id')==ledger.job_id and not trace.get('output_truncated'):
+                if (trace.get('job_id')==ledger.job_id and trace.get('task_revision')==state.revision
+                    and not trace.get('output_truncated')):
                     try:previous=AcceptanceSuite.model_validate_json(trace['output']).model_dump()
                     except (ValueError,KeyError):pass
     # Independent behavior QA needs the agreed design/criteria, not source-file
@@ -219,7 +221,7 @@ def proposal_context(ledger,state,review):
     omitted={key:hashlib.sha256(json.dumps(review['draft'][key],sort_keys=True).encode()).hexdigest()
         for key in ('files','test_strategy') if key in review['draft']}
     data={**review['binding']['inputs'],'approved_design':design,'approved_design_omitted':omitted,'review_fingerprint':review['fingerprint'],
-        'previous_proposal':previous,'protocol_errors':[o.error for o in state.observations[-2:] if o.error],
+        'previous_proposal':previous,'protocol_errors':[o.error for o in state.observations if o.revision==state.revision and o.error][-2:],
         'browser_protocol_constraints':browser_capabilities(),
         'correction_instruction':'Correct the precise protocol errors in the previous proposal. Return the complete contract without dropping valid assertions.'}
     if state.recovery and state.reviewed_observations==len(state.observations):data['fresh_review']=state.recovery.model_dump()

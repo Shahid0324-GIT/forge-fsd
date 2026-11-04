@@ -207,3 +207,31 @@ def test_identical_rejected_proposal_after_senior_review_stops_paid_retry_cycle(
             review_quality=lambda suite:pytest.fail('No repeated reviewer dispatch'))
     assert len(list(suite_path(ledger,state).parent.glob('proposal-*.json')))==2
     assert not suite_path(ledger,state).exists()
+
+
+def test_revised_qa_excludes_old_errors_and_trace_fallback(context):
+    from forge.autonomous_acceptance import proposal_context
+    ledger,state,review,_=context
+    trace=ledger.store.path.parent/'old-call.json'
+    def record(revision):
+        trace.write_text(json.dumps({'job_id':ledger.job_id,'task_revision':revision,
+            'output':json.dumps(proposal()),'output_truncated':False}),encoding='utf-8')
+        ledger.store.event(ledger.job_id,'AGENT_CALL_COMPLETED',{'schema':'AcceptanceSuite',
+            'task_id':state.task.id,'task_revision':revision,'report':str(trace.resolve())},update_status=False)
+    record(state.revision)
+    state=ledger.observe(state,Observation(revision=state.revision,fingerprint='a'*64,error='Old contract feedback'))
+    state=ledger.revise(state,state.task)
+    data=proposal_context(ledger,state,review)
+    assert data['previous_proposal'] is None and data['protocol_errors']==[]
+    record(state.revision)
+    assert proposal_context(ledger,state,review)['previous_proposal']==AcceptanceSuite.model_validate(proposal()).model_dump()
+
+
+def test_task_handoff_binds_non_hybrid_invocations_to_current_revision(context):
+    from forge.handoffs import record_handoff
+    ledger,state,_,agent=context
+    packet=record_handoff(ledger.store,ledger.job_id,'coordinator','qa','Current QA inputs',{},
+        agents=agent,task_id=state.task.id,task_state=state)
+    assert packet['task_revision']==agent.invocation_context['task_revision']==state.revision
+    record_handoff(ledger.store,ledger.job_id,'qa','helper','Unversioned helper',{},agents=agent)
+    assert 'task_revision' not in agent.invocation_context and 'task_version' not in agent.invocation_context

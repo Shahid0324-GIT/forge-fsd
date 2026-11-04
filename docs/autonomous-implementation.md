@@ -1567,4 +1567,11 @@ bind a protocol hash so an earlier review cannot be reused under changed semanti
 Legacy reports remain readable as historical evidence; existing frozen tests are not
 silently edited or converted to substring matching.
 
+QA correction context now filters errors by task revision. Trace recovery requires
+the same revision in both the recorded completion and its trace, rather than using
+task ID alone. All versioned handoffs record task revision/version for every provider,
+not only hybrid routing. Unversioned helper handoffs clear inherited revision fields.
+Revising a QA task therefore cannot revive an expired completion or its old critic
+feedback, while ordinary same-revision correction still retains useful context.
+
 The unchanged counter was also rechecked against the new harness with inference and repairs disabled. Its complete current evidence passed, retaining source `c8ea02ef…` and frozen contract `25fa64a2…`. Hosted CI at the published commit remains successful. `test_app(recheck=True)` refreshes completed/stopped-preview evidence without regenerating its contract; a running preview is not eligible. No further paid-provider requests were made.

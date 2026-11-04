@@ -26,6 +26,9 @@ def record_handoff(store, job_id, sender, recipient, summary, context, *, agents
     identity={'version':1,'job_id':job_id,'handoff_id':handoff_id,'task_id':task_id,'parent_task_id':parent,
               'sender':sender,'recipient':recipient,'summary':summary,'file':scope,
               'context_sha256':hashlib.sha256(raw.encode('utf-8')).hexdigest()}
+    if task_state is not None:
+        if task_state.task.id!=task_id:raise ValueError('Handoff task snapshot belongs to another task')
+        identity.update(task_revision=task_state.revision,task_version=task_state.version)
     path.write_text(json.dumps({**identity,'context':context}, ensure_ascii=False, indent=2), encoding='utf-8')
     payload = {**identity,
                'context_sha256': hashlib.sha256(raw.encode('utf-8')).hexdigest(),
@@ -37,6 +40,9 @@ def record_handoff(store, job_id, sender, recipient, summary, context, *, agents
     if agents is not None:
         agents.invocation_context={**previous,'job_id':job_id,'handoff_id':handoff_id,
             'task_id':task_id,'parent_task_id':parent,'actor':recipient,'file':scope,'context_sha256':identity['context_sha256']}
+        for key in ('task_revision','task_version'):
+            agents.invocation_context.pop(key,None)
+            if key in identity:agents.invocation_context[key]=identity[key]
         if getattr(agents,'model_name',None)==HYBRID_MODEL:
             agents.routing_store=store
             agents.invocation_context.update(task_revision=task_state.revision,task_version=task_state.version)
