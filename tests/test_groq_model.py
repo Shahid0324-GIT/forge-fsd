@@ -172,3 +172,31 @@ def test_long_capacity_wait_pauses_before_sending_another_request(monkeypatch):
     provider._TOKEN_BUDGETS['openai/gpt-oss-120b']=(0,8000,61)
     monkeypatch.setattr(provider.http.client,'HTTPSConnection',lambda *_a,**_k:pytest.fail('Must not send'))
     with pytest.raises(ProviderResourceError,match='bounded wait'):provider.GroqChat()._post({})
+
+
+def test_closed_repair_schema_uses_constrained_decoding_and_keeps_local_validation(monkeypatch):
+    from forge.source_agent import RepairFocus
+    payloads=[]
+    def post(self,payload):
+        payloads.append(payload)
+        # Even a provider claiming strict decoding cannot bypass local validation.
+        return 200,None,response('{"file":"app/page.tsx","cause":"Compiler error"}')
+    monkeypatch.setattr(provider.GroqChat,'_post',post)
+    result=provider.GroqChat(model_name='openai/gpt-oss-20b').with_structured_output(RepairFocus,include_raw=True).invoke([('human','Diagnose')])
+    assert payloads[0]['response_format']['json_schema']['strict'] is True
+    assert payloads[0]['response_format']['json_schema']['schema']==RepairFocus.model_json_schema()
+    assert result['parsed'] is None and result['parsing_error']
+    assert result['raw'].response_metadata['response_format']=='json_schema_strict'
+
+
+def test_optional_and_open_nested_shapes_are_not_silently_rewritten_for_strict_mode():
+    from pydantic import ConfigDict
+    class OptionalField(BaseModel):
+        model_config=ConfigDict(extra='forbid')
+        value:int=3
+    class OpenChild(BaseModel):
+        model_config=ConfigDict(extra='forbid')
+        data:dict[str,int]
+    for schema in [OptionalField,OpenChild]:
+        assert not provider._strict_compatible(schema.model_json_schema())
+    assert not provider._strict_compatible({'anyOf':[{'type':'string'},{'type':'integer'}]})

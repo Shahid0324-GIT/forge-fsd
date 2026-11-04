@@ -28,6 +28,27 @@ def _duration(value):
     return sum(float(number)*{'h':3600,'m':60,'s':1}[unit] for number,unit in re.findall(r'(\d+(?:\.\d+)?)([hms])',value))
 
 
+def _strict_compatible(schema):
+    """Use constrained decoding only for already closed, fully required schemas.
+
+    Never rewrite optional fields, defaults or open application-owned dictionaries
+    merely to satisfy a provider's stricter wire protocol.
+    """
+    def visit(node):
+        if not isinstance(node,dict):return False
+        if node.get('type')=='object' or 'properties' in node:
+            properties=node.get('properties',{})
+            if node.get('additionalProperties') is not False or set(node.get('required',[]))!=set(properties):return False
+            if not all(visit(value) for value in properties.values()):return False
+        for key in ('$defs','definitions'):
+            if not all(visit(value) for value in node.get(key,{}).values()):return False
+        if 'items' in node and not visit(node['items']):return False
+        for key in ('anyOf','oneOf','allOf'):
+            if not all(visit(value) for value in node.get(key,[])):return False
+        return True
+    return schema.get('type')=='object' and visit(schema)
+
+
 def groq_key():
     key=os.environ.get('GROQ_API_KEY','').strip()
     if not key and KEY_FILE.is_file():
@@ -103,8 +124,9 @@ class GroqChat(BaseChatModel):
             'max_completion_tokens':self.num_predict,'reasoning_effort':self.reasoning_effort,'include_reasoning':False}
         if stop:payload['stop']=stop
         if kwargs.get('response_schema') is not None:
+            strict=self.model_name in {'openai/gpt-oss-20b','openai/gpt-oss-120b'} and _strict_compatible(kwargs['response_schema'])
             payload['response_format']={'type':'json_schema','json_schema':{'name':kwargs['schema_name'],
-                'strict':False,'schema':kwargs['response_schema']}}
+                'strict':strict,'schema':kwargs['response_schema']}}
         status,retry,raw=self._post(payload)
         # One bounded provider wait, not a coding retry or a silent provider fallback.
         if status==429:
@@ -130,7 +152,7 @@ class GroqChat(BaseChatModel):
             message=AIMessage(content=content,response_metadata={'model':self.model_name,'provider':'groq',
                 'done_reason':choice['finish_reason'],'request_id':result.get('id'),
                 'max_completion_tokens':self.num_predict,'reasoning_effort':self.reasoning_effort,
-                'response_format':'json_schema_best_effort' if 'response_format' in payload else 'text'},
+                'response_format':('json_schema_strict' if payload['response_format']['json_schema']['strict'] else 'json_schema_best_effort') if 'response_format' in payload else 'text'},
                 usage_metadata={'input_tokens':usage.get('prompt_tokens',0),'output_tokens':usage.get('completion_tokens',0),
                     'total_tokens':usage.get('total_tokens',0)})
         except (ValueError,KeyError,IndexError,TypeError):raise ValueError('Groq returned an invalid chat response') from None

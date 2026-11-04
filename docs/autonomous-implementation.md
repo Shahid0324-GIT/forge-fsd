@@ -1302,3 +1302,20 @@ exit 0, with the existing 13 warnings. The separate approved hybrid counter comp
 independent QA, including a real browser failure, rejected unchanged local repair and
 Groq escalation. Its final source and frozen contract passed `evidence_current` and
 the verification containers reported no cleanup errors. Notes QA is still pending.
+
+## Increment 33: constrain compatible hosted protocol responses
+
+Another notes diagnosis put its entire repair explanation in `cause` and omitted
+required `changes`. Best-effort native schemas did not prevent that shape failure.
+The adapter now selects strict decoding for GPT-OSS schemas that are already closed
+and fully required, recursively including referenced definitions, array items and
+union branches. Optional fields and open app-owned dictionaries are not rewritten:
+those retain best-effort mode. Raw source transport is unchanged. Local Pydantic
+validation remains authoritative even when a provider advertises strict decoding.
+Effective response mode is recorded in provider metadata.
+
+Provider/hybrid selection: **42 passed**, exit 0, with 13 existing warnings. A live,
+nonsensitive synthetic `RepairFocus` probe returned and locally validated all required
+fields under strict decoding. The preceding notes worker (started before this change)
+also completed its source repair and isolated build; independent QA is in progress.
+Reference: https://console.groq.com/docs/structured-outputs
