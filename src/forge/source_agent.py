@@ -12,7 +12,7 @@ from forge.handoffs import record_handoff
 from forge.import_reference import relative_import_reference
 from forge.cycle_context import rejected_state_context,failure_obligations
 from forge.provider_errors import ProviderResourceError
-from forge.source_scope import scope_source
+from forge.source_scope import scope_source,page_module
 from forge.tasks import CheckEvidence,Envelope,Observation,Task
 from forge.workspace import source_fingerprint
 from forge.workspace_tools import ReplaceText,WorkspaceTools,WriteFile,file_hash
@@ -187,6 +187,13 @@ class SourceAgent:
         if repairing and latest and latest.fingerprint==fingerprint:
             locations=diagnostic_context(observed_context(latest,self.ledger.store.path.parent),source)
             seeds=list(dict.fromkeys(row['file'] for row in locations)) or targets
+            if not locations and any('browser_acceptance (exit' in check.summary for check in latest.checks):
+                # Browser reports identify behavior rather than compiler modules.
+                # Start from UI entry points and their actual interfaces, instead
+                # of treating every owned server implementation as a UI dependency.
+                # Target selection may still choose any owned file; its complete
+                # body is retrieved from the unchanged snapshot before writing.
+                seeds=[path for path in targets if page_module(path)] or targets
         scoped,omitted,inventory=scope_source(source,seeds,tools.owners)
         data={'task':{'goal':state.task.goal,'owner':state.task.owner,'revision':state.revision},
             'original_request':state.task.inputs.get('original_request',''),

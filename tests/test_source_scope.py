@@ -24,6 +24,15 @@ def test_page_sees_http_handlers_layout_and_actual_direct_imports():
     assert set(scoped)=={'app/page.tsx','app/components/Panel.tsx','app/api/items/route.ts','app/layout.tsx'}
 
 
+def test_nested_page_keeps_actual_http_interfaces_without_server_implementation_bodies():
+    source={'app/items/page.tsx':packet('export default function Page(){}'),
+        'app/api/items/route.ts':packet("import {list} from '@/lib/store'"),
+        'lib/store.ts':packet('server implementation'),'app/layout.tsx':packet('layout')}
+    scoped,omitted,_=scope_source(source,['app/items/page.tsx'],source)
+    assert set(scoped)=={'app/items/page.tsx','app/api/items/route.ts','app/layout.tsx'}
+    assert {row['file'] for row in omitted}=={'lib/store.ts'}
+
+
 def test_repair_can_include_multiple_diagnostic_modules_and_css_consumers():
     source={'app/page.tsx':packet('page'),'app/layout.tsx':packet("import './globals.css'"),
         'app/globals.css':packet('css'),'lib/math.ts':packet('helper')}

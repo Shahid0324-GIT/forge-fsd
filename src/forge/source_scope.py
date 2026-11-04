@@ -6,6 +6,10 @@ import re
 EXTENSIONS=('.ts','.tsx','.js','.jsx','.css')
 
 
+def page_module(path):
+    return path.startswith('app/') and path.rsplit('/',1)[-1] in {'page.tsx','page.jsx','page.ts','page.js'}
+
+
 def resolve_import(importer,module,paths):
     if module.startswith('@/'):base=module[2:]
     elif module.startswith(('./','../')):base=posixpath.normpath(posixpath.join(posixpath.dirname(importer),module))
@@ -33,7 +37,7 @@ def scope_source(snapshot,targets,manifest_paths):
         if target.endswith(('.css','.tsx')):
             selected.add('app/layout.tsx')
         if target.endswith('.css'):selected.add('app/page.tsx')
-        if target=='app/page.tsx' or target.startswith('app/components/'):
+        if page_module(target) or target.startswith('app/components/'):
             selected.update(path for path in snapshot if path.startswith('app/api/') and '/route.' in path)
     # Shared declarations remain available even if a consumer has a missing import.
     selected.update(path for path,packet in snapshot.items()

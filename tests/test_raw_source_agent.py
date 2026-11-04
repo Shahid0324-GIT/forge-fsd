@@ -130,6 +130,27 @@ def test_oversized_final_repair_packet_still_stops_before_model_dispatch(tools):
     assert not agent.raw_calls and agent.data is None
 
 
+def test_browser_repair_starts_with_ui_interfaces_and_can_select_a_server_target(tools):
+    target='lib/store.ts';path=tools.root/target;path.parent.mkdir(exist_ok=True);path.write_text('export const value=1;')
+    state=configured(tools,'repair_build');fp=source_fingerprint(tools.root)
+    state=tools.ledger.observe(state,Observation(revision=state.revision,fingerprint=fp,
+        checks=[CheckEvidence(check='isolated_build',exit_code=1,fingerprint=fp,report='missing.json',
+            summary='browser_acceptance (exit 1): missing expected result')]))
+    state=tools.ledger.reserve_action(state,'frontend')
+    draft=tools.draft.model_copy(update={'files':[*tools.draft.files,
+        tools.draft.files[0].model_copy(update={'path':target,'purpose':'Store helper'})]})
+    class Scoped(RawAgent):
+        def generate(self,schema,instruction,data,**kwargs):
+            if schema.__name__ in {'RepairFocus','SourceTarget'}:
+                assert target not in data['source']
+                assert any(row['file']==target and row['sha256'] for row in data['context_omitted'])
+            return super().generate(schema,instruction,data,**kwargs)
+    agent=Scoped('export const value=2;',target)
+    SourceAgent(tools.ledger,agent,tools.root,draft,workspace_boundary=tools.root.parent,check_runner=good_check)(state)
+    assert agent.raw_calls[0]['source'][target]['content']=='export const value=1;'
+    assert path.read_text()==agent.content
+
+
 def test_raw_repair_can_choose_another_owned_file_without_following_wrong_qa_target(tools):
     state=configured(tools,'repair_build')
     draft=tools.draft.model_copy(update={'files':[*tools.draft.files,

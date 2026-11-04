@@ -1354,3 +1354,21 @@ Source/raw-repair/context selection: **45 passed**, exit 0, in 67.13 seconds (13
 warnings), including the large-temporary/small-final regression and a truly oversized
 packet that must still stop before inference. The saved notes test task is resumable
 with the same independent contract. No app source was manually corrected.
+
+## Increment 36: scope browser repair from UI entry points
+
+The notes packet still exceeded the unchanged 22,000-character limit after history
+cleanup because browser failures had no compiler location and therefore selected
+every owned file as a starting module. Browser repairs now start from declared UI
+pages and their current imports, HTTP handlers, shared types and layout references.
+Nested App Router pages also retain HTTP handler references. Server implementation
+bodies outside those relationships remain in the source inventory with explicit
+omission hashes; a builder can still select any owned target and receives its complete
+body before proposing an edit.
+
+Source/context/raw-repair selection: **47 passed**, exit 0, in 63.46 seconds (13 existing
+warnings). A read-only inspection of the actual notes packet measured **20,612 characters**
+before diagnosis, with its complete frozen contract retained. The separate test proves
+a server target omitted from initial UI context is still retrievable and writable
+only through the original ownership/hash checks. No app-specific path or business
+type was added to the controller.
