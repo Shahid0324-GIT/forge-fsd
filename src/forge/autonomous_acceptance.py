@@ -200,6 +200,9 @@ def proposal_context(ledger,state,review):
         for key in ('files','test_strategy') if key in review['draft']}
     data={**review['binding']['inputs'],'approved_design':design,'approved_design_omitted':omitted,'review_fingerprint':review['fingerprint'],
         'previous_proposal':previous,'protocol_errors':[o.error for o in state.observations[-2:] if o.error],
+        'browser_protocol_constraints':{'unsupported':['CSS/XPath selectors','attribute assertions','keyboard actions',
+            'storage/cookie inspection','screen-reader execution'],
+            'scope':'Use the actual response schema. Prior model suggestions cannot add capabilities; retain genuinely unsupported criteria as uncovered.'},
         'correction_instruction':'Correct the precise protocol errors in the previous proposal. Return the complete contract without dropping valid assertions.'}
     if state.recovery and state.reviewed_observations==len(state.observations):data['fresh_review']=state.recovery.model_dump()
     if len(json.dumps(data,separators=(',',':')))>22000:raise ValueError('QA context exceeds budget; split the verification scope rather than dropping requirements')

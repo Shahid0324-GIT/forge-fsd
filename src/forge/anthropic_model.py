@@ -65,7 +65,7 @@ class AnthropicChat(BaseChatModel):
             if message.type=='system':system.append(message.content)
             elif message.type in {'human','ai'}:wire.append({'role':'user' if message.type=='human' else 'assistant','content':message.content})
             else:raise ValueError('Unsupported Claude message role')
-        payload={'model':self.model_name,'max_tokens':min(self.num_predict,3000),'messages':wire,'system':'\n\n'.join(system),
+        payload={'model':self.model_name,'max_tokens':min(self.num_predict,6000),'messages':wire,'system':'\n\n'.join(system),
             'output_config':{'effort':'low'}}
         if stop:payload['stop_sequences']=stop
         # This schema-only tool returns data. It grants no execution capability.
@@ -93,7 +93,9 @@ class AnthropicChat(BaseChatModel):
             result=json.loads(raw);reason=result['stop_reason'];blocks=result['content'];usage=result.get('usage',{})
             if 'tools' in payload:
                 calls=[b for b in blocks if b.get('type')=='tool_use' and b.get('name')=='emit_result']
-                if reason!='tool_use' or len(calls)!=1:raise ProviderResourceError('Claude structured result incomplete; no proposal accepted')
+                if reason!='tool_use' or len(calls)!=1:
+                    stop=reason if reason in {'max_tokens','end_turn','refusal','pause_turn','stop_sequence','tool_use'} else 'unknown'
+                    raise ProviderResourceError(f'Claude structured result incomplete (stop={stop}, output limit={payload["max_tokens"]}); no proposal accepted')
                 content=json.dumps(calls[0]['input']['result'])
             else:
                 if reason!='end_turn':raise ProviderResourceError('Claude source incomplete; no file written')

@@ -64,3 +64,26 @@ def test_root_union_is_wrapped_without_changing_business_types_or_reference_targ
     assert wire['type']=='object' and wire['$defs']==original['$defs']
     assert wire['properties']['result']['anyOf']==original['anyOf']
     assert Choice.model_json_schema()==original
+
+
+def test_claude_qa_suite_gets_larger_bound_and_records_actual_requested_budget(tmp_path,monkeypatch):
+    from pydantic import create_model
+    from forge.agents import OllamaAgents
+    monkeypatch.setattr('forge.anthropic_model.anthropic_key',lambda:'test-key')
+    payloads=[]
+    def post(self,payload):payloads.append(payload);return 200,reply()
+    monkeypatch.setattr(AnthropicChat,'_post',post)
+    agent=OllamaAgents('anthropic:claude-opus-5-5');agent.trace_directory=tmp_path
+    suite=create_model('AcceptanceSuite',__base__=Answer)
+    assert agent.generate(suite,'Return a result',{},coding=True).value==3
+    assert payloads[0]['max_tokens']==6000
+    trace=json.loads(next(tmp_path.glob('*.json')).read_text(encoding='utf-8'))
+    assert trace['requested_options']['max_tokens']==6000
+    assert agent.generate(Answer,'Return metadata',{},coding=True).value==3
+    assert payloads[1]['max_tokens']==3000
+
+
+def test_incomplete_structured_result_reports_token_limit_without_accepting_partial_data(monkeypatch):
+    monkeypatch.setattr(AnthropicChat,'_post',lambda *_:(200,reply(reason='max_tokens')))
+    with pytest.raises(ProviderResourceError,match='stop=max_tokens, output limit=6000'):
+        AnthropicChat(num_predict=6000).with_structured_output(Answer).invoke('Test')
