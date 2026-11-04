@@ -1580,4 +1580,9 @@ semantics now explain single-match requirements and framework-provided accessibi
 roles. This is runtime context for all generated apps, not a change to the calculator
 or a hidden exclusion in the browser runner. The failed evidence remains failed.
 
+Completion events now carry the task revision/version already stored in their traces
+for structured and raw-source calls. An integration regression uses the real model
+adapter's event path with a fake provider response and verifies same-revision QA trace
+recovery. This closes the gap between versioned handoffs and event-based recovery.
+
 The unchanged counter was also rechecked against the new harness with inference and repairs disabled. Its complete current evidence passed, retaining source `c8ea02ef…` and frozen contract `25fa64a2…`. Hosted CI at the published commit remains successful. `test_app(recheck=True)` refreshes completed/stopped-preview evidence without regenerating its contract; a running preview is not eligible. No further paid-provider requests were made.

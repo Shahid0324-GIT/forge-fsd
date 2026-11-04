@@ -82,7 +82,7 @@ class OllamaAgents:
             if small_hosted:
                 if self.model_name.startswith('anthropic:'):packet['requested_options'].update(max_tokens=1200)
                 else:packet['requested_options'].update(max_completion_tokens=1200,reasoning_effort='low')
-            identity={key:packet[key] for key in ['call_id','job_id','operation_id','handoff_id','task_id','parent_task_id'] if key in packet}
+            identity={key:packet[key] for key in ['call_id','job_id','operation_id','handoff_id','task_id','parent_task_id','task_revision','task_version'] if key in packet}
             if activity:activity('AGENT_CALL_STARTED',{**identity,'schema':schema.__name__,'attempt':attempt+1,'model':getattr(self,'model_name','unknown')})
             try:
                 with tracing_context(enabled=False):result=runnable.invoke(messages)
@@ -124,7 +124,7 @@ class OllamaAgents:
         options={'num_predict':3000,'num_ctx':8192}
         if self.model_name in {'groq:openai/gpt-oss-120b','groq:openai/gpt-oss-20b'}:
             options['reasoning_effort']='low';packet['requested_options']['reasoning_effort']='low'
-        identity={key:packet[key] for key in ['call_id','job_id','operation_id','handoff_id','task_id','parent_task_id'] if key in packet}
+        identity={key:packet[key] for key in ['call_id','job_id','operation_id','handoff_id','task_id','parent_task_id','task_revision','task_version'] if key in packet}
         activity=getattr(self,'activity',None)
         if activity:activity('AGENT_CALL_STARTED',{**identity,'schema':'SourceText','attempt':1,'model':getattr(self,'model_name','unknown')})
         try:

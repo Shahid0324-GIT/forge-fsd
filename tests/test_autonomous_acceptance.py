@@ -235,3 +235,26 @@ def test_task_handoff_binds_non_hybrid_invocations_to_current_revision(context):
     assert packet['task_revision']==agent.invocation_context['task_revision']==state.revision
     record_handoff(ledger.store,ledger.job_id,'qa','helper','Unversioned helper',{},agents=agent)
     assert 'task_revision' not in agent.invocation_context and 'task_version' not in agent.invocation_context
+
+
+def test_real_completion_event_can_recover_current_revision_proposal(context):
+    from types import SimpleNamespace
+    from forge.agents import OllamaAgents
+    from forge.handoffs import record_handoff
+    from forge.autonomous_acceptance import proposal_context
+    from test_agents import FakeModel
+    ledger,state,review,_=context
+    expected=AcceptanceSuite.model_validate(proposal())
+    agent=OllamaAgents.__new__(OllamaAgents);agent.model_name='fake'
+    agent.model=FakeModel({'raw':SimpleNamespace(content=expected.model_dump_json(),
+        response_metadata={'done_reason':'stop'}),'parsed':expected,'parsing_error':None})
+    agent.trace_directory=ledger.store.path.parent/'model-calls';agent.activity=lambda status,data:ledger.store.event(
+        ledger.job_id,status,data,update_status=False)
+    record_handoff(ledger.store,ledger.job_id,'coordinator','qa','Current inputs',{},
+        agents=agent,task_id=state.task.id,task_state=state)
+    agent.generate(AcceptanceSuite,'Return a contract',{})
+    event=ledger.store.read(ledger.job_id)['events'][-1]
+    assert event['status']=='AGENT_CALL_COMPLETED'
+    assert event['payload']['task_revision']==state.revision
+    assert event['payload']['task_version']==state.version
+    assert proposal_context(ledger,state,review)['previous_proposal']==expected.model_dump()
