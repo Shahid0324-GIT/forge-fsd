@@ -59,7 +59,7 @@ class OllamaAgents:
         small_hosted=getattr(self,'model_name','').startswith(('groq:','anthropic:')) and schema.__name__ in {'RepairFocus','SourceTarget','CycleRepairActions','RecoveryDecision'}
         options={"num_predict":1200,"num_ctx":8192,"reasoning_effort":"low"} if small_hosted else None
         model=self.model.model_copy(update=options) if options else self.model.model_copy(update={"num_predict":3000,"num_ctx":8192}) if coding else self.model
-        extended_claude_suite=self.model_name.startswith('anthropic:') and schema.__name__=='AcceptanceSuite'
+        extended_claude_suite=getattr(self,'model_name','').startswith('anthropic:') and schema.__name__=='AcceptanceSuite'
         if extended_claude_suite:model=model.model_copy(update={'num_predict':6000})
         runnable = model.with_structured_output(schema, method="json_schema", include_raw=True)
         # Groq receives the complete schema through response_format already. A
