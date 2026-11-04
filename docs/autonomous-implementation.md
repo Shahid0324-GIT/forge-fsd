@@ -1585,4 +1585,24 @@ for structured and raw-source calls. An integration regression uses the real mod
 adapter's event path with a fake provider response and verifies same-revision QA trace
 recovery. This closes the gap between versioned handoffs and event-based recovery.
 
+## Repair handoffs after production-build failures
+
+The saved hybrid notes run exposed a backend SQLite initialization failure after its
+TypeScript errors were repaired. The active task still belonged to frontend because
+automatic routing recognized compiler coordinates but not Next.js failed-route build
+receipts. Routing now matches explicit failed-collection routes to existing manifest
+entries, including route groups, and reassigns only when ownership is unambiguous and
+the observation matches current source. A database keyword alone never selects an owner.
+
+Senior review still chooses a registered owner and a concrete strategy, but the
+controller derives retry versus reassignment from that owner. The model's redundant
+action label cannot reject an otherwise valid handoff. Unknown owners and unauthorized
+user questions remain rejected. Thirty-four coordinator/routing regressions passed.
+
+Other Groq HTTP rejections now use the existing provider-pause path instead of
+consuming source-repair/reviewer attempts. Safe diagnostics retain only allowlisted
+error categories and known request-field names; echoed source, arbitrary messages,
+unknown codes and credentials remain excluded. Thirty-six provider regressions passed.
+No app source was manually corrected and no approval or dependency policy changed.
+
 The unchanged counter was also rechecked against the new harness with inference and repairs disabled. Its complete current evidence passed, retaining source `c8ea02ef…` and frozen contract `25fa64a2…`. Hosted CI at the published commit remains successful. `test_app(recheck=True)` refreshes completed/stopped-preview evidence without regenerating its contract; a running preview is not eligible. No further paid-provider requests were made.

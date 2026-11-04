@@ -165,8 +165,25 @@ class GroqChat(BaseChatModel):
                     if facts:detail=' ('+', '.join(facts)+')'
                 reason={401:'credential rejected',403:'model access denied',413:'request too large',429:'rate limit reached'}[status]
                 raise ProviderResourceError(f'Groq HTTP {status}: {reason}{detail}. Provider resource pause; no app defect inferred.')
-            suffix='; rate limit reached, wait and resume the saved operation' if status==429 else ''
-            raise RuntimeError(f'Groq API returned HTTP {status}{suffix}')
+            # Provider failures must not consume app-repair/senior-review loops.
+            # Retain allowlisted categories, never echoed prompts or credentials.
+            detail=''
+            try:
+                error=json.loads(raw).get('error',{})
+                if isinstance(error,dict):
+                    categories={'json_validate_failed':'generated JSON failed provider validation',
+                        'tool_use_failed':'tool output failed provider validation',
+                        'invalid_request_error':'invalid provider request',
+                        'context_length_exceeded':'context length exceeded',
+                        'invalid_schema':'request schema rejected'}
+                    category=categories.get(error.get('code')) or categories.get(error.get('type'))
+                    fields=[name for name in ('response_format','reasoning_effort','max_completion_tokens')
+                        if isinstance(error.get('message'),str) and name in error['message']]
+                    facts=([category] if category else [])+(['request field '+name for name in fields])
+                    if facts:detail=' ('+', '.join(facts)+')'
+            except (ValueError,TypeError,AttributeError):pass
+            raise ProviderResourceError(f'Groq HTTP {status}: provider request rejected{detail}. '
+                'Saved work retained; no app defect inferred.')
         try:
             result=json.loads(raw);choice=result['choices'][0];content=choice['message']['content'];usage=result.get('usage',{})
             if not isinstance(content,str):raise ValueError('Missing text completion')

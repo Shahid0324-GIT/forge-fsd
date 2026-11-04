@@ -103,6 +103,26 @@ def test_provider_errors_do_not_echo_response_bodies_or_credentials(monkeypatch,
     assert str(status) in str(error.value) and 'private-test-secret' not in str(error.value)
 
 
+def test_invalid_provider_output_pauses_before_any_app_repair_and_keeps_safe_category(monkeypatch):
+    from forge.provider_errors import ProviderResourceError
+    body=json.dumps({'error':{'code':'json_validate_failed',
+        'message':'private-test-secret: response_format contains echoed generated source',
+        'failed_generation':'private source and credentials'}}).encode()
+    monkeypatch.setattr(provider.GroqChat,'_post',lambda *_:(400,None,body))
+    with pytest.raises(ProviderResourceError) as failure:provider.GroqChat().invoke('Test')
+    assert 'generated JSON failed provider validation' in str(failure.value)
+    assert 'request field response_format' in str(failure.value)
+    assert 'private' not in str(failure.value) and 'credentials' not in str(failure.value)
+
+
+def test_unknown_provider_error_does_not_echo_arbitrary_error_codes(monkeypatch):
+    from forge.provider_errors import ProviderResourceError
+    body=json.dumps({'error':{'code':'private-test-secret','message':'private account details'}}).encode()
+    monkeypatch.setattr(provider.GroqChat,'_post',lambda *_:(400,None,body))
+    with pytest.raises(ProviderResourceError) as failure:provider.GroqChat().invoke('Test')
+    assert '400' in str(failure.value) and 'private' not in str(failure.value)
+
+
 def test_one_bounded_rate_wait_preserves_the_request(monkeypatch):
     calls=[];waits=[]
     def post(self,payload):
