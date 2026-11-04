@@ -1385,3 +1385,13 @@ used 198,037, requested 6,531**. This is a provider resource blocker, not eviden
 another application defect. The 20B run is paused with its frozen contract intact;
 it has not passed its functional scenarios. Repeated immediate 20B resumes are not
 justified by this receipt.
+
+## Increment 38: distinguish feature acceptance from runtime constraints
+
+Planning instructions now explicitly keep fixed controller/runtime constraints in
+design/assumptions instead of inventing extra user-facing feature criteria. Actual
+requested behavior, validation and persistence must remain. Planning/independent-QA
+selection: **44 passed**, exit 0 (13 existing warnings). Prompt guidance is not a
+semantic guarantee: the separate 120B notes proposal still required runtime review
+before the user explicitly approved its exact corrected plan. That new run is
+generating source; the exhausted 20B run remains preserved.

@@ -41,6 +41,11 @@ by the user. Choose suitable business types, data model, routes if needed, proje
 structure, UI behavior and state ownership. Explain interfaces shared between tasks.
 The design is an app-owned agreement that can be revised with affected agents.
 Do not fit requests into a task-manager template or invent unnecessary architecture.
+Acceptance criteria describe the requested app's observable behavior. Keep fixed
+platform/tool constraints (installed packages, workspace isolation, SQLITE_PATH and
+the controller's execution policy) in the design or assumptions; do not invent them
+as extra user-facing feature criteria. Preserve explicitly requested behavior and
+persistence requirements, including validation and reload behavior.
 Use the supplied Next.js App Router/TypeScript, React and Node 24 base with plain CSS
 or inline styles. Existing dependencies are fixed for this POC; no Tailwind, extra
 packages, authentication, payments or external services. Local SQLite is available
