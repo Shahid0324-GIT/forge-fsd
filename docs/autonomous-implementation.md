@@ -1605,4 +1605,18 @@ error categories and known request-field names; echoed source, arbitrary message
 unknown codes and credentials remain excluded. Thirty-six provider regressions passed.
 No app source was manually corrected and no approval or dependency policy changed.
 
+Live verification: resuming saved hybrid job `8f0dae7e5e9544caa9430c3f3481e9a0`
+through the normal dashboard API routed the existing failure to backend. The Groq
+backend agent selected and repaired the API route. TypeScript and production build
+then passed; build evidence is in source-check report `1bee419849734839b548b25339c7fb08.json`.
+The additional hybrid/build integration selection passed 23 tests. No full-suite
+rerun was performed for these increments.
+
+Independent acceptance QA subsequently paused on Groq's explicit
+`json_validate_failed` category. This now remains a provider pause, rather than
+consuming more source-repair/senior-review attempts. Functional browser checks have
+not executed for this source. A remaining generated-code concern is that the repair
+creates its own `db/notes.db` path instead of using the declared `SQLITE_PATH` value;
+the build pass does not establish correct storage configuration or complete app behavior.
+
 The unchanged counter was also rechecked against the new harness with inference and repairs disabled. Its complete current evidence passed, retaining source `c8ea02ef…` and frozen contract `25fa64a2…`. Hosted CI at the published commit remains successful. `test_app(recheck=True)` refreshes completed/stopped-preview evidence without regenerating its contract; a running preview is not eligible. No further paid-provider requests were made.
