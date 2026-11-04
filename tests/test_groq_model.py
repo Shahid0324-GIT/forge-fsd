@@ -118,6 +118,16 @@ def test_request_limit_reports_only_numeric_capacity_not_provider_body(monkeypat
     assert 'private' not in str(error.value)
 
 
+@pytest.mark.parametrize('dimension',['tokens per minute','tokens per day','requests per day'])
+def test_rate_limit_reports_safe_dimension_and_numeric_capacity(monkeypatch,dimension):
+    from forge.provider_errors import ProviderResourceError
+    body=f'private-organization {dimension}: Limit 200000, Used 199000, Requested 5000. private-key'.encode()
+    monkeypatch.setattr(provider.GroqChat,'_post',lambda *_:(429,None,body))
+    with pytest.raises(ProviderResourceError) as error:provider.GroqChat().invoke([('human','Test')])
+    assert dimension in str(error.value) and 'requested 5000' in str(error.value)
+    assert 'private' not in str(error.value)
+
+
 def test_https_destination_is_fixed_and_headers_never_become_model_input(monkeypatch):
     calls=[];monkeypatch.setenv('GROQ_API_KEY','private-test-secret')
     class Reply:

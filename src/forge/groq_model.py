@@ -142,6 +142,16 @@ class GroqChat(BaseChatModel):
                     # account IDs, source, or credentials into failure summaries.
                     limits=re.search(rb'Limit\s+(\d+).*?Requested\s+(\d+)',raw,re.I|re.S)
                     if limits:detail=f' (token limit {int(limits[1])}, requested {int(limits[2])})'
+                if status==429:
+                    # Persist actionable capacity facts, never arbitrary provider
+                    # prose (which can contain organization IDs or echoed input).
+                    facts=[]
+                    dimension=re.search(rb'\b(tokens|requests) per (minute|day)\b',raw,re.I)
+                    if dimension:facts.append(dimension.group(0).decode('ascii').lower())
+                    for label in ('Limit','Used','Requested'):
+                        value=re.search(label.encode()+rb'\s+(\d+(?:\.\d+)?)',raw,re.I)
+                        if value:facts.append(label.lower()+' '+value.group(1).decode('ascii'))
+                    if facts:detail=' ('+', '.join(facts)+')'
                 reason={401:'credential rejected',403:'model access denied',413:'request too large',429:'rate limit reached'}[status]
                 raise ProviderResourceError(f'Groq HTTP {status}: {reason}{detail}. Provider resource pause; no app defect inferred.')
             suffix='; rate limit reached, wait and resume the saved operation' if status==429 else ''

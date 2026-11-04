@@ -1372,3 +1372,16 @@ before diagnosis, with its complete frozen contract retained. The separate test 
 a server target omitted from initial UI context is still retrievable and writable
 only through the original ownership/hash checks. No app-specific path or business
 type was added to the controller.
+
+## Increment 37: distinguish account exhaustion from app defects
+
+The next notes repair returned an immediate 429 despite the corrected context packet.
+Provider error summaries now retain only whitelisted quota dimensions and numeric
+Limit/Used/Requested fields, never arbitrary provider bodies or organization IDs.
+Provider/hybrid selection: **45 passed**, exit 0 (13 existing warnings).
+
+A replay of the approved notes diagnosis reported: **tokens per day, limit 200,000,
+used 198,037, requested 6,531**. This is a provider resource blocker, not evidence of
+another application defect. The 20B run is paused with its frozen contract intact;
+it has not passed its functional scenarios. Repeated immediate 20B resumes are not
+justified by this receipt.
