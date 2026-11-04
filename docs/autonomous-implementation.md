@@ -1643,4 +1643,18 @@ must wait for usable provider capacity; the existing built run can be resumed.
 The offline provider, agent and hybrid selection passed 65 tests (13 upstream
 deprecation warnings). No full-suite rerun or live model-accuracy claim is made.
 
+## Bind QA references to the approved criterion set
+
+A local-only counter passed its build, but QA repeatedly referenced criterion 5 when
+the approved plan contained only four criteria. Acceptance generation now derives its
+scenario and uncovered/partial-reference fields from the approved criterion count,
+using finite literal choices rather than unrestricted integers. The handoff also
+lists the approved IDs explicitly. The actions, approved requirements, partial-coverage
+semantics and independent review gates remain unchanged. Frozen contracts still pass
+the original coverage validator when loaded; old evidence is not silently rewritten.
+
+The acceptance/coverage/provider regression selection passed 79 tests. The change was
+tested without model calls and applies to all approved criterion sets of size 1–20.
+The existing counter can resume app checks without rebuilding or changing its model.
+
 The unchanged counter was also rechecked against the new harness with inference and repairs disabled. Its complete current evidence passed, retaining source `c8ea02ef…` and frozen contract `25fa64a2…`. Hosted CI at the published commit remains successful. `test_app(recheck=True)` refreshes completed/stopped-preview evidence without regenerating its contract; a running preview is not eligible. No further paid-provider requests were made.

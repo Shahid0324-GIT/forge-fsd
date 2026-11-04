@@ -258,3 +258,43 @@ def test_real_completion_event_can_recover_current_revision_proposal(context):
     assert event['payload']['task_revision']==state.revision
     assert event['payload']['task_version']==state.version
     assert proposal_context(ledger,state,review)['previous_proposal']==expected.model_dump()
+
+
+@pytest.mark.parametrize('criterion_count',[1,4,8,20])
+def test_model_schema_limits_every_criterion_reference_to_approved_ids(criterion_count):
+    from forge.autonomous_acceptance import acceptance_schema
+    schema=acceptance_schema(criterion_count)
+    data={'scenarios':[{'id':'valid','criteria':[1],'steps':[
+        {'action':'visit','path':'/'},{'action':'assert_visible','target':{'by':'text','value':'0'}}]}],
+        'uncovered':[]}
+    assert schema.model_validate(data).scenarios[0].criteria==[1]
+    data['scenarios'][0]['criteria']=[criterion_count+1]
+    with pytest.raises(ValueError):schema.model_validate(data)
+    data['scenarios']=[]
+    for item in ({'criterion':criterion_count+1,'reason':'Unknown'},
+        {'criterion':criterion_count+1,'coverage':'partial','checked_behavior':'Visible value','reason':'Unknown'}):
+        data['uncovered']=[item]
+        with pytest.raises(ValueError):schema.model_validate(data)
+
+
+def test_worker_sends_bound_choices_to_model_without_changing_approved_plan(context):
+    ledger,state,review,agent=context
+    original=json.loads(json.dumps(review))
+    def generate(schema,instruction,data,**kwargs):
+        assert data['approved_criterion_ids']==[1,2,3]
+        raw=schema.model_json_schema()
+        assert raw['$defs']['ApprovedScenario']['properties']['criteria']['items']['enum']==[1,2,3]
+        assert raw['$defs']['ApprovedUncovered']['properties']['criterion']['enum']==[1,2,3]
+        return schema.model_validate(proposal())
+    agent.generate=generate
+    checks=acceptance_worker(ledger,state,agent,review,lambda:None)
+    assert checks[0].exit_code==0 and review==original
+
+
+def test_bound_partial_coverage_retains_existing_coverage_validation():
+    from forge.autonomous_acceptance import acceptance_schema
+    data=proposal();data['uncovered'].append({'criterion':2,'coverage':'partial',
+        'checked_behavior':'Visible count increment','reason':'Screen reader announcement not checked'})
+    suite=acceptance_schema(3).model_validate(data)
+    validate_coverage(suite,3)
+    assert suite.model_dump()==AcceptanceSuite.model_validate(data).model_dump()

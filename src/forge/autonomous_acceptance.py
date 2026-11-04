@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Annotated,Literal
 
-from pydantic import Field,model_validator
+from pydantic import Field,model_validator,create_model
 
 from forge.handoffs import record_handoff
 from forge.scenario_quality import validate_quality
@@ -123,6 +123,20 @@ class AcceptanceSuite(Envelope):
         description='Unverified criteria or remaining parts. Partial entries also need real scenarios and never count as complete coverage.')
 
 
+def acceptance_schema(criterion_count):
+    """Bind model choices to this approved plan; preserve the executable protocol."""
+    if type(criterion_count) is not int or not 1<=criterion_count<=20:
+        raise ValueError('Acceptance schema needs between one and twenty approved criteria')
+    index=Literal[tuple(range(1,criterion_count+1))]
+    scenario=create_model('ApprovedScenario',__base__=Scenario,
+        criteria=(list[index],Field(min_length=1,max_length=criterion_count)))
+    uncovered=create_model('ApprovedUncovered',__base__=Uncovered,criterion=(index,...))
+    partial=create_model('ApprovedPartialCoverage',__base__=PartialCoverage,criterion=(index,...))
+    return create_model('AcceptanceSuite',__base__=AcceptanceSuite,
+        scenarios=(list[scenario],Field(max_length=6)),
+        uncovered=(list[partial|uncovered],Field(default_factory=list,max_length=criterion_count)))
+
+
 def validate_coverage(suite,criterion_count):
     names=[case.id for case in suite.scenarios]
     if len(set(names))!=len(names):raise ValueError('Scenario IDs must be unique')
@@ -221,6 +235,7 @@ def proposal_context(ledger,state,review):
     omitted={key:hashlib.sha256(json.dumps(review['draft'][key],sort_keys=True).encode()).hexdigest()
         for key in ('files','test_strategy') if key in review['draft']}
     data={**review['binding']['inputs'],'approved_design':design,'approved_design_omitted':omitted,'review_fingerprint':review['fingerprint'],
+        'approved_criterion_ids':list(range(1,len(review['draft']['acceptance_criteria'])+1)),
         'previous_proposal':previous,'protocol_errors':[o.error for o in state.observations if o.revision==state.revision and o.error][-2:],
         'browser_protocol_constraints':browser_capabilities(),
         'correction_instruction':'Correct the precise protocol errors in the previous proposal. Return the complete contract without dropping valid assertions.'}
@@ -242,7 +257,8 @@ def acceptance_worker(ledger,state,agents,review,authorize,review_coverage=None,
             'Define independent assertions from approved requirements; no app source is supplied.',data,
             agents=agents,task_id=state.task.id,parent_task_id=state.task.parent_id,task_state=state)
         agents.activity=lambda status,payload:ledger.store.event(ledger.job_id,status,payload,update_status=False)
-        suite=AcceptanceSuite.model_validate(agents.generate(AcceptanceSuite,INSTRUCTION,data,coding=True))
+        schema=acceptance_schema(len(review['draft']['acceptance_criteria']))
+        suite=AcceptanceSuite.model_validate(agents.generate(schema,INSTRUCTION,data,coding=True))
         authorize();ledger.assert_active(state)
         proposal=suite_path(ledger,state).parent/f'proposal-{state.task.id}-r{state.revision}-a{state.actions_used}.json'
         proposal.parent.mkdir(parents=True,exist_ok=True)
