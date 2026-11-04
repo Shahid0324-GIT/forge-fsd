@@ -1445,3 +1445,26 @@ installed Next.js 16 requirement: dynamic handler `context.params` is a Promise 
 must be awaited. This is framework information, not an app-owned business type or
 a manual edit to generated code. Source/planning/raw-transport selection: **64 passed**,
 exit 0 (13 existing warnings).
+
+## Increment 41: scope senior review and preserve generated diagnostic provenance
+
+The notes senior reviewer hit its fixed context budget because it received every
+source file plus the original test proposal. Review context now uses current
+diagnostic modules, their imports/consumers and shared types, with explicit omitted
+file hashes and a complete owner inventory. App-owned architecture, assumptions,
+original request and every acceptance criterion remain. File ownership is represented
+in the inventory; the old test-strategy proposal is referenced by hash instead of
+repeated beside actual execution evidence.
+
+Next-generated `.next/types/app/...` diagnostics now identify the corresponding owned
+module while retaining their generated location separately. They never masquerade
+as line/column coordinates in the original source. This also lets existing owner
+routing find the real route owner. Senior recovery proposals use the bounded hosted
+metadata output budget; raw source budgets remain unchanged.
+
+Reviewer/coordinator/source/owner-routing selection: **58 passed**, exit 0. Provider,
+hybrid and review-context selection: **51 passed**, exit 0 (13 existing warnings).
+Read-only inspection measured the actual scoped notes senior packet at **18,107
+characters**, below its unchanged 20,000-character limit, retaining the route, database
+helper and shared type. The same approved notes task has resumed with its source and
+frozen requirements intact; no manual app-source correction is claimed.

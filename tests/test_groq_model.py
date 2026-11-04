@@ -62,9 +62,10 @@ def test_agent_keeps_native_schema_without_duplicating_it_in_hosted_prompt(tmp_p
     assert '"properties"' not in payloads[0]['messages'][0]['content']
 
 
-def test_small_repair_metadata_uses_a_bounded_budget_without_changing_schema(tmp_path,monkeypatch):
+@pytest.mark.parametrize('schema_name',['RepairFocus','SourceTarget','CycleRepairActions','RecoveryDecision'])
+def test_small_repair_metadata_uses_a_bounded_budget_without_changing_schema(tmp_path,monkeypatch,schema_name):
     from pydantic import create_model
-    schema=create_model('RepairFocus',__base__=Answer);payloads=[]
+    schema=create_model(schema_name,__base__=Answer);payloads=[]
     def post(self,payload):payloads.append(payload);return 200,None,response()
     monkeypatch.setattr(provider.GroqChat,'_post',post)
     agent=OllamaAgents.__new__(OllamaAgents);agent.model=provider.GroqChat();agent.model_name=provider.GROQ_MODEL;agent.trace_directory=tmp_path

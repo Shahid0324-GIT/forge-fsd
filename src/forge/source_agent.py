@@ -147,6 +147,12 @@ def diagnostic_context(failure,source):
         lines=file['content'].splitlines()
         for match in re.finditer(pattern,output):
             line,column=int(match[1]),int(match[2])
+            if output[:match.start()].endswith('.next/types/'):
+                locations.append({'file':path,'line':None,'column':None,'code':match[3],'message':match[4],
+                    'generated_location':{'file':'.next/types/'+path,'line':line,'column':column},
+                    'line_text':'','expression_at_column':'','source_excerpt':[],
+                    'source_mapping':'Generated Next.js route types identify this owned module; their line/column are not source coordinates.'})
+                continue
             if 1<=line<=len(lines):
                 locations.append({'file':path,'line':line,'column':column,'code':match[3],'message':match[4],
                     'line_text':lines[line-1],'expression_at_column':lines[line-1][column-1:column+100],

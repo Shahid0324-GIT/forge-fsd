@@ -1,5 +1,6 @@
 """Focused escalation role using the existing LangChain/Ollama adapter."""
 import json
+import hashlib
 from typing import Annotated,Literal,Union
 
 from pydantic import Field,RootModel,create_model
@@ -8,6 +9,34 @@ from forge.handoffs import record_handoff
 from forge.check_context import observed_context
 from forge.cycle_context import rejected_state_context
 from forge.tasks import RecoveryPlan
+from forge.source_scope import scope_source,page_module
+
+
+def scoped_review_context(context,failed,evidence):
+    source=context.get('current_source')
+    if not isinstance(source,dict) or not source or not all(isinstance(body,str) for body in source.values()):return context
+    from forge.source_agent import diagnostic_context
+    snapshot={path:{'content':body,'sha256':hashlib.sha256(body.encode('utf-8')).hexdigest()} for path,body in source.items()}
+    design=context.get('approved_design',{});files=design.get('files',[]) if isinstance(design,dict) else []
+    owners={file['path']:file['owner'] for file in files}
+    seeds=list(dict.fromkeys(row['file'] for row in diagnostic_context(evidence,snapshot)))
+    if not seeds:
+        seeds=[path for path in source if owners.get(path)==failed.task.owner] or list(source)
+        if evidence and any('browser_acceptance (exit' in check['summary'] for check in evidence.get('checks',[])):
+            seeds=[path for path in seeds if page_module(path)] or seeds
+    selected,omitted,inventory=scope_source(snapshot,seeds,owners or source)
+    result={**context,'current_source':{path:packet['content'] for path,packet in selected.items()},
+        'context_omitted':omitted,'source_inventory':[{**row,'owner':owners.get(row['file'])} for row in inventory]}
+    if isinstance(design,dict):
+        # Preserve app-owned architecture, assumptions and every criterion. File
+        # ownership is represented in the inventory; execution reports describe
+        # the checks actually run instead of repeating the original test proposal.
+        result['approved_design']={key:value for key,value in design.items() if key not in {'files','test_strategy'}}
+        result['context_omitted_fields']=[{'field':'approved_design.'+key,
+            'sha256':hashlib.sha256(json.dumps(design[key],sort_keys=True).encode()).hexdigest(),
+            'reason':'File ownership is in source_inventory; original test strategy is superseded by current execution evidence.'}
+            for key in ('files','test_strategy') if key in design]
+    return result
 
 
 INSTRUCTION='''You are ForgeFSD's senior reviewer, called because ordinary recovery
@@ -82,6 +111,7 @@ class SeniorReviewer:
             'prior_strategy_supplied':failed.recovery is not None,
             'previous_review_error':failed.review_error,
             'context_limits':{'check_summaries_bounded':True,'full_evidence_in_referenced_reports':True}}
+        data['app_context']=scoped_review_context(data['app_context'],failed,data['current_evidence'])
         if len(json.dumps(data,separators=(',',':')))>20000:
             raise ValueError('Senior-review context exceeds budget; supply the relevant artifacts instead of silently dropping requirements')
         previous_context=getattr(self.agents,'invocation_context',{})
