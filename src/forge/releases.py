@@ -346,6 +346,13 @@ def gh(*args):
     return command([executable,*args])
 
 
+def create_private_repository(repository):
+    # Use the REST create endpoint; GraphQL failures must not cause adoption of
+    # an existing destination or a force push.
+    return gh('api','user/repos','--method','POST','-f',f'name={repository.split("/")[1]}',
+        '-F','private=true','-f','description=Application generated and verified by ForgeFSD')
+
+
 def publish_release(job_id,store,fingerprint,approved=False):
     if approved is not True:raise ValueError('Publishing requires separate explicit approval')
     report,bundle=reviewed_release(job_id,store,fingerprint)
@@ -362,7 +369,7 @@ def publish_release(job_id,store,fingerprint,approved=False):
     sha=command(['git','rev-parse','HEAD'],export)
     store.event(job_id,'RELEASE_PUBLISH_STARTED',{'repository':repository,'sha':sha,'release_fingerprint':fingerprint,'approved_by':'local_dashboard'},update_status=False)
     # Creates a NEW private repo only. Never overwrite an existing remote or force-push.
-    gh('repo','create',repository,'--private','--description','Application generated and verified by ForgeFSD')
+    create_private_repository(repository)
     command(['git','remote','add','origin',f'https://github.com/{repository}.git'],export)
     command(['git','push','-u','origin','main'],export)
     store.event(job_id,'APP_PUBLISHED',{'repository':repository,'sha':sha,'release_fingerprint':fingerprint,
@@ -377,6 +384,36 @@ def published_release(job_id,store,fingerprint):
     remote=json.loads(gh('api',f'repos/{published["repository"]}/commits/main'))
     if remote.get('sha')!=published['sha']:raise ValueError('Remote main changed after publishing; a new release review is required')
     return report,published
+
+
+def resume_failed_repository_creation(job_id,store,fingerprint,*,approved=False):
+    """Resume only a failed create against a still-absent remote; never adopt a repo."""
+    if approved is not True:raise ValueError('Publishing recovery requires explicit approval')
+    report,bundle=reviewed_release(job_id,store,fingerprint)
+    events=store.read(job_id)['events']
+    attempts=[e['payload'] for e in events if e['status']=='RELEASE_PUBLISH_STARTED']
+    if len(attempts)!=1 or attempts[0]['release_fingerprint']!=fingerprint:
+        raise ValueError('Inspect publishing attempts before recovery')
+    if any(e['status']=='APP_PUBLISHED' for e in events):raise ValueError('Application is already published')
+    pending=attempts[0];repository=validate_repository(report['repository'])
+    if pending['repository']!=repository:raise ValueError('Publishing destination changed')
+    login=gh('api','user','--jq','.login')
+    if repository.split('/')[0].lower()!=login.lower() or repository.lower()==f'{login}/forge-fsd'.lower():
+        raise ValueError('Publishing recovery requires the same personal app destination')
+    export=bundle.parent/'publish'
+    if command(['git','rev-parse','HEAD'],export)!=pending['sha'] or command(['git','status','--porcelain','--untracked-files=all'],export):
+        raise ValueError('Prepared publishing commit changed')
+    try:gh('api',f'repos/{repository}')
+    except ValueError as exc:
+        if 'HTTP 404' not in str(exc):raise
+    else:raise ValueError('Remote exists; inspect it manually instead of adopting or overwriting it')
+    store.event(job_id,'RELEASE_CREATE_RESUMED',{'repository':repository,'sha':pending['sha'],'release_fingerprint':fingerprint},update_status=False)
+    create_private_repository(repository)
+    command(['git','remote','add','origin',f'https://github.com/{repository}.git'],export)
+    command(['git','push','-u','origin','main'],export)
+    store.event(job_id,'APP_PUBLISHED',{'repository':repository,'sha':pending['sha'],'release_fingerprint':fingerprint,
+        'url':f'https://github.com/{repository}','source_fingerprint':report['source_fingerprint']},update_status=False)
+    return store.read(job_id)
 
 
 def app_ci(job_id,store,fingerprint):

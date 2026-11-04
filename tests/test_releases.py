@@ -175,7 +175,7 @@ def test_publish_creates_only_reviewed_private_app_repo_once(prepared,monkeypatc
         return 'a'*40 if args[:2]==['git','rev-parse'] else ''
     monkeypatch.setattr(release,'gh',gh);monkeypatch.setattr(release,'command',command)
     release.publish_release(job,store,report['release_fingerprint'],True)
-    assert ('repo','create','person/generated-app','--private','--description','Application generated and verified by ForgeFSD') in calls
+    assert ('api','user/repos','--method','POST','-f','name=generated-app','-F','private=true','-f','description=Application generated and verified by ForgeFSD') in calls
     assert any(args[:2]==['git','push'] and '--force' not in args for args in git)
     assert store.read(job)['events'][-1]['status']=='APP_PUBLISHED'
     assert source_fingerprint(bundle)==report['bundle_fingerprint']
@@ -212,3 +212,36 @@ def test_cleanup_does_not_revive_a_historical_deployment(prepared,monkeypatch):
     assert result['status']=='APP_DEPLOYMENT_STATUS'
     assert result['payload']['removed'] and not result['payload']['cloud_deployed']
     assert not any('--workflow' in args and args[args.index('--workflow')+1]=='deploy.yml' for args in calls)
+
+
+@pytest.mark.parametrize('remote',['absent','exists','unavailable'])
+def test_failed_creation_resumes_only_same_commit_and_confirmed_absent_remote(prepared,monkeypatch,remote):
+    _,store,job,_,_=prepared;report,_=prepare(prepared);commands=[];calls=[]
+    def command(args,cwd=None):
+        commands.append(args)
+        return 'a'*40 if args[:2]==['git','rev-parse'] else ''
+    def failed_create(*args):
+        if args[:2]==('api','user'):return 'person'
+        raise ValueError('GitHub server failure')
+    monkeypatch.setattr(release,'command',command);monkeypatch.setattr(release,'gh',failed_create)
+    with pytest.raises(ValueError,match='server failure'):release.publish_release(job,store,report['release_fingerprint'],True)
+    commands.clear()
+    def recover(*args):
+        calls.append(args)
+        if args[:2]==('api','user'):return 'person'
+        if args[:2]==('api','repos/person/generated-app'):
+            if remote=='absent':raise ValueError('Not Found (HTTP 404)')
+            if remote=='unavailable':raise ValueError('Server error (HTTP 500)')
+            return '{}'
+        return ''
+    monkeypatch.setattr(release,'gh',recover)
+    if remote=='absent':
+        result=release.resume_failed_repository_creation(job,store,report['release_fingerprint'],approved=True)
+        assert result['events'][-1]['status']=='APP_PUBLISHED'
+        assert result['events'][-1]['payload']['sha']=='a'*40
+        assert any(c[:2]==('api','user/repos') and 'private=true' in c for c in calls)
+        assert ['git','push','-u','origin','main'] in commands
+    else:
+        with pytest.raises(ValueError):release.resume_failed_repository_creation(job,store,report['release_fingerprint'],approved=True)
+        assert not any(c[:2]==('api','user/repos') for c in calls)
+        assert not any(c[:2]==['git','push'] for c in commands)
