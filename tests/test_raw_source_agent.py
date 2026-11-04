@@ -125,7 +125,8 @@ def test_oversized_final_repair_packet_still_stops_before_model_dispatch(tools):
     state=tools.ledger.observe(state,Observation(revision=state.revision,fingerprint=fp,
         checks=[CheckEvidence(check='isolated_build',exit_code=1,fingerprint=fp,report='missing.json',summary='app/page.tsx(1,1): error TS1234: failure')]))
     state=tools.ledger.reserve_action(state,'frontend');agent=RawAgent('Must not write')
-    with pytest.raises(ValueError,match='budget'):
+    from forge.provider_errors import ProviderResourceError
+    with pytest.raises(ProviderResourceError,match='budget'):
         SourceAgent(tools.ledger,agent,tools.root,tools.draft,workspace_boundary=tools.root.parent,check_runner=good_check)(state)
     assert not agent.raw_calls and agent.data is None
 

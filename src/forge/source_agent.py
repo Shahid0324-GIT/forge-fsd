@@ -13,6 +13,7 @@ from forge.import_reference import relative_import_reference
 from forge.cycle_context import rejected_state_context,failure_obligations
 from forge.provider_errors import ProviderResourceError
 from forge.source_scope import scope_source,page_module
+from forge.repair_context import compact_repair_context
 from forge.tasks import CheckEvidence,Envelope,Observation,Task
 from forge.workspace import source_fingerprint
 from forge.workspace_tools import ReplaceText,WorkspaceTools,WriteFile,file_hash
@@ -261,8 +262,7 @@ class SourceAgent:
             # Check the actual repair packet after removing redundant planning and
             # duplicate historical observations, not the temporary assembly above.
             # Requirements, frozen assertions and current interfaces remain intact.
-            if len(json.dumps(data,separators=(',',':')))>22000:
-                raise ValueError('Focused repair context exceeds the complete-source budget; split the task')
+            data=compact_repair_context(data)
             focus=self._focus(state,data,targets)
             # QA is another model invocation: inputs may have expired while it ran.
             # Revalidate before forwarding its diagnosis and source to the builder.
@@ -274,7 +274,7 @@ class SourceAgent:
             # builder to follow contradictory assumptions from the original draft.
             data['acceptance_criteria']=self.draft.acceptance_criteria
             data.pop('app_design',None)
-            if len(json.dumps(data,separators=(',',':')))>22000:raise ValueError('Focused repair context exceeds the complete-source budget; split the task')
+            data=compact_repair_context(data)
         if callable(getattr(self.agents,'generate_source',None)):
             proposal=self._raw_proposal(state,data,targets,tools,fingerprint,repairing,source)
         else:
