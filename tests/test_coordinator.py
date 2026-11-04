@@ -77,6 +77,33 @@ def test_reviewer_reassigns_design_problem_to_planner(ledger):
     assert seen==['builder','builder','planner'] and result.status=='completed'
 
 
+def test_senior_owner_selection_compiles_reassignment_despite_retry_label(ledger):
+    """Reproduce the saved SQLite repair handoff without weakening role authority."""
+    class Agent:
+        def generate(self,schema,instruction,data,**kwargs):
+            return schema.model_validate({'action':'retry','owner':'backend','question':'',
+                'diagnosis':'Build imports a server module that initializes storage too early',
+                'strategy':'Repair lazy initialization and directory creation in the backend-owned module'})
+    calls=[];task=create(ledger)
+    def builder(_):calls.append('builder');return evidence(False)
+    def backend(_):calls.append('backend');return evidence(True)
+    result=TaskCoordinator(ledger,{'builder':builder,'backend':backend},
+        SeniorReviewer(Agent(),ledger,{'builder','backend'}),lambda:FP).run(task.task.id)
+    assert result.status=='completed' and calls==['builder','builder','backend']
+    assert result.recovery.action=='reassign' and result.recovery.owner=='backend'
+    assert result.task.required_checks==['functional']
+
+
+def test_senior_cannot_select_unregistered_owner(ledger):
+    task=ledger.start(create(ledger))
+    child=ledger.create(Task(parent_id=task.task.id,owner='senior_reviewer',goal='Review',required_checks=['proposal']))
+    class Agent:
+        def generate(self,schema,*args,**kwargs):
+            return schema.model_validate({'action':'retry','owner':'unregistered','question':'',
+                'diagnosis':'A failure','strategy':'An unauthorized reassignment'})
+    with pytest.raises(ValueError):SeniorReviewer(Agent(),ledger,{'builder'})(task,child)
+
+
 def test_owner_routing_hands_off_evidence_without_extra_model_review_or_budget(ledger):
     seen=[]
     def builder(state):seen.append(state.task.owner);return evidence(False)

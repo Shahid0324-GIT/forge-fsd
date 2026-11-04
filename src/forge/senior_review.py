@@ -44,8 +44,9 @@ has stalled. Diagnose the actual failure using the original task, supplied app-o
 artifacts, check evidence and previous attempts. The app's types, structure and behavior
 are agent decisions; do not force a task-management template or discard requirements.
 Identify whether the correction belongs to this worker or another registered owner.
-Return a concrete next strategy with action=retry or reassign. Retry must keep the
-current owner; reassignment must use an available owner. Request input only for an
+Return a concrete next strategy and select its responsible registered owner. The
+controller derives retry versus reassignment from that owner; the action label must
+not prevent a valid ownership handoff. Request input only for an
 actual missing business decision, access or platform capability, with a focused question.
 Do not ask cosmetic or unnecessary technical questions. Do not repeat a failed strategy
 without explaining the changed evidence or approach. Never weaken required checks,
@@ -73,16 +74,12 @@ class SeniorReviewer:
         if set(self.capabilities)!=set(self.roles):raise ValueError('Capabilities must describe the registered owners exactly')
 
     def __call__(self,failed,child):
-        retry=create_model('RetryRecovery',__base__=RecoveryPlan,action=(Literal['retry'],...),
-            owner=(Literal[failed.task.owner],...),question=(Literal[''],'') )
+        retry=create_model('WorkerRecovery',__base__=RecoveryPlan,action=(Literal['retry','reassign'],...),
+            owner=(Literal[tuple(self.roles)],...),question=(Literal[''],'') )
         request=create_model('InputRecovery',__base__=RecoveryPlan,action=(Literal['request_input'],...),
             owner=(Literal[failed.task.owner],...),question=(str,Field(min_length=1,max_length=1000)))
         variants=[retry]
         if failed.task.allow_review_questions:variants.append(request)
-        alternatives=tuple(role for role in self.roles if role!=failed.task.owner)
-        if alternatives:
-            variants.append(create_model('ReassignRecovery',__base__=RecoveryPlan,action=(Literal['reassign'],...),
-                owner=(Literal[alternatives],...),question=(Literal[''],'')))
         choice=variants[0] if len(variants)==1 else Annotated[Union[tuple(variants)],Field(discriminator='action')]
         schema=create_model('RecoveryDecision',__base__=RootModel[choice])
         remaining=5000;observations=[]
@@ -123,6 +120,9 @@ class SeniorReviewer:
                 'Diagnose stalled work and return a recovery proposal grounded in saved evidence.',data,
                 agents=self.agents,task_id=child.task.id,parent_task_id=failed.task.id,task_state=child)
             self.agents.activity=lambda status,payload:self.ledger.store.event(self.ledger.job_id,status,payload,update_status=False)
-            return self.agents.generate(schema,INSTRUCTION,data,coding=True).root
+            selected=self.agents.generate(schema,INSTRUCTION,data,coding=True).root
+            if selected.action!='request_input':
+                selected=selected.model_copy(update={'action':'retry' if selected.owner==failed.task.owner else 'reassign'})
+            return RecoveryPlan.model_validate(selected.model_dump())
         finally:
             self.agents.invocation_context=previous_context;self.agents.activity=previous_activity

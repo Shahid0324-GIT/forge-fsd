@@ -29,3 +29,20 @@ def test_old_revision_diagnostics_cannot_reassign_work(tools):
         checks=[CheckEvidence(check='isolated_build',exit_code=1,fingerprint=fp,report='missing.json',summary='lib/types.ts(1,1): error TS1234: Old failure')]))
     state=tools.ledger.revise(state,state.task)
     assert compiler_repair_owner(state,tools.root,tools.owners,tools.ledger.store.path.parent) is None
+
+
+@pytest.mark.parametrize('entry,summary,expected',[
+    ('app/api/widgets/route.ts','Failed to collect configuration for /api/widgets','backend'),
+    ('app/(server)/api/widgets/route.ts','Failed to collect page data for /api/widgets','backend'),
+    ('app/api/widgets/route.ts','Failed to collect configuration for /api/other',None),
+    ('app/api/widgets/route.ts','unable to open database file',None),
+])
+def test_next_build_route_failure_uses_existing_entry_owner_and_current_source(tools,entry,summary,expected):
+    path=tools.root/entry;path.parent.mkdir(parents=True,exist_ok=True);path.write_text('export const GET=()=>null;\n')
+    tools.owners[entry]='backend'
+    fp=source_fingerprint(tools.root)
+    state=tools.ledger.observe(tools.state,Observation(revision=tools.state.revision,fingerprint=fp,
+        checks=[CheckEvidence(check='isolated_build',exit_code=1,fingerprint=fp,report='missing.json',summary=summary)]))
+    assert compiler_repair_owner(state,tools.root,tools.owners,tools.ledger.store.path.parent)==expected
+    path.write_text('export const GET=()=>42;\n')
+    assert compiler_repair_owner(state,tools.root,tools.owners,tools.ledger.store.path.parent) is None
