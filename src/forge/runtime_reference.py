@@ -22,5 +22,6 @@ def runtime_references(database):
             'parameters':'Use ? placeholders and bound values, rather than interpolating user input into SQL.',
             'api_boundary':'DatabaseSync provides exec/prepare/close, not ORM model properties. Define any app-specific helper interface yourself.',
             'dependencies':'No npm database package is needed. Prisma, @prisma/client, sqlite3 and better-sqlite3 are not installed; do not import them.',
+            'initialization':'Next.js production build imports route modules in parallel workers. Avoid opening/migrating a shared SQLite file as an import side effect: initialize lazily in request-time helpers. Concurrent connections need a bounded busy timeout before schema/journal changes (for example db.exec("PRAGMA busy_timeout = 5000")).',
         }
     return facts

@@ -1468,3 +1468,16 @@ Read-only inspection measured the actual scoped notes senior packet at **18,107
 characters**, below its unchanged 20,000-character limit, retaining the route, database
 helper and shared type. The same approved notes task has resumed with its source and
 frozen requirements intact; no manual app-source correction is claimed.
+
+## Increment 42: describe SQLite initialization under parallel builds
+
+Production build workers import route modules concurrently. A generated module that
+opens/migrates the same SQLite file on import can therefore fail with `database is
+locked`. Runtime references now explain lazy request-time initialization and a
+bounded busy timeout before schema/journal changes. This is implementation guidance;
+the app's schema, helpers and actual source changes remain agent-owned.
+
+Source-context selection: **28 passed**, exit 0 (13 existing warnings). The already
+running 120B notes worker independently completed its backend repairs and isolated
+build; that process started before this latest reference addition. No credit for its
+repair is attributed to the new reference. Independent QA is in progress.
