@@ -34,6 +34,29 @@ def context(tmp_path):
     return ledger,state,review,Agent()
 
 
+def test_independent_qa_keeps_requirements_and_previous_assertions_without_repeating_build_assignments(context):
+    import hashlib
+    from forge.autonomous_acceptance import proposal_context
+    ledger,state,review,_=context
+    review['draft'].update(files=[{'path':'app/page.tsx','owner':'frontend','purpose':'UI assignment '*400}],
+        test_strategy='Earlier implementation proposal '*100,
+        assumptions=['Single user'],database='none')
+    original=json.loads(json.dumps(review['draft']))
+    directory=suite_path(ledger,state).parent;directory.mkdir(parents=True,exist_ok=True)
+    previous=proposal();(directory/f'proposal-{state.task.id}-r{state.revision}-a1.json').write_text(json.dumps(previous),encoding='utf-8')
+    data=proposal_context(ledger,state,review)
+    assert data['approved_design']['acceptance_criteria']==original['acceptance_criteria']
+    assert data['approved_design']['design']==original['design'] and data['approved_design']['assumptions']==original['assumptions']
+    assert data['previous_proposal']==previous
+    assert data['original_request']==review['binding']['inputs']['original_request']
+    assert data['human_clarifications']==review['binding']['inputs']['human_clarifications']
+    assert review['draft']==original
+    for key in ['files','test_strategy']:
+        assert key not in data['approved_design']
+        assert data['approved_design_omitted'][key]==hashlib.sha256(json.dumps(original[key],sort_keys=True).encode()).hexdigest()
+    assert len(json.dumps(data))<len(json.dumps(original))
+
+
 def freeze(context):
     ledger,state,review,agent=context
     checks=acceptance_worker(ledger,state,agent,review,lambda:None)

@@ -190,7 +190,13 @@ def proposal_context(ledger,state,review):
                 if trace.get('job_id')==ledger.job_id and not trace.get('output_truncated'):
                     try:previous=AcceptanceSuite.model_validate_json(trace['output']).model_dump()
                     except (ValueError,KeyError):pass
-    data={**review['binding']['inputs'],'approved_design':review['draft'],'review_fingerprint':review['fingerprint'],
+    # Independent behavior QA needs the agreed design/criteria, not source-file
+    # assignments or an earlier model's proposed test implementation. Preserve
+    # their hashes and the complete approved snapshot outside this prompt.
+    design={key:value for key,value in review['draft'].items() if key not in {'files','test_strategy'}}
+    omitted={key:hashlib.sha256(json.dumps(review['draft'][key],sort_keys=True).encode()).hexdigest()
+        for key in ('files','test_strategy') if key in review['draft']}
+    data={**review['binding']['inputs'],'approved_design':design,'approved_design_omitted':omitted,'review_fingerprint':review['fingerprint'],
         'previous_proposal':previous,'protocol_errors':[o.error for o in state.observations[-2:] if o.error],
         'correction_instruction':'Correct the precise protocol errors in the previous proposal. Return the complete contract without dropping valid assertions.'}
     if state.recovery and state.reviewed_observations==len(state.observations):data['fresh_review']=state.recovery.model_dump()

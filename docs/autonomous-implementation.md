@@ -1481,3 +1481,18 @@ Source-context selection: **28 passed**, exit 0 (13 existing warnings). The alre
 running 120B notes worker independently completed its backend repairs and isolated
 build; that process started before this latest reference addition. No credit for its
 repair is attributed to the new reference. Independent QA is in progress.
+
+## Increment 43: keep independent QA corrections focused on behavior
+
+The notes QA correction request exceeded the provider's 8,000-token cap by 110 tokens.
+It was repeating the source manifest and earlier test-strategy proposal beside the
+actual prior suite. Independent behavior QA now receives the full agreed design,
+assumptions, original request, clarification/review input, every criterion and the
+complete previous suite; source-file assignments and the old test proposal are
+represented by hashes instead of repeated. The full approved plan is unchanged.
+
+Independent QA, quality review and app-verification selection: **56 passed**, exit 0,
+in 129.78 seconds (13 existing warnings). Read-only inspection measured the actual
+notes correction packet at **8,904 characters**, retaining all seven criteria and
+the prior suite. This changes prompt construction, not frozen test expectations or
+app acceptance requirements. The saved QA task resumes in the same job.
