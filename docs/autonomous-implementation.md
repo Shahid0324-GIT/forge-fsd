@@ -1432,3 +1432,16 @@ the dashboard rebuilt successfully. Two older tests still expected autonomous pr
 to be entirely unsupported. They now check explicit preview consent and continued
 publication rejection; that API selection passed **7 tests**, exit 0. No checks were
 removed from the preview evidence gate.
+
+The subsequent complete controller rerun passed **552 tests**, exit 0, in 315.15
+seconds, with the existing 13 upstream deprecation warnings.
+
+## Increment 40: ground dynamic routes in the installed Next.js version
+
+The approved 120B notes run generated its eight files. The backend agent corrected
+a real `dirname` import error, then production route validation caught the old
+synchronous `params` signature. Runtime references now explicitly describe this
+installed Next.js 16 requirement: dynamic handler `context.params` is a Promise and
+must be awaited. This is framework information, not an app-owned business type or
+a manual edit to generated code. Source/planning/raw-transport selection: **64 passed**,
+exit 0 (13 existing warnings).

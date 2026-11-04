@@ -9,6 +9,7 @@ def runtime_references(database):
         'app/api/**/route.ts is a server HTTP module. Do not mark a route handler with use client.',
         'Client components call HTTP handlers with fetch; do not import a route handler as a client helper.',
         'Pages/layouts are server modules by default. Use a quoted use client directive only for a client boundary; never import server database code across it.',
+        'In this Next.js 16 runtime, dynamic route-handler context.params is a Promise. Type it as Promise<{id: string}> (using your actual segment names) and await context.params before reading values; the old synchronous params object fails the production route-type check.',
     ]}
     if database=='sqlite':
         facts['sqlite']={
