@@ -10,7 +10,8 @@ from pydantic import Field,model_validator
 from forge.handoffs import record_handoff
 from forge.scenario_quality import validate_quality
 from forge.acceptance_review import load_quality_review
-from forge.tasks import CheckEvidence,Envelope
+from forge.browser_capabilities import browser_capabilities
+from forge.tasks import CheckEvidence,Envelope,TaskBlockedError
 
 
 class TextTarget(Envelope):
@@ -215,9 +216,7 @@ def proposal_context(ledger,state,review):
         for key in ('files','test_strategy') if key in review['draft']}
     data={**review['binding']['inputs'],'approved_design':design,'approved_design_omitted':omitted,'review_fingerprint':review['fingerprint'],
         'previous_proposal':previous,'protocol_errors':[o.error for o in state.observations[-2:] if o.error],
-        'browser_protocol_constraints':{'unsupported':['CSS/XPath selectors','attribute assertions','keyboard actions',
-            'storage/cookie inspection','screen-reader execution'],
-            'scope':'Use the actual response schema. Prior model suggestions cannot add capabilities; retain genuinely unsupported criteria as uncovered.'},
+        'browser_protocol_constraints':browser_capabilities(),
         'correction_instruction':'Correct the precise protocol errors in the previous proposal. Return the complete contract without dropping valid assertions.'}
     if state.recovery and state.reviewed_observations==len(state.observations):data['fresh_review']=state.recovery.model_dump()
     if len(json.dumps(data,separators=(',',':')))>22000:raise ValueError('QA context exceeds budget; split the verification scope rather than dropping requirements')
@@ -242,6 +241,10 @@ def acceptance_worker(ledger,state,agents,review,authorize,review_coverage=None,
         proposal=suite_path(ledger,state).parent/f'proposal-{state.task.id}-r{state.revision}-a{state.actions_used}.json'
         proposal.parent.mkdir(parents=True,exist_ok=True)
         with proposal.open('x',encoding='utf-8',newline='\n') as output:output.write(suite.model_dump_json(indent=2))
+        if (data.get('fresh_review') and data['protocol_errors'] and data['previous_proposal']==suite.model_dump()):
+            raise TaskBlockedError('QA returned the identical rejected proposal after senior review. '
+                'Inspect the saved requirement/protocol conflict instead of spending more calls on the same contract. '
+                f'Proposal: {proposal.resolve()}. Last failure: {data["protocol_errors"][-1][:1800]}')
         validate_coverage(suite,len(review['draft']['acceptance_criteria']))
         validate_quality(suite.model_dump())
         if suite.uncovered and review_coverage:review_coverage(suite)

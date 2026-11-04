@@ -30,6 +30,8 @@ def test_review_is_bound_to_proposal_and_has_no_generated_source(context):
     assert load_quality_review(ledger,state,review,suite.model_dump(),reference).issues==[]
     assert not {'source','current_source','repair_focus'} & agent.calls[0].keys()
     assert agent.calls[0]['original_request']==review['binding']['inputs']['original_request']
+    from forge.browser_capabilities import browser_capabilities
+    assert agent.calls[0]['verification_capabilities']==browser_capabilities()
     assert agent.invocation_context==original and agent.activity is None
     assert review_suite(ledger,state,agent,review,suite,lambda:None)==reference and len(agent.calls)==1
 

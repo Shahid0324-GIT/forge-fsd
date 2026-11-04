@@ -7,6 +7,7 @@ from typing import Annotated,Literal
 from pydantic import Field
 
 from forge.handoffs import record_handoff
+from forge.browser_capabilities import browser_capabilities
 from forge.tasks import CheckEvidence,Envelope,Observation,Task
 
 
@@ -174,6 +175,7 @@ def review_suite(ledger,state,agents,review,suite,authorize):
             'human_clarifications':inputs.get('human_clarifications',[]),
             'human_review_feedback':inputs.get('human_review_feedback',[]),
             'approved_criteria':review['draft']['acceptance_criteria'],
+            'verification_capabilities':browser_capabilities(),
             'proposed_suite':data,'review_fingerprint':review['fingerprint'],'proposal_fingerprint':digest}
         if len(json.dumps(context,separators=(',',':')))>22000:
             ledger.pause(child,'Scenario review exceeds context budget',action_finished=True)
@@ -194,6 +196,7 @@ def review_suite(ledger,state,agents,review,suite,authorize):
                 scope_context={key:context[key] for key in ['original_request','human_clarifications','human_review_feedback','approved_criteria','review_fingerprint','proposal_fingerprint']}
                 scope_context['proposed_blockers']=[issue.model_dump() for issue in original.issues]
                 scope_context['coverage_limitations']=data['uncovered']
+                scope_context['verification_capabilities']=context['verification_capabilities']
                 record_handoff(ledger.store,ledger.job_id,'acceptance_reviewer','requirements_reviewer',
                     'Ground proposed blockers in agreed requirements; optional coverage cannot expand app scope.',scope_context,
                     agents=agents,task_id=scope_child.task.id,parent_task_id=child.task.id,task_state=scope_child)

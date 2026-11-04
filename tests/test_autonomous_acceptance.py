@@ -188,3 +188,22 @@ def test_partial_coverage_needs_explicit_behavior_and_real_scenario(change):
          'reason':'Screen reader execution unavailable'}]
     change(data)
     with pytest.raises(ValueError):validate_coverage(AcceptanceSuite.model_validate(data),3)
+
+
+def test_identical_rejected_proposal_after_senior_review_stops_paid_retry_cycle(context):
+    from forge.tasks import RecoveryPlan,TaskBlockedError
+    from forge.autonomous_acceptance import suite_fingerprint
+    ledger,state,review,agent=context
+    with pytest.raises(ValueError,match='Needs stronger assertions'):
+        acceptance_worker(ledger,state,agent,review,lambda:None,
+            review_quality=lambda suite:(_ for _ in ()).throw(ValueError('Needs stronger assertions')))
+    state=ledger.observe(state,Observation(revision=state.revision,fingerprint=suite_fingerprint(ledger,state),
+        error='Needs stronger assertions'))
+    state=ledger.recover(state,RecoveryPlan(diagnosis='Unchanged QA proposal',strategy='Change the assertions',
+        action='retry',owner='qa'),{'qa'})
+    state=ledger.reserve_action(state,'qa')
+    with pytest.raises(TaskBlockedError,match='identical rejected proposal after senior review'):
+        acceptance_worker(ledger,state,agent,review,lambda:None,
+            review_quality=lambda suite:pytest.fail('No repeated reviewer dispatch'))
+    assert len(list(suite_path(ledger,state).parent.glob('proposal-*.json')))==2
+    assert not suite_path(ledger,state).exists()

@@ -1546,4 +1546,13 @@ reuse a decision for a different claim. Both entirely and partially uncovered cr
 keep overall verification blocked after selected checks pass. This does not waive
 requirements or unlock preview, publication, security or deployment gates.
 
+Planning, QA and scenario/scope review now receive shared browser capability facts.
+These are verification context, not a change to the installed app runtime or an
+invalidation of existing approved app designs. Planners are instructed to keep
+criteria atomic and disclose manual checks without inventing mandatory features.
+After senior review, returning the identical rejected QA proposal raises an explicit
+controller blocker and saves the new proposal for inspection. It does not trigger
+another reviewer call, consume the remaining action budget in a loop, misclassify
+the problem as provider quota, or fabricate an app-runtime failure.
+
 The unchanged counter was also rechecked against the new harness with inference and repairs disabled. Its complete current evidence passed, retaining source `c8ea02ef…` and frozen contract `25fa64a2…`. Hosted CI at the published commit remains successful. `test_app(recheck=True)` refreshes completed/stopped-preview evidence without regenerating its contract; a running preview is not eligible. No further paid-provider requests were made.

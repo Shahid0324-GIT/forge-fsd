@@ -15,6 +15,7 @@ from forge.contracts import IntakeDecision
 from forge.planning import INTAKE_INSTRUCTION,HELP_RESPONSES
 from forge.tasks import CheckEvidence,Dependency,Envelope,Task,TaskLedger
 from forge.workspace import safe_path,is_test_source,source_fingerprint
+from forge.browser_capabilities import browser_capabilities
 
 
 TEMPLATE=Path(__file__).resolve().parents[2]/'templates/task-app'
@@ -71,7 +72,11 @@ route-handler convention; a source helper is not automatically an HTTP endpoint.
 Prefer the simplest design that satisfies the request; a backend is optional.
 This is a proposal for human review; never claim that an app was built or tests passed.
 Return the complete design, not only a correction. If previous evidence or senior
-review is supplied, use it to change the unsuccessful approach.'''
+review is supplied, use it to change the unsuccessful approach.
+verification_capabilities describes the checks actually available, not the desired
+feature set. Keep criteria atomic and separate automated checks from disclosed manual
+checks. Preserve unsupported requested behavior rather than silently removing it;
+do not add optional manual checks as mandatory feature criteria.'''
 
 
 def planning_capabilities():
@@ -132,6 +137,7 @@ def continue_draft(ledger,task_id,agents):
         # observed for this task revision may be reused as current planning context.
         bound=any(any(c.check=='draft_schema' for c in o.checks) for o in observations)
         return {**state.task.inputs,'runtime_capabilities':planning_capabilities(),
+            'verification_capabilities':browser_capabilities(),
             'latest_proposal':json.loads(candidate.read_text(encoding='utf-8')) if bound and candidate.exists() else None,
             'recent_failures':[o.model_dump() for o in observations][-2:],
             'recovery_strategy':state.recovery.model_dump() if state.recovery else None}

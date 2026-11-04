@@ -33,6 +33,18 @@ def create(ledger,limit=12):
     return ledger.create(Task(owner='builder',goal='Implement requested behavior',required_checks=['functional']),action_limit=limit)
 
 
+def test_explicit_controller_blocker_pauses_without_review_or_fake_failure(ledger):
+    from forge.tasks import TaskBlockedError
+    task=create(ledger)
+    def blocked(_):raise TaskBlockedError('Saved proposal repeats the same reviewed protocol conflict')
+    result=TaskCoordinator(ledger,{'builder':blocked},
+        lambda *_:pytest.fail('Known blockers must not spend another review call'),lambda:FP).run(task.task.id)
+    assert result.status=='paused' and result.inflight_role is None
+    assert result.actions_used==1 and not result.observations
+    assert 'reviewed protocol conflict' in result.pause_reason
+    assert result.pause_kind!='provider_resource'
+
+
 def test_recovery_continues_beyond_old_two_attempt_cap_and_reviews_stalls(ledger):
     attempts=[];reviews=[]
     def worker(state):

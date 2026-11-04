@@ -92,6 +92,10 @@ class TaskConflict(ValueError):
     pass
 
 
+class TaskBlockedError(ValueError):
+    """A known controller/requirements blocker needs inspection, not another retry."""
+
+
 class TaskLedger:
     def __init__(self,store,job_id):self.store=store;self.job_id=job_id
 

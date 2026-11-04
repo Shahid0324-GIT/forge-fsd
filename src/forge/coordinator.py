@@ -11,7 +11,7 @@ from uuid import uuid4
 from langgraph.graph import END,START,StateGraph
 from langsmith import tracing_context
 
-from forge.tasks import CheckEvidence,Observation,RecoveryPlan,Task,TaskConflict
+from forge.tasks import CheckEvidence,Observation,RecoveryPlan,Task,TaskConflict,TaskBlockedError
 from forge.provider_errors import ProviderResourceError,legacy_resource_failure
 
 
@@ -104,6 +104,9 @@ class TaskCoordinator:
         except TaskConflict:raise
         except ProviderResourceError as exc:
             self.ledger.pause(dispatched,str(exc),action_finished=True,kind='provider_resource')
+            return {}
+        except TaskBlockedError as exc:
+            self.ledger.pause(dispatched,str(exc),action_finished=True)
             return {}
         except Exception as exc:error=f'{type(exc).__name__}: {exc}'[:4000]
         try:

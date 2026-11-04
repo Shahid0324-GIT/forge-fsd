@@ -37,6 +37,8 @@ def test_client_only_plan_does_not_need_routes_entities_or_backend_task(tmp_path
     assert proposed['database']=='none' and len(proposed['files'])==1
     assert 'routes' not in proposed and 'entities' not in proposed
     assert [item['owner'] for item in proposed['files']]==['builder']
+    from forge.browser_capabilities import browser_capabilities
+    assert agent.calls[-1][1]['verification_capabilities']==browser_capabilities()
 
 
 @pytest.mark.parametrize('path',['../escape.tsx','/outside.tsx','app/../../outside.ts','package.json','app/.env.ts','app/node_modules/bad.ts'])
