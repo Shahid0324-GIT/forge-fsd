@@ -1,4 +1,5 @@
 """Focused review of a QA agent's unsupported-capability claims; no app source input."""
+from forge.execution_models import execution_model
 import hashlib
 import json
 
@@ -32,7 +33,7 @@ If genuinely unsupported explain the missing capability. Never claim execution p
 
 
 def review_coverage(ledger,state,agents,review,suite,authorize):
-    if state.task.owner!='qa' or agents.model_name!=review['binding']['model']:raise ValueError('Coverage review requires the approved QA owner/model')
+    if state.task.owner!='qa' or agents.model_name!=execution_model(ledger.job_id,ledger.store,review):raise ValueError('Coverage review requires the approved QA owner/model')
     corrections=[]
     for item in suite.uncovered:
         authorize();ledger.assert_active(state)

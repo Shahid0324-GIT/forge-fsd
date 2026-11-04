@@ -12,6 +12,8 @@ def begin_call(agent, schema, messages, attempt, coding):
     if getattr(agent,'model_name','') in {'groq:openai/gpt-oss-120b','groq:openai/gpt-oss-20b'}:
         options={'max_completion_tokens':3000 if coding else 1600,'temperature':0,
             'reasoning_effort':'medium','include_reasoning':False,'context_window':'provider-managed'}
+    if getattr(agent,'model_name','').startswith('anthropic:'):
+        options={'max_tokens':3000 if coding else 1600,'context_window':'provider-managed','request_allowance':4}
     return {'version':1, **context, 'call_id':uuid4().hex,
             'model':getattr(agent,'model_name','unknown'), 'schema':schema.__name__, 'attempt':attempt,
             'started_at':datetime.now(timezone.utc).isoformat(),

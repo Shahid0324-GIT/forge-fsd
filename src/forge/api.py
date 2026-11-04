@@ -200,6 +200,11 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
 
     @app.post('/api/jobs',status_code=202)
     def new_job(body:NewJob):
+        if body.model=='anthropic:claude-opus-5-5':
+            if body.workflow!='autonomous':raise HTTPException(422,'Claude recovery is enabled for the autonomous workflow only')
+            from forge.anthropic_model import anthropic_key
+            try:anthropic_key()
+            except (ValueError,OSError):raise HTTPException(422,'Configure ANTHROPIC_API_KEY locally before selecting Claude')
         if body.model in GROQ_MODELS or body.model==HYBRID_MODEL:
             if body.workflow!='autonomous':raise HTTPException(422,'Groq is enabled for the autonomous app workflow only')
             if not groq_configured():raise HTTPException(422,'Configure GROQ_API_KEY in .env.local, then refresh the dashboard')

@@ -14,7 +14,7 @@ handoff. Provider limits pause work rather than silently switching providers.
 
 The assignment explores how agents can gather requirements, plan an application, delegate work, inspect real test results, review failures and iterate. Generated apps use **Next.js, React and TypeScript**, with **SQLite** for supported local persistence workflows. Docker isolates application execution from the controller.
 
-**Status — 4 November 2026:** the autonomous coordinator and dashboard support reviewed generation, independent browser checks, repair and separately approved local preview. Generated-app publishing/deployment integration for this path is still pending. It is **not yet a single, fully verified request-to-deployment workflow through the dashboard**.
+**Status — 4 November 2026:** the autonomous coordinator and dashboard support reviewed generation, independent browser checks, repair and separately approved local preview. Verified stateless apps can now prepare generated-app CI/deployment bundles; hosted execution of this new path remains to be demonstrated. It is **not yet a single, fully verified request-to-deployment workflow through the dashboard**.
 
 ## What is built
 
@@ -36,7 +36,7 @@ Activity displays expose recorded handoffs, tool calls, source changes, model in
 
 **Existing app workflow:** the earlier typed-planning pipeline remains selectable for compatibility, with human plan approval, generation, verification, bounded repairs and separate preview/release controls. It has known planning/model limitations.
 
-**Autonomous path (dashboard default):** agents clarify the request and propose their design. You can approve, decline or request changes; approval then starts delegated source generation, build checks, independent acceptance QA and repair against frozen browser assertions. QA receives the approved requirements/design without generated source. Its proposed suite passes structural checks and separate test-quality/scope review before freezing. Saved build and QA resource pauses resume in the same job. Unsupported criteria block a complete app-check pass; available scenarios can still execute and produce current, explicitly partial evidence. A complete current pass enables a separately approved, localhost-only preview with disposable data and a 30-minute lifetime. This does not claim security audits or cloud readiness. Release integration remains pending for this path.
+**Autonomous path (dashboard default):** agents clarify the request and propose their design. You can approve, decline or request changes; approval then starts delegated source generation, build checks, independent acceptance QA and repair against frozen browser assertions. QA receives the approved requirements/design without generated source. Its proposed suite passes structural checks and separate test-quality/scope review before freezing. Saved build and QA resource pauses resume in the same job. Unsupported criteria block a complete app-check pass; available scenarios can still execute and produce current, explicitly partial evidence. A complete current pass enables a separately approved, localhost-only preview with disposable data and a 30-minute lifetime. This does not claim security audits or cloud readiness. Verified stateless apps can prepare a release bundle through CI/deployment roles. Its hosted CI scope is TypeScript, production build and homepage HTTP smoke; it does not replay the frozen browser suite. SQLite release adaptation remains pending.
 
 The intended flow is:
 
@@ -50,7 +50,7 @@ This diagram describes the target integration; the two paths above describe what
 
 ## Verified checkpoints
 
-Latest complete controller checkpoint: **538 Python tests passed** (13 upstream deprecation warnings). The subsequent repair-context selection passes **45 tests**, including two additional budget-order regressions. These use fake agents, temporary databases and mocked external services; they do not establish model accuracy. A separate live hybrid counter completed intake, planning, approved generation, build, independent QA and repair: all five criteria passed a ten-step frozen browser scenario, and the final evidence matched current source. That run used five local calls, six Groq calls and eleven saved handoffs, with no manual app-source corrections. The SQLite notes app passed its build; behavior testing and repair are still in progress. Eleven Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
+Latest complete controller checkpoint: **558 Python tests passed** (13 upstream deprecation warnings). Subsequent release/provider changes passed focused regression selections; see implementation checkpoints for their scope. These use fake agents, temporary databases and mocked external services; they do not establish model accuracy. A separate live hybrid counter completed intake, planning, approved generation, build, independent QA and repair: all five criteria passed a ten-step frozen browser scenario, and the final evidence matched current source. That run used five local calls, six Groq calls and eleven saved handoffs, with no manual app-source corrections. The SQLite notes app passed its build; behavior testing and repair are still in progress. Eleven Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
 
 Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker builds and Chromium:
 
@@ -243,3 +243,9 @@ Current scope is small landing pages, stateless SPAs and supported single-user S
 | `templates/`, `tests/` | Locked app scaffold, trusted checks and regression fixtures |
 
 Start with [implementation checkpoints](docs/autonomous-implementation.md) and the [autonomous POC plan](docs/autonomous-poc-plan.md). Earlier milestone notes document the evolution, including failed trials and developer-corrected apps; they are historical evidence, not guarantees about the current path. See also [dashboard architecture](docs/dashboard-milestone.md), [generated-app CI/CD](docs/generated-app-cicd.md) and the [earlier demo walkthrough](docs/demo-walkthrough.md).
+
+### Explicit Claude recovery
+
+Claude is an opt-in recovery provider, not part of the automatic hybrid fallback. Save `ANTHROPIC_API_KEY` in ignored `.env.local`; the currently supported recovery model is `anthropic:claude-opus-5-5`. No additional SDK or dependency installation is required. Each worker shares an allowance of four requests across its model copies, with at most 3,000 output tokens per request and no automatic HTTP retries. This is a request allowance, not a monetary spending limit; restarting a worker creates a new allowance.
+
+The operator can propose and explicitly approve an inference change only at a saved idle build/QA pause using `forge.execution_models`. Approval binds the current plan, source fingerprint, task revision and version. The original approved plan and frozen test contract keep their recorded model identity. This advanced recovery control is not yet a dashboard model-switch button. Normal dashboard creation defaults and the local-first hybrid policy remain unchanged.

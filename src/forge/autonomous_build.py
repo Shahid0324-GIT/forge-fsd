@@ -1,4 +1,5 @@
 """Approved source generation and build verification. No behavior/readiness promotion."""
+from forge.execution_models import execution_model
 from pathlib import Path
 
 from forge import autonomous_planning as planning
@@ -38,7 +39,7 @@ def build_app(job_id,agents,store,*,resume=False,additional_actions=8,workspace_
     expected='AUTONOMOUS_BUILD_PAUSED' if resume else 'AUTONOMOUS_APPROVED'
     if record['status']!=expected:raise ValueError('Build requires an approved plan or explicit resume of a saved build pause')
     review=approved_review(job_id,store)
-    if agents.model_name!=review['binding']['model']:raise ValueError('Use the approved job model for generation')
+    if agents.model_name!=execution_model(job_id,store,review):raise ValueError('Use the approved job model for generation')
     boundary=Path(workspace_boundary) if workspace_boundary else PROJECT/'workspace'
     root=safe_path(boundary,job_id)
     draft=planning.AppDraft.model_validate(review['draft']);ledger=TaskLedger(store,job_id)

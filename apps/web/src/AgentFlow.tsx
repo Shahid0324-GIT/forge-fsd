@@ -19,6 +19,7 @@ export function conciseIssue(message:string):string{
 }
 const steps=[['Requirements',['REQUIREMENTS','REQUIREMENTS_READY']],['Architect',['PLANNING']],['Test planning',['TEST_PLANNING']],['Builders',['BUILDING','REPAIRING']],['Verification',['VERIFYING','FUNCTIONALLY_VERIFIED']],['Security',['SECURITY_CHECK','SECURITY_PASSED']],['Release',['CI_PLANNING','DEPLOYMENT_PLANNING']]] as const;
 const summaries:Record<string,[string,string]>={
+  INFERENCE_CHANGE_APPROVED:['Inference change approved','The remaining work uses the explicitly approved model; prior source and test provenance are retained.'],
   AUTONOMOUS_DRAFT_READY:['Design proposal saved','Review the agent-authored design. No app has been built yet.'],
   AUTONOMOUS_INPUT_NEEDED:['Requirements intake','A blocking business question needs your answer.'],
   AUTONOMOUS_PAUSED:['Planning paused','The saved task can be inspected before continuing.'],

@@ -1,4 +1,5 @@
 """Independent review of a proposed test suite, bound to that exact proposal."""
+from forge.execution_models import execution_model
 import hashlib
 import json
 from typing import Annotated,Literal
@@ -149,7 +150,7 @@ def load_quality_review(ledger,state,review,suite,reference):
 
 def review_suite(ledger,state,agents,review,suite,authorize):
     authorize();ledger.assert_active(state)
-    if state.task.owner!='qa' or agents.model_name!=review['binding']['model']:
+    if state.task.owner!='qa' or agents.model_name!=execution_model(ledger.job_id,ledger.store,review):
         raise ValueError('Scenario review requires the approved QA task/model')
     data=suite.model_dump();digest=proposal_hash(data);path=_path(ledger,state,digest)
     if path.exists():

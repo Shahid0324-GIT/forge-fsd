@@ -1,4 +1,5 @@
 """Requirements-derived browser contracts stored outside generated workspaces."""
+from forge.execution_models import execution_model,authorized_models
 import hashlib
 import json
 from pathlib import Path
@@ -208,7 +209,7 @@ def acceptance_worker(ledger,state,agents,review,authorize,review_coverage=None,
     authorize();ledger.assert_active(state)
     if state.task.owner!='qa' or state.task.inputs.get('review_fingerprint')!=review['fingerprint']:
         raise ValueError('QA task must belong to the approved review')
-    if agents.model_name!=review['binding']['model']:raise ValueError('Use the approved model for acceptance QA')
+    if agents.model_name!=execution_model(ledger.job_id,ledger.store,review):raise ValueError('Use the approved model for acceptance QA')
     data=proposal_context(ledger,state,review)
     previous_context=getattr(agents,'invocation_context',{});previous_activity=getattr(agents,'activity',None)
     if getattr(agents,'trace_directory',None) is None:agents.trace_directory=ledger.store.path.parent/'model-calls'/ledger.job_id
@@ -257,7 +258,7 @@ def load_acceptance(ledger,state,review):
     packet=json.loads(raw)
     if (packet.get('version')!=1 or packet.get('job_id')!=ledger.job_id or packet.get('task_id')!=state.task.id
         or packet.get('revision')!=state.revision or packet.get('review_fingerprint')!=review['fingerprint']
-        or packet.get('model')!=review['binding']['model']):raise ValueError('Acceptance contract belongs to another review/task/model')
+        or packet.get('model') not in authorized_models(ledger.job_id,ledger.store,review)):raise ValueError('Acceptance contract belongs to another review/task/model')
     suite=AcceptanceSuite.model_validate(packet['suite']);validate_coverage(suite,len(review['draft']['acceptance_criteria']))
     if packet.get('scenario_quality_version') is not None:
         if packet['scenario_quality_version']!=1:raise ValueError('Unknown scenario-quality protocol')

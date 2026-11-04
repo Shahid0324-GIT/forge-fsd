@@ -1,4 +1,5 @@
 """Independent requirements-derived assertions feeding the existing source repair loop."""
+from forge.execution_models import execution_model
 import hashlib
 import json
 from pathlib import Path
@@ -44,7 +45,7 @@ def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,run_selecte
     expected='AUTONOMOUS_CHECKS_BLOCKED' if retry_coverage or run_selected else 'AUTONOMOUS_TEST_PAUSED' if resume else 'AUTONOMOUS_BUILD_CHECKS_PASSED'
     if record['status']!=expected:raise ValueError('App checks require a built approved app or explicit saved test resume')
     review=approved_review(job_id,store)
-    if agents.model_name!=review['binding']['model']:raise ValueError('Use the approved job model for QA/repair')
+    if agents.model_name!=execution_model(job_id,store,review):raise ValueError('Use the approved job model for QA/repair')
     boundary=Path(workspace_boundary) if workspace_boundary else PROJECT/'workspace';root=safe_path(boundary,job_id)
     draft=AppDraft.model_validate(review['draft']);ledger=TaskLedger(store,job_id)
     def authorize():
