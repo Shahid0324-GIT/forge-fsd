@@ -34,6 +34,7 @@ from forge.models import HYBRID_MODEL
 class NewJob(ApplicationRequest):
     request_id: str = Field(pattern=r'^[a-f0-9-]{32,36}$')
     workflow: Literal['typed','autonomous'] = 'typed'
+    claude_budget_usd: Literal[3] | None = None
 
 
 class Action(Boundary):
@@ -119,6 +120,9 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
 
     def view(job):
         job={**job}
+        from forge.claude_budget import RunBudget
+        budget=RunBudget.for_job(store,job['job_id'])
+        if budget is not None:job['provider_budget']=budget.summary()
         job['active_operation']=next(iter(manager.active(job['job_id'])),None)
         job['workflow']='autonomous' if uses_autonomous_planning(job) else 'typed'
         job['planning_resumable']=resumable_planning(job,store)
@@ -155,8 +159,11 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
 
     @app.get('/api/session')
     def session():
+        from forge.anthropic_model import anthropic_key
+        try:claude_configured=bool(anthropic_key())
+        except (ValueError,OSError):claude_configured=False
         response=JSONResponse({'csrf':csrf,'model':'qwen2.5-coder:3b','mode':'local','supported_app':'Small single-user apps (experimental)',
-            'groq_configured':groq_configured()})
+            'groq_configured':groq_configured(),'claude_configured':claude_configured})
         response.set_cookie('forge_session',cookie,httponly=True,samesite='strict',path='/')
         return response
 
@@ -201,6 +208,7 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
     @app.post('/api/jobs',status_code=202)
     def new_job(body:NewJob):
         if body.model=='anthropic:claude-opus-5-5':
+            if body.claude_budget_usd!=3:raise HTTPException(422,'Approve the $3 Claude run allowance before creating a plan')
             if body.workflow!='autonomous':raise HTTPException(422,'Claude recovery is enabled for the autonomous workflow only')
             from forge.anthropic_model import anthropic_key
             try:anthropic_key()
@@ -220,7 +228,11 @@ def create_app(db_path=None, *, manager_factory=OperationManager):
                 return {'job_id':existing[1],'operation':manager.read(existing[0])}
             if manager.active():raise HTTPException(409,'Another operation is running. Wait or stop it first.')
             request=ApplicationRequest(description=body.description,model=body.model)
-            job_id=store.create({**request.model_dump(),'workflow':body.workflow});latest=store.read(job_id)['events'][-1]['sequence']
+            job_id=store.create({**request.model_dump(),'workflow':body.workflow})
+            if body.model=='anthropic:claude-opus-5-5':
+                from forge.claude_budget import authorize
+                authorize(store,job_id,approved=True,actor='local_dashboard_explicit_claude_3usd')
+            latest=store.read(job_id)['events'][-1]['sequence']
             operation=manager.submit(job_id,'plan',request.model_dump(),body.request_id,latest)
             return {'job_id':job_id,'operation':operation}
 

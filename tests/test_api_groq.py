@@ -28,7 +28,7 @@ def test_session_discloses_provider_availability_without_credentials(client,monk
     browser,_=client;monkeypatch.setattr(api,'groq_configured',lambda:True)
     data=browser.get('/api/session').json()
     assert data['groq_configured'] is True and data['model']=='qwen2.5-coder:3b'
-    assert set(data)=={'csrf','model','mode','supported_app','groq_configured'}
+    assert set(data)=={'csrf','model','mode','supported_app','groq_configured','claude_configured'}
 
 
 def test_unknown_or_unconfigured_model_identity_never_silently_becomes_hosted():

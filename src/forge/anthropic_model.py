@@ -39,6 +39,7 @@ class AnthropicChat(BaseChatModel):
     num_ctx:int=4096
     temperature:float=0
     _budget:CallBudget=PrivateAttr(default_factory=CallBudget)
+    _run_budget:object=PrivateAttr(default=None)
 
     @property
     def _llm_type(self):return 'forge-anthropic'
@@ -80,9 +81,14 @@ class AnthropicChat(BaseChatModel):
             # validate locally; accept exactly one named schema result only.
             payload['tool_choice']={'type':'auto','disable_parallel_tool_use':True}
             payload['system']+='\nReturn your complete answer by calling emit_result exactly once. Do not answer with prose.'
-        self._budget.reserve()
+        reservation=self._run_budget.reserve(payload) if self._run_budget is not None else None
+        if self._run_budget is None:self._budget.reserve()
         status,raw=self._post(payload)
         if status!=200:raise ProviderResourceError(f'Claude HTTP {status}; provider request paused. No app defect inferred.')
+        if self._run_budget is not None:
+            try:usage=json.loads(raw)['usage']
+            except (ValueError,KeyError,TypeError):raise ProviderResourceError('Claude usage missing; full request reservation retained') from None
+            self._run_budget.settle(reservation,usage)
         try:
             result=json.loads(raw);reason=result['stop_reason'];blocks=result['content'];usage=result.get('usage',{})
             if 'tools' in payload:
@@ -95,7 +101,8 @@ class AnthropicChat(BaseChatModel):
             if not content:raise ValueError('Empty response')
         except (KeyError,TypeError,ValueError):raise ValueError('Claude returned an invalid response') from None
         message=AIMessage(content=content,response_metadata={'provider':'anthropic','model':self.model_name,'done_reason':'stop',
-            'provider_stop_reason':reason,'max_tokens':payload['max_tokens'],'requests_used':self._budget.used,'request_allowance':4},
+            'provider_stop_reason':reason,'max_tokens':payload['max_tokens'],
+            **(self._run_budget.summary() if self._run_budget is not None else {'requests_used':self._budget.used,'request_allowance':4})},
             usage_metadata={'input_tokens':usage.get('input_tokens',0),'output_tokens':usage.get('output_tokens',0),
                 'total_tokens':usage.get('input_tokens',0)+usage.get('output_tokens',0)})
         return ChatResult(generations=[ChatGeneration(message=message)])

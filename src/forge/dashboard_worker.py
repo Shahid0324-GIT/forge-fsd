@@ -106,6 +106,9 @@ def main():
     store=JobStore(Path(data['db']))
     try:
         agents=OllamaAgents(job_model(store.read(data['job_id'])))
+        if agents.model_name=='anthropic:claude-opus-5-5':
+            from forge.claude_budget import RunBudget
+            agents.model._run_budget=RunBudget.for_job(store,data['job_id'])
         agents.trace_directory=args.payload.parent/'model-calls'
         agents.invocation_context={'job_id':data['job_id'],'operation_id':args.payload.parent.name,'actor':'requirements_agent'}
         agents.activity=lambda status,payload:store.event(data['job_id'],status,payload,update_status=False)

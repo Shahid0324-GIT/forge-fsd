@@ -246,8 +246,15 @@ Start with [implementation checkpoints](docs/autonomous-implementation.md) and t
 
 ### Explicit Claude recovery
 
-Claude is an opt-in recovery provider, not part of the automatic hybrid fallback. Save `ANTHROPIC_API_KEY` in ignored `.env.local`; the currently supported recovery model is `anthropic:claude-opus-5-5`. No additional SDK or dependency installation is required. Each worker shares an allowance of four requests across its model copies, with at most 3,000 output tokens per request and no automatic HTTP retries. This is a request allowance, not a monetary spending limit; restarting a worker creates a new allowance.
+Claude is an opt-in recovery provider, not part of the automatic hybrid fallback. Save `ANTHROPIC_API_KEY` in ignored `.env.local`; the currently supported recovery model is `anthropic:claude-opus-5-5`. No additional SDK or dependency installation is required. Recovery workers without an approved run budget share an allowance of four requests across model copies, with at most 3,000 output tokens per request and no automatic HTTP retries. This is a request allowance, not a monetary spending limit; restarting a worker creates a new allowance.
 
 The operator can propose and explicitly approve an inference change only at a saved idle build/QA pause using `forge.execution_models`. Approval binds the current plan, source fingerprint, task revision and version. The original approved plan and frozen test contract keep their recorded model identity. This advanced recovery control is not yet a dashboard model-switch button. Normal dashboard creation defaults and the local-first hybrid policy remain unchanged.
 
 Browser scenarios now run in separate app containers with fresh temporary databases. Reloads within a scenario retain that scenario's data. This prevents fixtures from one case contaminating another. Reports aggregate every frozen case and verify each child report's hash, source, harness and images. The last full Python checkpoint passed 587 tests; the subsequent isolation/recheck selection passed 17 checks and both live app verifications passed their supported assertions.
+
+
+### Fresh Claude-only demo with a run allowance
+
+The autonomous dashboard now offers **Claude · Opus 5.5 · $3 run budget**. Creating its plan explicitly authorizes an application-side $3 API allowance; approving source generation is still a separate decision. Prompts, generated source and diagnostics are sent to Anthropic. The allowance persists in the run database across role changes, retries and worker restarts. It reserves a conservative maximum before each request, settles known usage and retains full reservations when usage is uncertain. The dashboard shows used/reserved cost. A request that does not fit pauses before contacting the provider.
+
+This guard uses the verified Opus 5.5 base rates of $4/M input and $20/M output tokens, conservatively accounting for possible cache usage. It is not an Anthropic account billing limit and excludes taxes. Pricing changes require reviewing the guard. Earlier recovery runs without an explicitly approved run allowance retain their four-request worker limit. No existing run or generated application is changed by selecting Claude for a fresh run.
