@@ -14,7 +14,7 @@ handoff. Provider limits pause work rather than silently switching providers.
 
 The assignment explores how agents can gather requirements, plan an application, delegate work, inspect real test results, review failures and iterate. Generated apps use **Next.js, React and TypeScript**, with **SQLite** for supported local persistence workflows. Docker isolates application execution from the controller.
 
-**Status — 4 November 2026:** the autonomous coordinator and dashboard support reviewed generation, independent browser checks, repair and separately approved local preview. Verified stateless apps can now prepare generated-app CI/deployment bundles; hosted execution of this new path remains to be demonstrated. It is **not yet a single, fully verified request-to-deployment workflow through the dashboard**.
+**Status — 4 November 2026:** the autonomous coordinator and dashboard support reviewed generation, independent browser checks, repair and separately approved local preview. Verified stateless apps can now prepare generated-app CI/deployment bundles; a generated counter has completed publishing and hosted build/homepage-smoke CI at its exact approved commit. It is **not yet a single, fully verified request-to-deployment workflow through the dashboard**.
 
 ## What is built
 
@@ -50,7 +50,7 @@ This diagram describes the target integration; the two paths above describe what
 
 ## Verified checkpoints
 
-Latest complete controller checkpoint: **558 Python tests passed** (13 upstream deprecation warnings). Subsequent release/provider changes passed focused regression selections; see implementation checkpoints for their scope. These use fake agents, temporary databases and mocked external services; they do not establish model accuracy. A separate live hybrid counter completed intake, planning, approved generation, build, independent QA and repair: all five criteria passed a ten-step frozen browser scenario, and the final evidence matched current source. That run used five local calls, six Groq calls and eleven saved handoffs, with no manual app-source corrections. The SQLite notes app passed its build; behavior testing and repair are still in progress. Eleven Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
+Latest complete controller checkpoint: **577 Python tests passed** (13 upstream deprecation warnings). Subsequent release/provider changes passed focused regression selections; see implementation checkpoints for their scope. These use fake agents, temporary databases and mocked external services; they do not establish model accuracy. A separate live hybrid counter completed intake, planning, approved generation, build, independent QA and repair: all five criteria passed a ten-step frozen browser scenario, and the final evidence matched current source. That run used five local calls, six Groq calls and eleven saved handoffs, with no manual app-source corrections. The SQLite notes app passed its build and froze independent QA; behavior checks exposed an empty-title validation mismatch, and recovery is still in progress. The counter additionally passed local preview interaction checks and generated-app hosted build/homepage-smoke CI. Eleven Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
 
 Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker builds and Chromium:
 

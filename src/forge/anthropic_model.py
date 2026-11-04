@@ -64,12 +64,22 @@ class AnthropicChat(BaseChatModel):
             if message.type=='system':system.append(message.content)
             elif message.type in {'human','ai'}:wire.append({'role':'user' if message.type=='human' else 'assistant','content':message.content})
             else:raise ValueError('Unsupported Claude message role')
-        payload={'model':self.model_name,'max_tokens':min(self.num_predict,3000),'messages':wire,'system':'\n\n'.join(system)}
+        payload={'model':self.model_name,'max_tokens':min(self.num_predict,3000),'messages':wire,'system':'\n\n'.join(system),
+            'output_config':{'effort':'low'}}
         if stop:payload['stop_sequences']=stop
         # This schema-only tool returns data. It grants no execution capability.
         if kwargs.get('response_schema') is not None:
-            payload['tools']=[{'name':'emit_result','description':'Return the requested structured result.','input_schema':kwargs['response_schema']}]
-            payload['tool_choice']={'type':'tool','name':'emit_result','disable_parallel_tool_use':True}
+            # Tool inputs must be objects. RootModel unions remain unchanged
+            # inside a transport envelope; hoist definitions so local refs retain
+            # their original meaning. The app-owned schema is validated below.
+            schema=dict(kwargs['response_schema']);definitions=schema.pop('$defs',None)
+            envelope={'type':'object','properties':{'result':schema},'required':['result'],'additionalProperties':False}
+            if definitions is not None:envelope['$defs']=definitions
+            payload['tools']=[{'name':'emit_result','description':'Return the requested structured result inside the result property.','input_schema':envelope}]
+            # Opus 5.5 rejects forced tool choice. Keep the original schema and
+            # validate locally; accept exactly one named schema result only.
+            payload['tool_choice']={'type':'auto','disable_parallel_tool_use':True}
+            payload['system']+='\nReturn your complete answer by calling emit_result exactly once. Do not answer with prose.'
         self._budget.reserve()
         status,raw=self._post(payload)
         if status!=200:raise ProviderResourceError(f'Claude HTTP {status}; provider request paused. No app defect inferred.')
@@ -78,7 +88,7 @@ class AnthropicChat(BaseChatModel):
             if 'tools' in payload:
                 calls=[b for b in blocks if b.get('type')=='tool_use' and b.get('name')=='emit_result']
                 if reason!='tool_use' or len(calls)!=1:raise ProviderResourceError('Claude structured result incomplete; no proposal accepted')
-                content=json.dumps(calls[0]['input'])
+                content=json.dumps(calls[0]['input']['result'])
             else:
                 if reason!='end_turn':raise ProviderResourceError('Claude source incomplete; no file written')
                 content=''.join(b['text'] for b in blocks if b.get('type')=='text')
