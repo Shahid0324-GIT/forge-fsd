@@ -45,20 +45,24 @@ def test_structured_output_uses_provider_schema_and_still_validates_locally(monk
     monkeypatch.setattr(provider.GroqChat,'_post',post)
     result=provider.GroqChat().with_structured_output(Answer,include_raw=True).invoke([('human','Return a value')])
     assert result['parsed'].value==3 and result['parsing_error'] is None
-    assert payloads[0]['response_format']['json_schema']['strict'] is False
+    assert payloads[0]['response_format']=={'type':'json_object'}
+    assert result['raw'].response_metadata['response_format']=='json_object_local_validation'
+    assert json.loads(payloads[0]['messages'][-1]['content'].split('JSON Schema: ',1)[1])==Answer.model_json_schema()
     assert payloads[0]['include_reasoning'] is False and 'tools' not in payloads[0]
     assert 'must not be exposed' not in str(result['raw'])
     assert result['raw'].usage_metadata['total_tokens']==30
 
 
-def test_agent_keeps_native_schema_without_duplicating_it_in_hosted_prompt(tmp_path,monkeypatch):
+def test_agent_preserves_exact_schema_once_in_json_object_transport(tmp_path,monkeypatch):
     payloads=[]
     def post(self,payload):payloads.append(payload);return 200,None,response()
     monkeypatch.setattr(provider.GroqChat,'_post',post)
     agent=OllamaAgents.__new__(OllamaAgents);agent.model=provider.GroqChat(model_name='openai/gpt-oss-20b');agent.model_name='groq:openai/gpt-oss-20b';agent.trace_directory=tmp_path
     result=agent.generate(Answer,'Return value 3',{})
     assert result.value==3
-    assert payloads[0]['response_format']['json_schema']['schema']==Answer.model_json_schema()
+    assert payloads[0]['response_format']=={'type':'json_object'}
+    assert sum('JSON Schema: ' in m['content'] for m in payloads[0]['messages'])==1
+    assert json.loads(payloads[0]['messages'][-1]['content'].split('JSON Schema: ',1)[1])==Answer.model_json_schema()
     assert '"properties"' not in payloads[0]['messages'][0]['content']
 
 
@@ -255,3 +259,58 @@ def test_optional_and_open_nested_shapes_are_not_silently_rewritten_for_strict_m
     for schema in [OptionalField,OpenChild]:
         assert not provider._strict_compatible(schema.model_json_schema())
     assert not provider._strict_compatible({'anyOf':[{'type':'string'},{'type':'integer'}]})
+
+
+def test_daily_limit_never_retries_even_with_short_retry_after(monkeypatch):
+    from forge.provider_errors import ProviderResourceError
+    calls=[];waits=[]
+    def post(self,payload):
+        calls.append(payload)
+        return 429,'2',b'tokens per day: Limit 200000, Used 195827, Requested 5453'
+    monkeypatch.setattr(provider.GroqChat,'_post',post)
+    monkeypatch.setattr(provider.time,'sleep',waits.append)
+    with pytest.raises(ProviderResourceError,match='tokens per day'):provider.GroqChat().invoke('Test')
+    assert len(calls)==1 and not waits
+
+
+def test_json_object_preserves_optional_defaults_and_rejects_invalid_values(monkeypatch):
+    from pydantic import ConfigDict
+    class OptionalAnswer(BaseModel):
+        model_config=ConfigDict(extra='forbid')
+        value:int=3
+    original=OptionalAnswer.model_json_schema();payloads=[]
+    def post(self,payload):payloads.append(payload);return 200,None,response('{}')
+    monkeypatch.setattr(provider.GroqChat,'_post',post)
+    result=provider.GroqChat().with_structured_output(OptionalAnswer,include_raw=True).invoke('Test')
+    assert result['parsed'].value==3
+    assert json.loads(payloads[0]['messages'][-1]['content'].split('JSON Schema: ',1)[1])==original
+    assert OptionalAnswer.model_json_schema()==original
+    monkeypatch.setattr(provider.GroqChat,'_post',lambda *_:(200,None,response('{"value":"wrong","unexpected":true}')))
+    rejected=provider.GroqChat().with_structured_output(OptionalAnswer,include_raw=True).invoke('Test')
+    assert rejected['parsed'] is None and rejected['parsing_error']
+
+
+def test_object_root_detection_resolves_unions_without_rewriting_nonobject_roots():
+    from pydantic import RootModel
+    class First(BaseModel):first:str
+    class Second(BaseModel):second:int
+    class ObjectChoice(RootModel[First|Second]):pass
+    class ArrayChoice(RootModel[list[int]]):pass
+    assert provider._object_root(ObjectChoice.model_json_schema())
+    assert not provider._object_root(ArrayChoice.model_json_schema())
+    assert not provider._object_root({'$ref':'#/$defs/loop','$defs':{'loop':{'$ref':'#/$defs/loop'}}})
+
+
+def test_actual_qa_schema_uses_local_validation_in_one_request(monkeypatch):
+    from forge.autonomous_acceptance import AcceptanceSuite
+    payloads=[]
+    def post(self,payload):
+        payloads.append(payload)
+        return 200,None,response('{"scenarios":[],"uncovered":[]}')
+    monkeypatch.setattr(provider.GroqChat,'_post',post)
+    result=provider.GroqChat(model_name='openai/gpt-oss-20b').with_structured_output(AcceptanceSuite,include_raw=True).invoke('Test')
+    assert result['parsed'] is not None and len(payloads)==1
+    assert payloads[0]['response_format']=={'type':'json_object'}
+    # Structural parsing is not acceptance coverage, execution, or app success.
+    from forge.autonomous_acceptance import validate_coverage
+    with pytest.raises(ValueError):validate_coverage(result['parsed'],3)

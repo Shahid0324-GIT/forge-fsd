@@ -1619,4 +1619,28 @@ not executed for this source. A remaining generated-code concern is that the rep
 creates its own `db/notes.db` path instead of using the declared `SQLITE_PATH` value;
 the build pass does not establish correct storage configuration or complete app behavior.
 
+## Groq structured output and exhausted daily capacity
+
+The saved notes QA resume received a daily-token receipt: limit 200,000, used 195,827,
+requested 5,453. No additional live provider calls were made while implementing this
+increment. A daily 429 now pauses immediately even if a short Retry-After value is
+present; the existing bounded wait remains available for short-term rate limits.
+
+Groq documents HTTP 400 schema-validation failures for best-effort structured output
+in its [structured-output documentation](https://console.groq.com/docs/structured-outputs). For object-shaped schemas that
+cannot use strict decoding, the adapter now uses JSON-object generation and supplies
+the exact unchanged schema once in a system message. The original Pydantic model
+still validates the returned instance; defaults, optional fields and open dictionaries
+are not rewritten. Closed, fully required object schemas retain native strict decoding.
+Non-object roots retain their existing transport. No additional request or provider
+fallback is introduced. Provider metadata records which transport was actually used.
+
+This moves object-contract errors into local validation, where the coordinator can
+retain precise correction feedback, rather than losing the generated result to a
+provider-side best-effort rejection. It does not guarantee semantically correct QA,
+waive coverage checks, execute invalid plans or bypass the daily quota. Live validation
+must wait for usable provider capacity; the existing built run can be resumed.
+The offline provider, agent and hybrid selection passed 65 tests (13 upstream
+deprecation warnings). No full-suite rerun or live model-accuracy claim is made.
+
 The unchanged counter was also rechecked against the new harness with inference and repairs disabled. Its complete current evidence passed, retaining source `c8ea02ef…` and frozen contract `25fa64a2…`. Hosted CI at the published commit remains successful. `test_app(recheck=True)` refreshes completed/stopped-preview evidence without regenerating its contract; a running preview is not eligible. No further paid-provider requests were made.
