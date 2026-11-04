@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import Literal
 import time
+from threading import Lock
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
@@ -17,6 +18,14 @@ from forge.provider_errors import ProviderResourceError
 GROQ_MODEL='groq:openai/gpt-oss-120b'
 GROQ_MODELS={GROQ_MODEL,'groq:openai/gpt-oss-20b'}
 KEY_FILE=Path(__file__).resolve().parents[2]/'.env.local'
+_TOKEN_BUDGETS={}
+_REQUEST_LOCK=Lock()
+
+
+def _duration(value):
+    """Parse only Groq's documented numeric duration format, never provider prose."""
+    if not isinstance(value,str) or not re.fullmatch(r'(?:\d+(?:\.\d+)?[hms])+',value):return None
+    return sum(float(number)*{'h':3600,'m':60,'s':1}[unit] for number,unit in re.findall(r'(\d+(?:\.\d+)?)([hms])',value))
 
 
 def groq_key():
@@ -50,12 +59,35 @@ class GroqChat(BaseChatModel):
     def _identifying_params(self):return {'model_name':self.model_name,'temperature':self.temperature,'num_predict':self.num_predict,'reasoning_effort':self.reasoning_effort}
 
     def _post(self,payload):
+        # Copies with different completion budgets share the model's last capacity
+        # receipt. The dashboard has one active worker; a restarted worker can still
+        # encounter 429 and retains the existing bounded provider retry below.
+        with _REQUEST_LOCK:return self._budgeted_post(payload)
+
+    def _budgeted_post(self,payload):
+        body=json.dumps(payload).encode();budget=_TOKEN_BUDGETS.get(self.model_name)
+        if budget:
+            remaining,limit,deadline=budget
+            # UTF-8 bytes are a conservative upper bound, not a tokenizer estimate.
+            # Large requests wait for refill; small requests can use known capacity.
+            required=min(limit,len(body)+self.num_predict)
+            delay=deadline-time.monotonic()
+            if remaining<required and delay>0:
+                if delay>60:raise ProviderResourceError('Groq token refill exceeds the bounded wait. Resume after the provider capacity resets.')
+                time.sleep(delay)
         connection=http.client.HTTPSConnection('api.groq.com',timeout=120)
         try:
-            connection.request('POST','/openai/v1/chat/completions',body=json.dumps(payload).encode(),
+            connection.request('POST','/openai/v1/chat/completions',body=body,
                 headers={'Authorization':'Bearer '+groq_key(),'Content-Type':'application/json'})
             response=connection.getresponse();raw=response.read(1_000_001)
             if len(raw)>1_000_000:raise ValueError('Groq response exceeds the output limit')
+            try:
+                remaining=int(response.getheader('x-ratelimit-remaining-tokens'))
+                limit=int(response.getheader('x-ratelimit-limit-tokens'))
+                reset=_duration(response.getheader('x-ratelimit-reset-tokens'))
+                if 0<=remaining<=limit and limit>0 and reset is not None:
+                    _TOKEN_BUDGETS[self.model_name]=(remaining,limit,time.monotonic()+reset)
+            except (ValueError,TypeError):pass
             return response.status,response.getheader('Retry-After'),raw
         except (OSError,http.client.HTTPException):
             raise RuntimeError('Groq HTTPS request failed; check connectivity and resume the saved operation') from None

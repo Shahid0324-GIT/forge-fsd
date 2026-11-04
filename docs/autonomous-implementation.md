@@ -1265,3 +1265,24 @@ The existing notes run remains paused on provider HTTP 429 with its source and
 approval preserved. A diagnostic replay of its current repair-focus request later
 returned HTTP 200 (4,694 input / 146 output tokens); it was not applied as workflow
 evidence or an app edit.
+
+## Increment 31: pace hosted calls from provider capacity receipts
+
+The next notes resume reached a senior strategy and QA diagnosis, then exhausted
+Groq capacity during the builder's target selection. Keeping independent target
+selection matters: existing regressions show a builder can recover from a wrong QA
+target. Instead of removing that decision or reducing source evidence, the hosted
+transport now uses the documented remaining-token/refill headers to pace requests.
+
+Clients with different completion budgets share capacity within the worker by model.
+Small requests may use known remaining capacity; large requests conservatively wait
+for refill. The byte bound is intentionally not described as an exact tokenizer.
+Waits over 60 seconds remain resource pauses. Worker restarts/external account usage
+can still cause 429; the existing bounded retry remains. No context is truncated and
+no provider/account limit is increased. Official reference:
+https://console.groq.com/docs/rate-limits
+
+Provider and hybrid selection: **40 passed**, exit 0, with 13 existing warnings.
+Separately, the explicitly approved live hybrid counter generated its page using
+local 7B and passed its isolated TypeScript/production build; independent QA is still
+in progress. This is not yet an app-check or deployment pass.

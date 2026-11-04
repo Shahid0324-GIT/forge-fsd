@@ -15,6 +15,11 @@ def response(content='{"value":3}',finish='stop'):
 class Answer(BaseModel):value:int
 
 
+@pytest.fixture(autouse=True)
+def isolated_provider_capacity(monkeypatch):
+    monkeypatch.setattr(provider,'_TOKEN_BUDGETS',{})
+
+
 @pytest.mark.parametrize('model',sorted(provider.GROQ_MODELS))
 def test_provider_choice_does_not_initialize_ollama_or_change_local_defaults(monkeypatch,model):
     import forge.agents as module
@@ -129,3 +134,41 @@ def test_https_destination_is_fixed_and_headers_never_become_model_input(monkeyp
     assert calls[0]=='api.groq.com' and calls[-1]=='closed'
     assert calls[1][3]['Authorization']=='Bearer private-test-secret'
     assert 'private-test-secret' not in json.dumps(calls[1][2])
+
+
+def test_success_receipt_paces_large_calls_across_model_copies(monkeypatch):
+    waits=[];clock=[10.0];calls=[]
+    monkeypatch.setenv('GROQ_API_KEY','test-key')
+    monkeypatch.setattr(provider.time,'monotonic',lambda:clock[0])
+    def sleep(delay):waits.append(delay);clock[0]+=delay
+    monkeypatch.setattr(provider.time,'sleep',sleep)
+    class Reply:
+        status=200
+        def read(self,_):return response()
+        def getheader(self,name):return {'x-ratelimit-remaining-tokens':'2000','x-ratelimit-limit-tokens':'8000','x-ratelimit-reset-tokens':'35.5s'}.get(name)
+    class Connection:
+        def __init__(self,*_,**__):pass
+        def request(self,*_,**__):calls.append(clock[0])
+        def getresponse(self):return Reply()
+        def close(self):pass
+    monkeypatch.setattr(provider.http.client,'HTTPSConnection',Connection)
+    model=provider.GroqChat(num_predict=1200);payload={'messages':[{'content':'source'*1000}]}
+    model._post(payload);model.model_copy(update={'num_predict':3000})._post(payload)
+    assert waits==[35.5] and calls==[10.0,45.5]
+    # A separate model's quota is independent; this model's tiny request fits.
+    model._post({'messages':[]})
+    model.model_copy(update={'model_name':'openai/gpt-oss-20b'})._post(payload)
+    assert waits==[35.5]
+
+
+@pytest.mark.parametrize('duration,expected',[('2m59.56s',179.56),('7.66s',7.66),('1h2m3s',3723),('private text',None),('nan',None)])
+def test_capacity_duration_parser_accepts_only_numeric_units(duration,expected):
+    assert provider._duration(duration)==expected
+
+
+def test_long_capacity_wait_pauses_before_sending_another_request(monkeypatch):
+    from forge.provider_errors import ProviderResourceError
+    monkeypatch.setattr(provider.time,'monotonic',lambda:0)
+    provider._TOKEN_BUDGETS['openai/gpt-oss-120b']=(0,8000,61)
+    monkeypatch.setattr(provider.http.client,'HTTPSConnection',lambda *_a,**_k:pytest.fail('Must not send'))
+    with pytest.raises(ProviderResourceError,match='bounded wait'):provider.GroqChat()._post({})
