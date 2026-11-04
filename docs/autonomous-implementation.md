@@ -1655,6 +1655,7 @@ the original coverage validator when loaded; old evidence is not silently rewrit
 
 The acceptance/coverage/provider regression selection passed 79 tests. The change was
 tested without model calls and applies to all approved criterion sets of size 1–20.
-The existing counter can resume app checks without rebuilding or changing its model.
+The existing counter can resume app checks without regenerating source or changing
+its model. Normal verification may rerun the build against the final source.
 
 The unchanged counter was also rechecked against the new harness with inference and repairs disabled. Its complete current evidence passed, retaining source `c8ea02ef…` and frozen contract `25fa64a2…`. Hosted CI at the published commit remains successful. `test_app(recheck=True)` refreshes completed/stopped-preview evidence without regenerating its contract; a running preview is not eligible. No further paid-provider requests were made.
