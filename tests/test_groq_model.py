@@ -18,6 +18,8 @@ class Answer(BaseModel):value:int
 @pytest.fixture(autouse=True)
 def isolated_provider_capacity(monkeypatch):
     monkeypatch.setattr(provider,'_TOKEN_BUDGETS',{})
+    monkeypatch.setenv('FORGE_GROQ_KEY_NAME','GROQ_API_KEY')
+    monkeypatch.setenv('GROQ_API_KEY','unit-test-placeholder')
 
 
 @pytest.mark.parametrize('model',sorted(provider.GROQ_MODELS))
@@ -37,6 +39,43 @@ def test_credentials_are_local_ignored_configuration_not_model_state(tmp_path,mo
     model=provider.GroqChat();assert 'local-test-key' not in repr(model) and 'local-test-key' not in model.model_dump_json()
     monkeypatch.setenv('GROQ_API_KEY','environment-test-key');assert provider.groq_key()=='environment-test-key'
     file.write_text('GROQ_API_KEY=your_key_here');monkeypatch.delenv('GROQ_API_KEY');assert not provider.groq_configured()
+
+
+def test_numbered_key_selection_is_explicit_persistent_and_never_falls_back(tmp_path,monkeypatch):
+    file=tmp_path/'.env.local'
+    file.write_text('GROQ_API_KEY=primary-test\nGROQ_API_KEY_1=alternate-test\nFORGE_GROQ_KEY_NAME=GROQ_API_KEY_1\n')
+    monkeypatch.setattr(provider,'KEY_FILE',file)
+    monkeypatch.delenv('FORGE_GROQ_KEY_NAME');monkeypatch.delenv('GROQ_API_KEY')
+    monkeypatch.delenv('GROQ_API_KEY_1',raising=False)
+    assert provider.groq_key_name()=='GROQ_API_KEY_1' and provider.groq_key()=='alternate-test'
+    monkeypatch.setenv('GROQ_API_KEY_1','environment-alternate')
+    assert provider.groq_key()=='environment-alternate'
+    monkeypatch.setenv('FORGE_GROQ_KEY_NAME','GROQ_API_KEY_2')
+    with pytest.raises(ValueError,match='no other key'):provider.groq_key()
+    assert not provider.groq_configured()
+    monkeypatch.setenv('FORGE_GROQ_KEY_NAME','OTHER_SECRET')
+    with pytest.raises(ValueError,match='must select'):provider.groq_key()
+
+
+def test_capacity_receipt_is_not_reused_after_explicit_credential_change(monkeypatch):
+    calls=[];waits=[]
+    monkeypatch.setattr(provider.time,'monotonic',lambda:0)
+    monkeypatch.setattr(provider.time,'sleep',waits.append)
+    old=provider.groq_key()
+    provider._TOKEN_BUDGETS[provider._capacity_scope('openai/gpt-oss-120b',old)]=(0,8000,61)
+    monkeypatch.setenv('GROQ_API_KEY','different-unit-test-key')
+    class Reply:
+        status=200
+        def read(self,_):return response()
+        def getheader(self,_):return None
+    class Connection:
+        def __init__(self,*_,**__):pass
+        def request(self,*_,**kwargs):calls.append(kwargs['headers']['Authorization'])
+        def getresponse(self):return Reply()
+        def close(self):pass
+    monkeypatch.setattr(provider.http.client,'HTTPSConnection',Connection)
+    assert provider.GroqChat()._post({})[0]==200
+    assert calls==['Bearer different-unit-test-key'] and not waits
 
 
 def test_structured_output_uses_provider_schema_and_still_validates_locally(monkeypatch):
@@ -228,7 +267,7 @@ def test_capacity_duration_parser_accepts_only_numeric_units(duration,expected):
 def test_long_capacity_wait_pauses_before_sending_another_request(monkeypatch):
     from forge.provider_errors import ProviderResourceError
     monkeypatch.setattr(provider.time,'monotonic',lambda:0)
-    provider._TOKEN_BUDGETS['openai/gpt-oss-120b']=(0,8000,61)
+    provider._TOKEN_BUDGETS[provider._capacity_scope('openai/gpt-oss-120b',provider.groq_key())]=(0,8000,61)
     monkeypatch.setattr(provider.http.client,'HTTPSConnection',lambda *_a,**_k:pytest.fail('Must not send'))
     with pytest.raises(ProviderResourceError,match='bounded wait'):provider.GroqChat()._post({})
 

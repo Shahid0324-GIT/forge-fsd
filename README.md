@@ -118,6 +118,13 @@ ollama pull qwen2.5-coder:7b
 
 ### Optional Groq setup
 
+To select a second local credential, set `FORGE_GROQ_KEY_NAME=GROQ_API_KEY_1`
+in the environment or ignored `.env.local`, alongside that credential. The default
+slot is `GROQ_API_KEY`. Selection is explicit: a missing selected key fails before
+inference, and quotas never trigger automatic key rotation. Environment values
+override the file for the same slot. Rate-limit receipts are isolated by model
+and credential; separate keys may still share Groq account quotas.
+
 Create an API key in [Groq Console](https://console.groq.com/keys), copy
 [.env.example](.env.example) to `.env.local` and replace the placeholder locally.
 Never commit or paste the key into chat. Alternatively set `GROQ_API_KEY` in the

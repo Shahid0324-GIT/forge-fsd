@@ -1,5 +1,6 @@
 """Opt-in Groq chat adapter using LangChain and the standard-library HTTPS client."""
 import http.client
+import hashlib
 import json
 import os
 import re
@@ -66,16 +67,36 @@ def _object_root(schema):
     return visit(schema,set())
 
 
-def groq_key():
-    key=os.environ.get('GROQ_API_KEY','').strip()
-    if not key and KEY_FILE.is_file():
+def _local_provider_config():
+    config={}
+    if KEY_FILE.is_file():
         if KEY_FILE.stat().st_size>16384:raise ValueError('Local provider configuration exceeds its size limit')
         for line in KEY_FILE.read_text(encoding='utf-8-sig').splitlines():
             name,separator,value=line.strip().partition('=')
-            if separator and name=='GROQ_API_KEY':key=value.strip().strip('\"\'')
-    if not key or key=='your_key_here':raise ValueError('Save GROQ_API_KEY in .env.local or the environment before selecting Groq')
-    if any(char.isspace() for char in key):raise ValueError('GROQ_API_KEY contains whitespace; check the local configuration')
+            if separator and (name=='FORGE_GROQ_KEY_NAME' or re.fullmatch(r'GROQ_API_KEY(?:_[1-9][0-9]{0,2})?',name)):
+                config[name]=value.strip().strip('\"\'')
+    return config
+
+
+def groq_key_name(config=None):
+    config=_local_provider_config() if config is None else config
+    name=os.environ.get('FORGE_GROQ_KEY_NAME',config.get('FORGE_GROQ_KEY_NAME','GROQ_API_KEY')).strip()
+    if not re.fullmatch(r'GROQ_API_KEY(?:_[1-9][0-9]{0,2})?',name):
+        raise ValueError('FORGE_GROQ_KEY_NAME must select GROQ_API_KEY or a numbered GROQ_API_KEY slot')
+    return name
+
+
+def groq_key():
+    config=_local_provider_config();name=groq_key_name(config)
+    key=os.environ.get(name,config.get(name,'')).strip()
+    if not key or key=='your_key_here':raise ValueError(f'Save the selected {name} in .env.local or the environment before selecting Groq; no other key is used automatically')
+    if any(char.isspace() for char in key):raise ValueError(f'{name} contains whitespace; check the local configuration')
     return key
+
+
+def _capacity_scope(model,key):
+    # Never put credentials in LangChain model state, traces or public metadata.
+    return model,hashlib.sha256(key.encode()).digest()
 
 
 def groq_configured():
@@ -103,7 +124,8 @@ class GroqChat(BaseChatModel):
         with _REQUEST_LOCK:return self._budgeted_post(payload)
 
     def _budgeted_post(self,payload):
-        body=json.dumps(payload).encode();budget=_TOKEN_BUDGETS.get(self.model_name)
+        key=groq_key();scope=_capacity_scope(self.model_name,key)
+        body=json.dumps(payload).encode();budget=_TOKEN_BUDGETS.get(scope)
         if budget:
             remaining,limit,deadline=budget
             # UTF-8 bytes are a conservative upper bound, not a tokenizer estimate.
@@ -116,7 +138,7 @@ class GroqChat(BaseChatModel):
         connection=http.client.HTTPSConnection('api.groq.com',timeout=120)
         try:
             connection.request('POST','/openai/v1/chat/completions',body=body,
-                headers={'Authorization':'Bearer '+groq_key(),'Content-Type':'application/json'})
+                headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'})
             response=connection.getresponse();raw=response.read(1_000_001)
             if len(raw)>1_000_000:raise ValueError('Groq response exceeds the output limit')
             try:
@@ -124,7 +146,7 @@ class GroqChat(BaseChatModel):
                 limit=int(response.getheader('x-ratelimit-limit-tokens'))
                 reset=_duration(response.getheader('x-ratelimit-reset-tokens'))
                 if 0<=remaining<=limit and limit>0 and reset is not None:
-                    _TOKEN_BUDGETS[self.model_name]=(remaining,limit,time.monotonic()+reset)
+                    _TOKEN_BUDGETS[scope]=(remaining,limit,time.monotonic()+reset)
             except (ValueError,TypeError):pass
             return response.status,response.getheader('Retry-After'),raw
         except (OSError,http.client.HTTPException):
