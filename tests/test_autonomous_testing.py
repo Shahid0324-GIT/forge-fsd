@@ -26,7 +26,8 @@ class QAAgent(Builder):
         if schema.__name__=='AcceptanceSuite':
             self.qa_contexts.append(data)
             count=len(data['approved_design']['acceptance_criteria'])
-            if self.coverage_supported and any('Coverage review found' in error for error in data['protocol_errors']):self.uncovered=False
+            feedback=(data.get('proposal_feedback') or {}).get('message','')
+            if self.coverage_supported and any('Coverage review found' in error for error in [feedback,*data['protocol_errors']]):self.uncovered=False
             if self.uncovered:return schema.model_validate({'scenarios':[],
                 'uncovered':[{'criterion':index,'reason':'Requires database restart'} for index in range(1,count+1)]})
             return schema.model_validate({'scenarios':[{'id':'shows_result','criteria':list(range(1,count+1)),'steps':[
@@ -190,6 +191,8 @@ def test_supported_coverage_claim_is_reviewed_before_any_contract_is_frozen(read
     store,job,agent,boundary,_=ready;agent.uncovered=True;agent.coverage_supported=True
     result=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([True]))
     assert result['status']=='AUTONOMOUS_APP_CHECKS_PASSED' and len(agent.qa_contexts)==2 and agent.coverage_calls==1
+    assert 'Coverage review found' in agent.qa_contexts[-1]['proposal_feedback']['message']
+    assert agent.qa_contexts[-1]['protocol_errors']==[]
     assert not any(e['status']=='AUTONOMOUS_CHECKS_BLOCKED' for e in result['events'])
     assert any(e['payload'].get('recipient')=='coverage_reviewer' for e in result['events'])
 

@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from forge.agents import OllamaAgents
 from forge import groq_model as provider
+from forge.schema_wire import compact_titles
 
 
 def response(content='{"value":3}',finish='stop'):
@@ -86,7 +87,7 @@ def test_structured_output_uses_provider_schema_and_still_validates_locally(monk
     assert result['parsed'].value==3 and result['parsing_error'] is None
     assert payloads[0]['response_format']=={'type':'json_object'}
     assert result['raw'].response_metadata['response_format']=='json_object_local_validation'
-    assert json.loads(payloads[0]['messages'][-1]['content'].split('JSON Schema: ',1)[1])==Answer.model_json_schema()
+    assert json.loads(payloads[0]['messages'][-1]['content'].split('JSON Schema: ',1)[1])==compact_titles(Answer.model_json_schema())
     assert payloads[0]['include_reasoning'] is False and 'tools' not in payloads[0]
     assert 'must not be exposed' not in str(result['raw'])
     assert result['raw'].usage_metadata['total_tokens']==30
@@ -101,7 +102,7 @@ def test_agent_preserves_exact_schema_once_in_json_object_transport(tmp_path,mon
     assert result.value==3
     assert payloads[0]['response_format']=={'type':'json_object'}
     assert sum('JSON Schema: ' in m['content'] for m in payloads[0]['messages'])==1
-    assert json.loads(payloads[0]['messages'][-1]['content'].split('JSON Schema: ',1)[1])==Answer.model_json_schema()
+    assert json.loads(payloads[0]['messages'][-1]['content'].split('JSON Schema: ',1)[1])==compact_titles(Answer.model_json_schema())
     assert '"properties"' not in payloads[0]['messages'][0]['content']
 
 
@@ -337,7 +338,7 @@ def test_closed_repair_schema_uses_constrained_decoding_and_keeps_local_validati
     monkeypatch.setattr(provider.GroqChat,'_post',post)
     result=provider.GroqChat(model_name='openai/gpt-oss-20b').with_structured_output(RepairFocus,include_raw=True).invoke([('human','Diagnose')])
     assert payloads[0]['response_format']['json_schema']['strict'] is True
-    assert payloads[0]['response_format']['json_schema']['schema']==RepairFocus.model_json_schema()
+    assert payloads[0]['response_format']['json_schema']['schema']==compact_titles(RepairFocus.model_json_schema())
     assert result['parsed'] is None and result['parsing_error']
     assert result['raw'].response_metadata['response_format']=='json_schema_strict'
 
@@ -377,7 +378,7 @@ def test_json_object_preserves_optional_defaults_and_rejects_invalid_values(monk
     monkeypatch.setattr(provider.GroqChat,'_post',post)
     result=provider.GroqChat().with_structured_output(OptionalAnswer,include_raw=True).invoke('Test')
     assert result['parsed'].value==3
-    assert json.loads(payloads[0]['messages'][-1]['content'].split('JSON Schema: ',1)[1])==original
+    assert json.loads(payloads[0]['messages'][-1]['content'].split('JSON Schema: ',1)[1])==compact_titles(original)
     assert OptionalAnswer.model_json_schema()==original
     monkeypatch.setattr(provider.GroqChat,'_post',lambda *_:(200,None,response('{"value":"wrong","unexpected":true}')))
     rejected=provider.GroqChat().with_structured_output(OptionalAnswer,include_raw=True).invoke('Test')

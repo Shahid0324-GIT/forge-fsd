@@ -40,7 +40,7 @@ def test_independent_qa_keeps_requirements_and_previous_assertions_without_repea
     ledger,state,review,_=context
     review['draft'].update(files=[{'path':'app/page.tsx','owner':'frontend','purpose':'UI assignment '*400}],
         test_strategy='Earlier implementation proposal '*100,
-        assumptions=['Single user'],database='none')
+        assumptions=['Single user'],database='none',interfaces=[{'contract':'Builder-only module signature '*100}])
     original=json.loads(json.dumps(review['draft']))
     directory=suite_path(ledger,state).parent;directory.mkdir(parents=True,exist_ok=True)
     previous=proposal();(directory/f'proposal-{state.task.id}-r{state.revision}-a1.json').write_text(json.dumps(previous),encoding='utf-8')
@@ -51,7 +51,7 @@ def test_independent_qa_keeps_requirements_and_previous_assertions_without_repea
     assert data['original_request']==review['binding']['inputs']['original_request']
     assert data['human_clarifications']==review['binding']['inputs']['human_clarifications']
     assert review['draft']==original
-    for key in ['files','test_strategy']:
+    for key in ['files','test_strategy','interfaces']:
         assert key not in data['approved_design']
         assert data['approved_design_omitted'][key]==hashlib.sha256(json.dumps(original[key],sort_keys=True).encode()).hexdigest()
     assert len(json.dumps(data))<len(json.dumps(original))
@@ -172,6 +172,7 @@ def test_full_qa_rejection_survives_ledger_truncation_and_remains_proposal_bound
     state=ledger.reserve_action(state,'qa')
     data=proposal_context(ledger,state,review)
     assert data['proposal_feedback']['message']==message
+    assert data['protocol_errors']==[]  # Complete feedback is supplied once, not duplicated.
     assert 'FINAL REQUIRED' not in state.observations[-1].error
     assert data['previous_proposal']==AcceptanceSuite.model_validate(proposal()).model_dump()
     path=next(suite_path(ledger,state).parent.glob('feedback-*.json'))

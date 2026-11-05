@@ -14,6 +14,7 @@ from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration,ChatResult
 from langchain_core.runnables import RunnableLambda
 from forge.provider_errors import ProviderResourceError
+from forge.schema_wire import compact_titles
 
 
 GROQ_MODEL='groq:openai/gpt-oss-120b'
@@ -170,21 +171,22 @@ class GroqChat(BaseChatModel):
             'max_completion_tokens':self.num_predict,'reasoning_effort':self.reasoning_effort,'include_reasoning':False}
         if stop:payload['stop']=stop
         if kwargs.get('response_schema') is not None:
-            strict=self.model_name in {'openai/gpt-oss-20b','openai/gpt-oss-120b'} and _strict_compatible(kwargs['response_schema'])
-            if not strict and _object_root(kwargs['response_schema']):
+            wire_schema=compact_titles(kwargs['response_schema'])
+            strict=self.model_name in {'openai/gpt-oss-20b','openai/gpt-oss-120b'} and _strict_compatible(wire_schema)
+            if not strict and _object_root(wire_schema):
                 # Keep optional/default/open fields intact. The same Pydantic
                 # model remains authoritative; no retry or schema relaxation.
                 payload['response_format']={'type':'json_object'}
                 payload['messages']=[*wire,{'role':'system','content':
                     'Return ONE JSON object instance conforming to the following JSON Schema. '
                     'Return the instance, not the schema. Preserve every required field and constraint. '
-                    'Do not include markdown or explanation. JSON Schema: '+json.dumps(kwargs['response_schema'],separators=(',',':'))}]
+                    'Do not include markdown or explanation. JSON Schema: '+json.dumps(wire_schema,separators=(',',':'))}]
             else:
                 payload['response_format']={'type':'json_schema','json_schema':{'name':kwargs['schema_name'],
-                    'strict':strict,'schema':kwargs['response_schema']}}
+                    'strict':strict,'schema':wire_schema}}
         status,retry,raw=self._post(payload)
-        # The provider cap includes reserved completion tokens. Fit that reserve
-        # from its exact numeric receipt, never by truncating the prompt/schema.
+        # A size cap may include the output reserve. Try one numeric adjustment,
+        # never truncating the prompt/schema or assuming that it must fit.
         # One adjustment only; a genuinely oversized input remains a saved pause.
         if status==413:
             limits=re.search(rb'Limit\s+(\d+).*?Requested\s+(\d+)',raw,re.I|re.S)
@@ -261,6 +263,7 @@ class GroqChat(BaseChatModel):
                 'done_reason':choice['finish_reason'],'request_id':result.get('id'),
                 'max_completion_tokens':payload['max_completion_tokens'],'reasoning_effort':self.reasoning_effort,
                 'completion_budget_adjusted':payload['max_completion_tokens']!=self.num_predict,
+                'schema_annotations':'titles_omitted_v1' if kwargs.get('response_schema') is not None else None,
                 'response_format':('json_object_local_validation' if payload['response_format']['type']=='json_object' else
                     'json_schema_strict' if payload['response_format']['json_schema']['strict'] else 'json_schema_best_effort') if 'response_format' in payload else 'text'},
                 usage_metadata={'input_tokens':usage.get('prompt_tokens',0),'output_tokens':usage.get('completion_tokens',0),

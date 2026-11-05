@@ -142,3 +142,22 @@ It passed locally and is included in the browser CI job. The associated QA
 selection passed 123 tests, semantic-cache checks passed 25, the Node protocol
 selection passed four, and the complete controller suite passed 723 tests.
 These verify runner and review behavior, not a generated-app pass.
+
+## Compact wire schemas and behavior-QA context
+
+Groq receives a title-annotation-free copy of the response schema; the original
+Pydantic model remains authoritative. Only schema-node `title` annotations are
+removed. Property names such as a note's `title`, constant/default/example objects,
+descriptions, enums, bounds, required fields and references are preserved. The
+[JSON Schema annotation specification](https://json-schema.org/understanding-json-schema/reference/annotations)
+defines schema titles as descriptive metadata. The transport marks this policy
+in response metadata so the saved original schema can be interpreted correctly.
+The measured QA schema shrank from 9,764 to 8,539 compact JSON characters.
+
+Independent behavior QA no longer receives builder-only module interface
+declarations. Their hashes and the complete approved snapshot are retained.
+Original requirements, behavior design, criteria, assumptions and the complete
+previous test proposal stay in the prompt. A complete rejection is supplied once
+instead of repeating its leading text in a second error field. This selection
+passed 117 regressions, including preservation of literal data named `title` and
+complete correction feedback.

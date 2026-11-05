@@ -273,20 +273,21 @@ def proposal_context(ledger,state,review):
     # Independent behavior QA needs the agreed design/criteria, not source-file
     # assignments or an earlier model's proposed test implementation. Preserve
     # their hashes and the complete approved snapshot outside this prompt.
-    design={key:value for key,value in review['draft'].items() if key not in {'files','test_strategy'}}
+    technical={'files','test_strategy','interfaces'}
+    design={key:value for key,value in review['draft'].items() if key not in technical}
     omitted={key:hashlib.sha256(json.dumps(review['draft'][key],sort_keys=True).encode()).hexdigest()
-        for key in ('files','test_strategy') if key in review['draft']}
+        for key in sorted(technical) if key in review['draft']}
     data={**review['binding']['inputs'],'approved_design':design,'approved_design_omitted':omitted,'review_fingerprint':review['fingerprint'],
         'approved_criterion_ids':list(range(1,len(review['draft']['acceptance_criteria'])+1)),
-        'previous_proposal':previous,'protocol_errors':[] if trace_selected else [o.error for o in state.observations if o.revision==state.revision and o.error][-2:],
+        'previous_proposal':previous,'protocol_errors':[] if trace_selected or feedback else [o.error for o in state.observations if o.revision==state.revision and o.error][-2:],
         'proposal_feedback':feedback,
         'browser_protocol_constraints':browser_capabilities(),
         'correction_instruction':'Correct the precise protocol errors in the previous proposal. proposal_feedback contains the complete current rejection; '
             'protocol_errors are short summaries. Return the complete contract without dropping valid assertions.'}
     if state.recovery and state.reviewed_observations==len(state.observations):data['fresh_review']=state.recovery.model_dump()
     # The bounded ledger error is a display summary, not the correction contract.
-    # Keep a short compatible summary, without repeating long historical errors.
-    if feedback:data['protocol_errors']=[feedback['type']+': '+feedback['message'][:800]]
+    # Feedback already contains the complete current error. Repeating its first
+    # 800 characters as protocol_errors wastes context and anchors old advice.
     if len(json.dumps(data,separators=(',',':')))>22000:raise TaskBlockedError('QA context exceeds budget; split the verification scope rather than dropping requirements')
     return data
 
