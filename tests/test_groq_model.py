@@ -158,6 +158,61 @@ def test_invalid_provider_output_pauses_before_any_app_repair_and_keeps_safe_cat
     assert 'private' not in str(failure.value) and 'credentials' not in str(failure.value)
 
 
+@pytest.mark.parametrize('candidate',['{"value":3}','{"value":','not a JSON candidate','{"value":"gsk_'+('x'*24)+'"}'])
+def test_provider_rejected_json_is_never_accepted_or_promoted_from_error_prose(monkeypatch,candidate):
+    body=json.dumps({'error':{'code':'json_validate_failed','failed_generation':candidate,'message':'private account and transport details'}}).encode()
+    monkeypatch.setattr(provider.GroqChat,'_post',lambda *_:(400,None,body))
+    result=provider.GroqChat().with_structured_output(Answer,include_raw=True).invoke('Return value 3')
+    assert result['parsed'] is None and result['parsing_error']
+    assert result['raw'].response_metadata['json_output_rejected'] is True
+    assert 'private account' not in str(result)
+    assert 'gsk_' not in result['raw'].content
+
+
+def test_rejected_json_gets_one_same_role_correction_with_the_unchanged_schema(tmp_path,monkeypatch):
+    calls=[]
+    def post(self,payload):
+        calls.append(payload)
+        if len(calls)==1:return 400,None,json.dumps({'error':{'code':'json_validate_failed',
+            'failed_generation':'{"value":','message':'private account details'}}).encode()
+        return 200,None,response('{"value":7}')
+    monkeypatch.setattr(provider.GroqChat,'_post',post)
+    agent=OllamaAgents.__new__(OllamaAgents);agent.model_name=provider.GROQ_MODEL
+    agent.model=provider.GroqChat();agent.trace_directory=tmp_path
+    answer=agent.generate(Answer,'Return value seven.',{'original_request':'Preserve the requested calculation'})
+    assert answer.value==7 and len(calls)==2
+    assert calls[0]['response_format']==calls[1]['response_format']
+    assert calls[0]['messages'][0]==calls[1]['messages'][0]
+    assert any(message['role']=='assistant' and message['content']=='{"value":' for message in calls[1]['messages'])
+    assert 'COMPLETE corrected JSON' in calls[1]['messages'][-2]['content']
+    assert 'private account details' not in json.dumps(calls)
+    traces=[json.loads(path.read_text()) for path in tmp_path.glob('*.json')]
+    assert any(trace['outcome']=='ERROR' and trace['provider_metadata'].get('http_status')==400 for trace in traces)
+
+
+def test_repeated_provider_json_rejection_stops_after_one_correction(monkeypatch):
+    calls=[]
+    def post(self,payload):
+        calls.append(payload);return 400,None,b'{"error":{"code":"json_validate_failed"}}'
+    monkeypatch.setattr(provider.GroqChat,'_post',post)
+    agent=OllamaAgents.__new__(OllamaAgents);agent.model_name=provider.GROQ_MODEL;agent.model=provider.GroqChat()
+    with pytest.raises(ValueError,match='Invalid Answer output'):agent.generate(Answer,'Return value',{})
+    assert len(calls)==2
+
+
+def test_bad_provider_envelope_is_not_a_generated_application_defect(monkeypatch):
+    from forge.provider_errors import ProviderResourceError
+    monkeypatch.setattr(provider.GroqChat,'_post',lambda *_:(200,None,b'{"unexpected":"private transport data"}'))
+    with pytest.raises(ProviderResourceError,match='invalid chat envelope') as failure:provider.GroqChat().invoke('Test')
+    assert 'private transport data' not in str(failure.value)
+
+
+def test_raw_chat_call_cannot_receive_a_rejected_candidate_as_a_completion(monkeypatch):
+    monkeypatch.setattr(provider.GroqChat,'_post',lambda *_:(400,None,b'{"error":{"code":"json_validate_failed","failed_generation":"{\\"value\\":3}"}}'))
+    with pytest.raises(provider.GeneratedJSONError):
+        provider.GroqChat().invoke('Return value',response_schema=Answer.model_json_schema(),schema_name='Answer')
+
+
 def test_unknown_provider_error_does_not_echo_arbitrary_error_codes(monkeypatch):
     from forge.provider_errors import ProviderResourceError
     body=json.dumps({'error':{'code':'private-test-secret','message':'private account details'}}).encode()

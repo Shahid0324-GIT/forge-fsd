@@ -95,8 +95,11 @@ class OllamaAgents:
             ("human", json.dumps(data,separators=(',',':'))),
         ]
         # Never inherit an enabled cloud tracing session for user requirements.
-        attempts=2 if issubclass(schema,(AppRequirements,AppImplementationPlan,AppBrief,AppAcceptancePlan,NativeAcceptancePlan,ArchitectureReview,AcceptanceReview,BusinessBrief,ApiDesign,ApiProposal,LayoutDesign,LayoutProposal,AcceptanceDesign,IntakeDecision)) else 1
+        # Serialization/schema errors belong to the producing role, including
+        # dynamic autonomous schemas. One correction is not an app-repair action.
+        attempts=2
         for attempt in range(attempts):
+            if documentation.enabled(self):documentation.assert_current(self)
             activity=getattr(self,'activity',None)
             packet=begin_call(self,schema,messages,attempt+1,coding)
             if extended_suite:

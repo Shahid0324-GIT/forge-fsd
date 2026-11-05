@@ -23,6 +23,13 @@ _TOKEN_BUDGETS={}
 _REQUEST_LOCK=Lock()
 
 
+class GeneratedJSONError(ValueError):
+    """A rejected model candidate, never a successful chat response or quota error."""
+    def __init__(self,candidate,metadata):
+        super().__init__('Provider rejected generated JSON. Return one complete JSON object matching the supplied schema; preserve the requested behavior.')
+        self.candidate=candidate;self.metadata=metadata
+
+
 def _duration(value):
     """Parse only Groq's documented numeric duration format, never provider prose."""
     if not isinstance(value,str) or not re.fullmatch(r'(?:\d+(?:\.\d+)?[hms])+',value):return None
@@ -194,6 +201,21 @@ class GroqChat(BaseChatModel):
             if 0<delay<=60:
                 time.sleep(delay);status,retry,raw=self._post(payload)
         if status!=200:
+            if status==400 and kwargs.get('response_schema') is not None:
+                try:rejected=json.loads(raw).get('error',{})
+                except (ValueError,AttributeError):rejected={}
+                if isinstance(rejected,dict) and rejected.get('code')=='json_validate_failed':
+                    # Recover only the bounded, explicitly named model candidate,
+                    # never provider prose/account identifiers. It is NOT an
+                    # accepted completion, even if local parsing would succeed.
+                    candidate=rejected.get('failed_generation','')
+                    if (not isinstance(candidate,str) or len(candidate)>16000
+                        or not candidate.lstrip().startswith('{') or re.search(r'gsk_[A-Za-z0-9_-]{20,}',candidate)):
+                        candidate=''
+                    raise GeneratedJSONError(candidate,{'model':self.model_name,'provider':'groq',
+                        'done_reason':'provider_json_rejected','http_status':400,'json_output_rejected':True,
+                        'max_completion_tokens':payload['max_completion_tokens'],
+                        'completion_budget_adjusted':payload['max_completion_tokens']!=self.num_predict})
             if status in {401,403,413,429}:
                 detail=''
                 if status==413:
@@ -243,14 +265,19 @@ class GroqChat(BaseChatModel):
                     'json_schema_strict' if payload['response_format']['json_schema']['strict'] else 'json_schema_best_effort') if 'response_format' in payload else 'text'},
                 usage_metadata={'input_tokens':usage.get('prompt_tokens',0),'output_tokens':usage.get('completion_tokens',0),
                     'total_tokens':usage.get('total_tokens',0)})
-        except (ValueError,KeyError,IndexError,TypeError):raise ValueError('Groq returned an invalid chat response') from None
+        except (ValueError,KeyError,IndexError,TypeError):raise ProviderResourceError('Groq returned an invalid chat envelope; provider response unavailable, no app defect inferred.') from None
         return ChatResult(generations=[ChatGeneration(message=message)])
 
     def with_structured_output(self,schema,*,method='json_schema',include_raw=False,**kwargs):
         if method!='json_schema':raise ValueError('Only JSON-schema structured output is enabled')
         def generate(messages):
-            raw=self.invoke(messages,response_schema=schema.model_json_schema(),schema_name=schema.__name__)
-            try:parsed=schema.model_validate_json(raw.content);error=None
+            try:raw=self.invoke(messages,response_schema=schema.model_json_schema(),schema_name=schema.__name__)
+            except GeneratedJSONError as rejected:
+                raw=AIMessage(content=rejected.candidate,response_metadata=rejected.metadata)
+            try:
+                if raw.response_metadata.get('json_output_rejected'):
+                    raise ValueError('Provider rejected generated JSON. Return one complete JSON object matching the supplied schema; preserve the requested behavior.')
+                parsed=schema.model_validate_json(raw.content);error=None
             except ValueError as exc:parsed=None;error=exc
             if include_raw:return {'raw':raw,'parsed':parsed,'parsing_error':error}
             if error:raise error

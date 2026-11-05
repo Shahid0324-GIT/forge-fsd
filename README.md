@@ -137,6 +137,13 @@ jobs are not silently switched. Groq availability, account rate limits and credi
 apply. The adapter uses best-effort JSON-schema output plus the same local Pydantic
 validation and source/build/QA gates; provider output alone is not a pass.
 
+Groq `json_validate_failed` responses are treated as rejected model output, with
+one same-role correction against the unchanged schema. They are never accepted
+as chat completions or application evidence. Only a bounded JSON candidate is
+retained in ignored local model traces; provider error prose is excluded.
+Authentication, quota, request-size and invalid-envelope errors remain resource
+pauses, so app builders do not try to fix them by editing application code.
+
 ## Repeatable autonomous app checks
 
 Run a business-only request through planning, internal evaluation approval,

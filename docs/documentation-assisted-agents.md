@@ -103,3 +103,19 @@ verified both the lookup and answer. Evidence:
 These establish planning and reference-tool behavior. They do not establish a new
 end-to-end application build or guarantee every 7B critique is logically sound.
 The previously stopped expense job was not resumed or manually repaired.
+
+## Provider-output recovery
+
+A subsequent Groq evaluation exposed two controller boundaries. Compact evidence
+IDs removed a request-size failure. The next boundary was a provider rejection of
+generated JSON. Groq's [structured-output documentation](https://console.groq.com/docs/structured-outputs)
+describes output-validation failures separately from ordinary request failures.
+
+The adapter now identifies `json_validate_failed` for structured requests as a
+rejected candidate. Raw chat callers receive an error. Structured callers receive
+an error result, never a valid parsed answer, even if that candidate could parse
+locally. The producing role gets one schema-preserving correction. Repeated
+rejection stops after that correction; credentials, quota and unknown request
+errors do not enter this path. Malformed transport envelopes remain resource
+failures. These distinctions prevent format repair from becoming an app-code
+repair or requiring an operator to restart a whole agent role.
