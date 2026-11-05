@@ -32,7 +32,7 @@ Target=Annotated[RoleTarget | TextTarget,Field(discriminator='by')]
 
 
 class Visit(Envelope):
-    action: Literal['visit'] = Field(description='Navigate to an app path. Repeated visits in one scenario reload within the same browser session, preserving its storage.')
+    action: Literal['visit'] = Field(description='Full document navigation using Playwright page.goto, never a client-router transition. Repeating the same path reloads JavaScript state in the same browser context, preserving browser storage. There is no separate reload verb.')
     path: str = Field(default='/',pattern=r'^/(?:[a-zA-Z0-9_?&=.%+~\-][a-zA-Z0-9/_?&=.%+~\-]*)?$',max_length=300)
 
 

@@ -6,6 +6,25 @@ INTERACTIONS={'click','fill','select','check'}
 ASSERTIONS={'assert_visible','assert_text','assert_value','assert_count','assert_title'}
 
 
+def protocol_facts(suite):
+    """Static facts about proposed runner operations, never claims of app execution."""
+    facts={}
+    for case in suite['scenarios']:
+        steps=case['steps'];visits=[index for index,step in enumerate(steps) if step['action']=='visit']
+        reloads=[]
+        for start,end in zip(visits,visits[1:]):
+            if steps[start]['path']!=steps[end]['path']:continue
+            changes=[index for index in range(start+1,end) if steps[index]['action'] in INTERACTIONS]
+            after_start=changes[-1]+1 if changes else start+1
+            stop=next((index for index in range(end+1,len(steps)) if steps[index]['action'] in INTERACTIONS|{'visit'}),len(steps))
+            reloads.append({'step':end+1,'path':steps[end]['path'],'navigation':'full_document',
+                'pre_reload_observation_steps':[index+1 for index in range(after_start,end) if steps[index]['action'] in ASSERTIONS],
+                'post_reload_observation_steps':[index+1 for index in range(end+1,stop) if steps[index]['action'] in ASSERTIONS]})
+        facts[case['id']]={'visit_steps':[index+1 for index in visits],'same_path_document_reloads':reloads,
+            'scope':'Static runner interpretation of the proposed steps; the app has not executed.'}
+    return facts
+
+
 def _observation(step):
     action=step['action']
     if action not in ASSERTIONS:return None

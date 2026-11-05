@@ -7,6 +7,7 @@ from pydantic import Field,model_validator
 
 from forge.handoffs import record_handoff
 from forge.tasks import CheckEvidence,Envelope,Observation,Task
+from forge.browser_capabilities import browser_capabilities
 
 
 class CoverageDecision(Envelope):
@@ -42,6 +43,11 @@ supplied scenarios. Decide whether the REMAINING limitation in qa_claim can be c
 with this protocol. can_check=true requires a strategy for that missing part; merely
 repeating checked_behavior is not a correction. A mixed criterion may have valid
 scenarios and an honest uncovered remainder without any contradiction.'''
+INSTRUCTION+=''' Use verification_capabilities as the shared runtime facts. visit
+uses page.goto, so a same-path visit is full document navigation, not SPA routing.
+Each scenario starts in a fresh browser context without supplied login credentials
+or storage state. An observable workflow can demonstrate guest access without a
+login; this does not prove every security or deployment property.'''
 
 
 def review_coverage(ledger,state,agents,review,suite,authorize):
@@ -49,7 +55,8 @@ def review_coverage(ledger,state,agents,review,suite,authorize):
     corrections=[]
     from forge.autonomous_acceptance import AcceptanceSuite
     browser_schema=AcceptanceSuite.model_json_schema()
-    capability_hash=hashlib.sha256(json.dumps(browser_schema,sort_keys=True).encode()).hexdigest()
+    capabilities=browser_capabilities()
+    capability_hash=hashlib.sha256(json.dumps({'schema':browser_schema,'capabilities':capabilities},sort_keys=True).encode()).hexdigest()
     for item in suite.uncovered:
         authorize();ledger.assert_active(state)
         claim={'criterion':review['draft']['acceptance_criteria'][item.criterion-1],
@@ -74,8 +81,7 @@ def review_coverage(ledger,state,agents,review,suite,authorize):
                 'human_review_feedback':review['binding']['inputs'].get('human_review_feedback',[]),
                 'coverage_claim':item.model_dump(),'existing_scenarios':claim['scenarios'],
                 'browser_contract_schema':browser_schema,'browser_capabilities_sha256':capability_hash,
-                'available_actions':['visit/reload (same session)','click','fill','select','check',
-                    'assert visible','assert text','assert form value','assert count','assert title']}
+                'verification_capabilities':capabilities,'available_actions':capabilities['actions']}
             previous=getattr(agents,'invocation_context',{});activity=getattr(agents,'activity',None)
             try:
                 record_handoff(ledger.store,ledger.job_id,'acceptance_qa','coverage_reviewer',

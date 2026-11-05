@@ -10,6 +10,15 @@ test('navigation stays on the app origin',async()=>{
   await assert.rejects(executeStep(page,{action:'visit',path:'//external.example/'},base));
   assert.equal(urls.length,1);
 });
+test('same-path visits use full document navigation each time',async()=>{
+  const calls=[];
+  const page={goto:async(url,options)=>calls.push({url,options})};
+  await executeStep(page,{action:'visit',path:'/'},base);
+  await executeStep(page,{action:'visit',path:'/'},base);
+  assert.equal(calls.length,2);
+  assert.deepEqual(calls.map(call=>call.url),[base+'/',base+'/']);
+  assert.ok(calls.every(call=>call.options.waitUntil==='networkidle'));
+});
 test('semantic locators, values and assertions are interpreted without executing code',async()=>{
   const actions=[];
   const locator={waitFor:async options=>assert.equal(options.state,'visible'),fill:async value=>actions.push(value),inputValue:async()=>'-2.5',innerText:async()=>'Count:   2',count:async()=>0};

@@ -119,3 +119,26 @@ rejection stops after that correction; credentials, quota and unknown request
 errors do not enter this path. Malformed transport envelopes remain resource
 failures. These distinctions prevent format repair from becoming an app-code
 repair or requiring an operator to restart a whole agent role.
+
+## QA protocol facts and review coverage
+
+The live notes run exposed a false review claim that `visit` could be SPA
+navigation. The actual interpreter uses Playwright `page.goto`. Capabilities now
+publish exact action names, document-navigation semantics and fresh scenario
+contexts from one shared description; coverage review no longer has a competing
+handwritten action table. Static scenario facts identify same-path visits and
+pre/post observation step indices without claiming the app executed.
+
+Scope review receives the relevant proposed scenarios as well as requirements,
+so a demand for another tool can be checked against the existing steps. The
+quality review decoding schema binds its assessed indices and issue references
+to the actual covered criteria/scenarios, including nonconsecutive indices.
+Cached quality and coverage judgments include the actual interpreter identity.
+
+`python scripts/check_navigation_semantics.py` executes the exact visit handler
+in isolated Chromium: two visits reset JavaScript memory while preserving local
+storage, session storage and cookies; a new context has none of that saved state.
+It passed locally and is included in the browser CI job. The associated QA
+selection passed 123 tests, semantic-cache checks passed 25, the Node protocol
+selection passed four, and the complete controller suite passed 723 tests.
+These verify runner and review behavior, not a generated-app pass.

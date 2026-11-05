@@ -21,6 +21,9 @@ def test_coverage_review_receives_exact_protocol_and_ignores_old_unbound_cache(c
     assert 'NO CSS/XPath selectors' in instruction and 'conditional strategy' in instruction
     assert 'source' not in data and 'current_source' not in data and options['coding'] is True
     assert data['browser_capabilities_sha256']
+    from forge.browser_capabilities import browser_capabilities
+    assert data['verification_capabilities']==browser_capabilities()
+    assert data['available_actions']==browser_capabilities()['actions']
     review_coverage(ledger,state,agent,review,suite,lambda:None)
     assert len(calls)==1
 
@@ -47,3 +50,17 @@ def test_coverage_cache_is_bound_to_changed_limitation_and_checked_behavior(cont
     suite.scenarios[0].steps[-1].target.value='Count: 2'
     review_coverage(ledger,state,agent,review,suite,lambda:None)
     assert len(calls)==4
+
+
+def test_coverage_cache_expires_when_runner_semantics_change(context,monkeypatch):
+    import forge.acceptance_coverage as module
+    from forge.browser_capabilities import browser_capabilities
+    ledger,state,review,agent=context;calls=[]
+    def generate(schema,instruction,data,**kwargs):
+        calls.append(data);return schema.model_validate({'can_check':False,'reason':'No server restart action','strategy':[]})
+    agent.generate=generate;suite=AcceptanceSuite.model_validate(proposal())
+    review_coverage(ledger,state,agent,review,suite,lambda:None)
+    changed=browser_capabilities();changed['protocol_sha256']='e'*64
+    monkeypatch.setattr(module,'browser_capabilities',lambda:changed)
+    review_coverage(ledger,state,agent,review,suite,lambda:None)
+    assert len(calls)==2 and calls[0]['browser_capabilities_sha256']!=calls[1]['browser_capabilities_sha256']

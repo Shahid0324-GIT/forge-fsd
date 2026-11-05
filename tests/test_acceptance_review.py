@@ -32,6 +32,8 @@ def test_review_is_bound_to_proposal_and_has_no_generated_source(context):
     assert agent.calls[0]['original_request']==review['binding']['inputs']['original_request']
     from forge.browser_capabilities import browser_capabilities
     assert agent.calls[0]['verification_capabilities']==browser_capabilities()
+    assert agent.calls[0]['covered_criteria']==[1,2]
+    assert 'scenario_protocol_facts' in agent.calls[0]
     assert agent.invocation_context==original and agent.activity is None
     assert review_suite(ledger,state,agent,review,suite,lambda:None)==reference and len(agent.calls)==1
 
@@ -101,8 +103,9 @@ def test_reviewer_repairs_its_own_invalid_decision_without_rewriting_qa_suite(co
     ledger,state,review,_=context
     class Correcting(Reviewer):
         def generate(self,schema,instruction,data,**kwargs):
+            from forge.acceptance_review import AcceptanceCritique
             self.calls.append(data)
-            return schema.model_validate({'assessed_criteria':[1] if len(self.calls)==1 else [1,2],'issues':[]})
+            return AcceptanceCritique.model_validate({'assessed_criteria':[1] if len(self.calls)==1 else [1,2],'issues':[]})
     agent=Correcting();suite=AcceptanceSuite.model_validate(proposal());original=suite.model_dump()
     reference=review_suite(ledger,state,agent,review,suite,lambda:None)
     assert len(agent.calls)==2
@@ -173,6 +176,8 @@ def test_scope_review_demotes_unrequested_blocker_and_preserves_its_evidence(con
     decision=load_quality_review(ledger,state,review,suite.model_dump(),reference)
     assert not decision.issues and decision.suggestions
     assert 'proposed_suite' not in agent.calls[1] and 'source' not in agent.calls[1]
+    assert agent.calls[1]['reviewed_scenarios']==suite.model_dump()['scenarios']
+    assert 'counter_actions' in agent.calls[1]['scenario_protocol_facts']
     import json
     packet=json.loads(Path(reference['report']).read_text())
     assert packet['original_decision']['issues'] and packet['scope_assessment']['decision']['findings'][0]['classification']=='optional_coverage'
@@ -194,3 +199,24 @@ def test_scope_findings_need_real_quotes_and_exact_issue_references(context,find
     agent=InvalidScope([{'criterion':2,'scenario':'counter_actions','reason':'A proposed issue','correction':'A correction'}])
     with pytest.raises(ValueError):review_suite(ledger,state,agent,review,AcceptanceSuite.model_validate(proposal()),lambda:None)
     assert all(task.status=='paused' for task in ledger.list() if task.task.owner in {'acceptance_reviewer','requirements_reviewer'})
+
+
+def test_critique_wire_schema_binds_nonconsecutive_coverage_and_each_issue_scenario():
+    from forge.acceptance_review import critique_schema
+    data={'scenarios':[{'id':'edit','criteria':[1,3]},{'id':'reload','criteria':[7]}]}
+    schema=critique_schema(data)
+    assert list(schema.model_validate({'assessed_criteria':[1,3,7],'issues':[]}).assessed_criteria)==[1,3,7]
+    for values in ([1,3],[1,3,6],[1,3,3]):
+        with pytest.raises(ValueError):schema.model_validate({'assessed_criteria':values,'issues':[]})
+    with pytest.raises(ValueError):schema.model_validate({'assessed_criteria':[1,3,7],
+        'issues':[{'scenario':'edit','criterion':7,'reason':'A finding','correction':'A correction'}]})
+
+
+def test_quality_review_expires_when_actual_runner_identity_changes(context,monkeypatch):
+    import forge.acceptance_review as module
+    from forge.browser_capabilities import browser_capabilities
+    ledger,state,review,_=context;agent=Reviewer();suite=AcceptanceSuite.model_validate(proposal())
+    reference=review_suite(ledger,state,agent,review,suite,lambda:None)
+    changed=browser_capabilities();changed['protocol_sha256']='e'*64
+    monkeypatch.setattr(module,'browser_capabilities',lambda:changed)
+    with pytest.raises(ValueError,match='binding'):load_quality_review(ledger,state,review,suite.model_dump(),reference)

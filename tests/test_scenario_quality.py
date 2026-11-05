@@ -39,6 +39,16 @@ def test_navigation_and_grouped_form_actions_are_not_rejected_as_reload_checks()
     validate_quality(suite(visit(),fill('value'),click('Submit'),visit('/result'),value('submitted')))
 
 
+def test_protocol_facts_distinguish_document_reload_from_navigation_without_claiming_execution():
+    from forge.scenario_quality import protocol_facts
+    data=suite(visit(),value(''),fill('saved'),value('saved'),visit(),value('saved'))
+    facts=protocol_facts(data)['behavior']
+    assert facts['same_path_document_reloads']==[{'step':5,'path':'/','navigation':'full_document',
+        'pre_reload_observation_steps':[4],'post_reload_observation_steps':[6]}]
+    assert 'has not executed' in facts['scope']
+    assert not protocol_facts(suite(visit(),fill('saved'),visit('/other'),value('saved')))['behavior']['same_path_document_reloads']
+
+
 def test_static_page_assertions_do_not_require_artificial_interactions():
     validate_quality(suite(visit(),{'action':'assert_title','value':'A landing page'}))
 

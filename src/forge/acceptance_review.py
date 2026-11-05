@@ -3,13 +3,13 @@ from forge.execution_models import execution_model
 import hashlib
 import json
 from pathlib import Path
-from typing import Annotated,Literal
+from typing import Annotated,Literal,Union
 
-from pydantic import Field
+from pydantic import Field,create_model
 
 from forge.handoffs import record_handoff
 from forge.browser_capabilities import browser_capabilities
-from forge.scenario_quality import exact_observation_conflicts
+from forge.scenario_quality import exact_observation_conflicts,protocol_facts
 from forge.tasks import CheckEvidence,Envelope,Observation,Task,TaskBlockedError,TaskConflict
 from forge.provider_errors import ProviderResourceError
 
@@ -61,6 +61,12 @@ issue index. classification=required_behavior needs an exact relevant requiremen
 quote from the provided requirements/criteria/feedback. classification=optional_coverage
 means the finding exceeds the agreed scope and cannot block QA. For optional findings explain that they exceed
 the agreed scope. Never claim execution, app correctness or human approval.'''
+SCOPE_INSTRUCTION+=''' Use reviewed_scenarios and scenario_protocol_facts to check what
+the proposed tests already do. A demand for a different tool is optional when the
+trusted protocol already performs the requested behavior. In particular visit is
+Playwright page.goto document navigation, never client-router navigation; repeated
+same-path visits already implement a full reload. Do not demand an unsupported
+reload verb or a server restart for a browser-reload requirement.'''
 
 
 INSTRUCTION='''You independently review proposed acceptance scenarios, not app source.
@@ -99,6 +105,23 @@ existing criterion/scenario references and concrete corrections; issues=[] only 
 you find no material gaps against the actual agreed scope. Do not rewrite tests or claim execution,
 application correctness or human approval. This review is advisory model judgment,
 not a semantic proof. Return concise findings, not private reasoning.'''
+INSTRUCTION+=''' Treat navigation_semantics and scenario_protocol_facts as authoritative
+facts about the trusted runner. visit always uses page.goto for full document
+navigation; a repeated same-path visit resets JavaScript state while preserving
+the browser context. It is not SPA routing and needs no additional reload action.
+Assess exactly the supplied covered_criteria, including nonconsecutive indices.'''
+
+
+def critique_schema(suite):
+    """Bind review bookkeeping and issue references to this actual proposed suite."""
+    covered=sorted({index for case in suite['scenarios'] for index in case['criteria']})
+    variants=[create_model('ScenarioIssue'+str(number),__base__=TestIssue,
+        criterion=(Literal[tuple(case['criteria'])],...),scenario=(Literal[case['id']],...))
+        for number,case in enumerate(suite['scenarios'])]
+    issue=variants[0] if len(variants)==1 else Annotated[Union[tuple(variants)],Field(discriminator='scenario')] if variants else TestIssue
+    return create_model('AcceptanceCritique',__base__=AcceptanceCritique,
+        assessed_criteria=(tuple[tuple(Literal[index] for index in covered)],...),
+        issues=(list[issue],Field(max_length=8 if variants else 0)))
 
 
 def proposal_hash(suite):
@@ -120,9 +143,9 @@ def _review_decision(agents,schema,instruction,context,validate,authorize):
     for attempt in range(2):
         authorize();decision=None
         try:
-            decision=schema.model_validate(agents.generate(schema,instruction,request,coding=True))
+            decision=agents.generate(schema,instruction,request,coding=True)
             validate(decision)
-            return decision
+            return schema.model_validate(decision.model_dump(mode='json'))
         except (TaskConflict,TaskBlockedError):raise
         except ValueError as exc:
             if attempt:
@@ -137,7 +160,8 @@ def _review_decision(agents,schema,instruction,context,validate,authorize):
 
 def _protocol_hash():
     return hashlib.sha256(b''.join(Path(__file__).with_name(name).read_bytes() for name in
-        ['acceptance_review.py','browser_capabilities.py','scenario_quality.py'])).hexdigest()
+        ['acceptance_review.py','browser_capabilities.py','scenario_quality.py'])+
+        browser_capabilities()['protocol_sha256'].encode()).hexdigest()
 
 
 def _path(ledger,state,digest,version=3):
@@ -219,6 +243,8 @@ def review_suite(ledger,state,agents,review,suite,authorize):
             'human_review_feedback':inputs.get('human_review_feedback',[]),
             'approved_criteria':review['draft']['acceptance_criteria'],
             'verification_capabilities':browser_capabilities(),
+            'covered_criteria':sorted({index for case in data['scenarios'] for index in case['criteria']}),
+            'scenario_protocol_facts':protocol_facts(data),
             'exact_observation_conflicts':exact_observation_conflicts(data),
             'proposed_suite':data,'review_fingerprint':review['fingerprint'],'proposal_fingerprint':digest}
         if len(json.dumps(context,separators=(',',':')))>22000:
@@ -232,7 +258,7 @@ def review_suite(ledger,state,agents,review,suite,authorize):
             agents.activity=lambda status,payload:ledger.store.event(ledger.job_id,status,payload,update_status=False)
             def current_review():
                 authorize();ledger.assert_active(state);ledger.assert_active(child)
-            decision=_review_decision(agents,AcceptanceCritique,INSTRUCTION,context,
+            decision=_review_decision(agents,critique_schema(data),INSTRUCTION,context,
                 lambda value:_validate(value,data),current_review)
             authorize();ledger.assert_active(state);_validate(decision,data)
             original=decision
@@ -244,6 +270,9 @@ def review_suite(ledger,state,agents,review,suite,authorize):
                 scope_context['proposed_blockers']=[issue.model_dump() for issue in original.issues]
                 scope_context['coverage_limitations']=data['uncovered']
                 scope_context['verification_capabilities']=context['verification_capabilities']
+                mentioned={issue.scenario for issue in original.issues}
+                scope_context['reviewed_scenarios']=[case for case in data['scenarios'] if case['id'] in mentioned]
+                scope_context['scenario_protocol_facts']={key:value for key,value in context['scenario_protocol_facts'].items() if key in mentioned}
                 record_handoff(ledger.store,ledger.job_id,'acceptance_reviewer','requirements_reviewer',
                     'Ground proposed blockers in agreed requirements; optional coverage cannot expand app scope.',scope_context,
                     agents=agents,task_id=scope_child.task.id,parent_task_id=child.task.id,task_state=scope_child)

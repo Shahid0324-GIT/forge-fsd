@@ -75,6 +75,8 @@ jobs:
         run: docker build --file templates/task-app/Dockerfile.dependencies --tag forge-task-deps:local templates/task-app
       - name: Build locked browser dependency image
         run: docker build --tag forge-browser-deps:local tests/browser
+      - name: Verify document navigation and browser-session semantics
+        run: python scripts/check_navigation_semantics.py
       - name: Accept the correct fixture and reject the stale-unit fixture
         run: python scripts/check_browser_fixture.py
       - name: Save browser reports and failure screenshots
@@ -86,5 +88,6 @@ jobs:
             artifacts/browser-calibration/**/calibration.json
             artifacts/browser-calibration/**/evidence/report.json
             artifacts/browser-calibration/**/results/*.png
+            artifacts/navigation-calibration/**/report.json
           retention-days: 7
           if-no-files-found: ignore
