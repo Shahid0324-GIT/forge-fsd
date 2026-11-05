@@ -43,7 +43,10 @@ Installed-version capabilities outrank general documentation. Reading docs does
 not make a new requirement mandatory. Withdraw concerns the sources do not support.
 4. Return assessed_files covering every declared file exactly once and at most
 three blocking issues. issues=[] is correct when no concrete contradiction remains.
-Quote the actual proposal field and select a relevant basis_sources reference.
+Quote the actual proposal field and select a relevant short ID from basis_sources.
+Its value points to the fact already present in this packet: request/* refers to
+the original request/answers, runtime/* to runtime and verification facts,
+proposal/* to the proposed design, and documentation/* to retrieved excerpts.
 An internal contradiction needs TWO DIFFERENT conflicting statements; a statement
 cannot contradict itself. Explain the conflict, not a hypothetical broken app.
 5. Corrections belong to the planner/builders. Never request human code, API paths,
@@ -107,6 +110,20 @@ def review_schema(proposal,sources=None):
         issues=(list[issue],Field(max_length=3)))
 
 
+def reference_ids(sources):
+    """Transmit references, not a second copy of all requirements and facts."""
+    return {f'B{index}':path for index,path in enumerate(sources)}
+
+
+def resolved_review(wire,identifiers):
+    packet=wire.model_dump(mode='json')
+    for issue in packet['issues']:
+        reference=issue['basis_reference']
+        if reference not in identifiers:raise ValueError('Review basis ID is outside this evidence packet')
+        issue['basis_reference']=identifiers[reference]
+    return ImplementationReview.model_validate(packet)
+
+
 def review_design(ledger,state,agents,draft,data):
     ledger.assert_active(state)
     proposal=draft.model_dump();digest=hashlib.sha256(draft.model_dump_json().encode()).hexdigest()
@@ -115,38 +132,41 @@ def review_design(ledger,state,agents,draft,data):
     context.update(proposal=proposal,runtime_capabilities=data['runtime_capabilities'],
         runtime_references=runtime_references(draft.database),verification_capabilities=data['verification_capabilities'])
     sources=basis_sources(context,proposal)
-    context['basis_sources']=sources
+    identifiers=reference_ids(sources);context['basis_sources']=identifiers
     if len(json.dumps(context,separators=(',',':')))>28000:
         raise ValueError('Implementation review packet exceeds its capacity; consolidate the agent-authored design/contracts without dropping requirements')
     child=ledger.reserve_action(ledger.start(ledger.create(Task(parent_id=state.task.id,owner='implementation_reviewer',
         goal='Resolve technical design and interface defects internally before scope approval.',
         inputs={'parent_revision':state.revision,'proposal_sha256':digest},required_checks=['implementation_review']))),'implementation_reviewer')
-    schema=review_schema(proposal,sources)
+    schema=review_schema(proposal,identifiers)
     previous=getattr(agents,'invocation_context',{});activity=getattr(agents,'activity',None)
     try:
         request=dict(context);decision=None;protocol_errors=0;researched=False
         research_available=documentation.enabled(agents)
         def consult(decision):
-            nonlocal context,sources,schema,researched
+            nonlocal context,sources,schema,identifiers,researched
             query=' '.join(issue.problem+' '+issue.evidence for issue in decision.issues)[:300]
             reference=documentation.lookup_for_agent(agents,{'tool':'lookup_documentation','query':query})
             context={**context,'documentation_evidence':[reference]}
-            sources=basis_sources(context,proposal);context['basis_sources']=sources
-            schema=review_schema(proposal,sources);researched=True
+            sources=basis_sources(context,proposal);identifiers=reference_ids(sources)
+            context['basis_sources']=identifiers
+            schema=review_schema(proposal,identifiers);researched=True
         for attempt in range(3 if research_available else 2):
             ledger.assert_active(state);ledger.assert_active(child)
             record_handoff(ledger.store,ledger.job_id,'planner','implementation_reviewer',
                 'Review implementation decisions internally; the user is not an API/type/folder designer.',request,
                 agents=agents,task_id=child.task.id,parent_task_id=state.task.id,task_state=child)
             agents.activity=lambda status,payload:ledger.store.event(ledger.job_id,status,payload,update_status=False)
+            previous_wire=None
             try:
                 # Normalize enum references back to the durable plain-string protocol.
                 parsed=schema.model_validate(agents.generate(schema,INSTRUCTION,request,coding=True))
-                decision=ImplementationReview.model_validate(parsed.model_dump(mode='json'))
+                previous_wire=parsed.model_dump(mode='json')
+                decision=resolved_review(parsed,identifiers)
                 _validate(decision,proposal,context)
                 if decision.issues and research_available and not researched:
                     consult(decision)
-                    request={**context,'previous_decision':decision.model_dump(),
+                    request={**context,'previous_decision':previous_wire,
                         'research_instruction':'Reassess your findings against the actual proposal, original scope and retrieved documentation. Withdraw unsupported concerns and do not invent security, placement or platform requirements. Return the complete final review; [] is valid.'}
                     continue
                 break
@@ -155,7 +175,7 @@ def review_design(ledger,state,agents,draft,data):
                 if protocol_errors:raise TaskBlockedError('Implementation reviewer returned invalid protocol twice; the user is not responsible for correcting the design. '+str(exc)) from exc
                 protocol_errors+=1
                 if decision and decision.issues and research_available and not researched:consult(decision)
-                request={**context,'previous_decision':decision.model_dump() if decision else None,
+                request={**context,'previous_decision':previous_wire,
                     'review_validation_error':str(exc),'correction_instruction':'Correct your own review references and assess every declared file. Do not rewrite the design or ask the user technical questions.'}
         else:raise TaskBlockedError('Internal review recovery budget exhausted before a validated final decision; no user technical decision requested.')
         ledger.assert_active(state)

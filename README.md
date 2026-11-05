@@ -137,9 +137,7 @@ jobs are not silently switched. Groq availability, account rate limits and credi
 apply. The adapter uses best-effort JSON-schema output plus the same local Pydantic
 validation and source/build/QA gates; provider output alone is not a pass.
 
-## Run the dashboard
-
-### Repeatable autonomous app checks
+## Repeatable autonomous app checks
 
 Run a business-only request through planning, internal evaluation approval,
 generation, isolated build and frozen browser checks:
@@ -156,6 +154,8 @@ Failed runs preserve their workspace under `workspace/.flow-evaluations`.
 A pass requires current build/browser evidence and complete frozen coverage, not
 just a success status. This is an internal test actor, not human approval,
 preview, publication or a claim of general model accuracy.
+
+## Run the dashboard
 
 After setup, double-click **Start-ForgeFSD.cmd**, or run:
 

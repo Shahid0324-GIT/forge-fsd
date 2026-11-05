@@ -40,6 +40,13 @@ oversized rendered hydration bundles.
   24-hour freshness limit.
 - Results carry source URLs, retrieval times, content/text hashes and report
   hashes. Post-lookup handoffs bind the next model call to its actual evidence.
+- Engineering-review wire schemas use short evidence IDs. The packet maps each
+  ID to a source path already present in the request, so requirements, runtime
+  facts and documentation are not copied into a second facts table. The controller
+  resolves IDs to canonical paths and quotations in durable feedback. This fixed
+  a measured Groq request-size failure without dropping requirements or changing
+  validation: the live review schema shrank from 11,139 to 7,646 characters and
+  its messages from 31,849 to 22,605 characters; the resumed review completed.
 - Task revision, version and cancellation are checked around retrieval. A stale
   lookup cannot authorize another answer or a source write.
 - A failed fetch is recorded as unavailable, not as proof an API is unsupported.

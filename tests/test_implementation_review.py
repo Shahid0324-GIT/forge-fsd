@@ -5,6 +5,10 @@ from test_autonomous_planning import Agent,draft
 import pytest
 
 
+def reference(data,path):
+    return next(key for key,value in data['basis_sources'].items() if value==path)
+
+
 def test_technical_findings_are_repaired_by_planner_without_human_code_guidance(tmp_path):
     bad=draft();bad.assumptions=['The browser can directly open a SQLite file']
     class Reviewing(Agent):
@@ -18,7 +22,7 @@ def test_technical_findings_are_repaired_by_planner_without_human_code_guidance(
                 self.calls.append((schema,data))
                 return schema.model_validate({'assessed_files':['app/page.tsx'],'issues':[{
                     'field':'assumptions','evidence':bad.assumptions[0],
-                    'basis_reference':'runtime/runtime_capabilities/storage',
+                    'basis_reference':reference(data,'runtime/runtime_capabilities/storage'),
                     'problem':'Browser filesystem access is not available in this runtime.',
                     'correction':'Choose a supported runtime boundary internally.'}]})
             return super().generate(schema,instruction,data,**kwargs)
@@ -39,7 +43,7 @@ def test_review_corrects_its_own_ungrounded_evidence_without_rewriting_planner(t
                 self.calls.append((schema,data))
                 return schema.model_validate({'assessed_files':['app/page.tsx'],'issues':[{
                     'field':'design','evidence':'Invented quote','problem':'Unsupported claim',
-                    'basis_reference':'request/original_request',
+                    'basis_reference':reference(data,'request/original_request'),
                     'correction':'Choose an internal correction'}]})
             return super().generate(schema,instruction,data,**kwargs)
     agent=Reviewing(draft());result=plan_app('Build a small interactive page.',agent,JobStore(tmp_path/'jobs.sqlite3'))
@@ -74,7 +78,7 @@ def test_repeated_invalid_review_stops_without_technical_question_or_plan_approv
                 self.calls.append((schema,data))
                 return schema.model_validate({'assessed_files':['app/page.tsx'],'issues':[{
                     'field':'design','evidence':'An invented quotation','problem':'Ungrounded',
-                    'basis_reference':'request/original_request',
+                    'basis_reference':reference(data,'request/original_request'),
                     'correction':'Decide internally'}]})
             return super().generate(schema,instruction,data,**kwargs)
     agent=InvalidReview(draft());store=JobStore(tmp_path/'jobs.sqlite3')
@@ -126,11 +130,11 @@ def test_technical_critique_is_rechecked_against_documentation_before_blocking(t
                 self.calls.append((schema,data))
                 if data.get('documentation_evidence'):
                     assert data['documentation_evidence'][0]['status']=='ok'
-                    assert any(key.startswith('documentation/') for key in data['basis_sources'])
+                    assert any(value.startswith('documentation/') for value in data['basis_sources'].values())
                     return schema.model_validate({'assessed_files':['app/page.tsx'],'issues':[]})
                 return schema.model_validate({'assessed_files':['app/page.tsx'],'issues':[{
                     'field':'design','evidence':data['proposal']['design'],
-                    'basis_reference':'runtime/runtime_capabilities/storage',
+                    'basis_reference':reference(data,'runtime/runtime_capabilities/storage'),
                     'problem':'Browser localStorage cannot persist after reloading.',
                     'correction':'Choose a supported storage mechanism.'}]})
             return super().generate(schema,instruction,data,**kwargs)
@@ -152,3 +156,24 @@ def test_unavailable_documentation_cannot_be_cited_as_a_technology_fact():
     context={'original_request':'Build a page','runtime_capabilities':{},'runtime_references':{},'verification_capabilities':{},
         'documentation_evidence':[{'status':'unavailable','sources':[{'status':'unavailable','error':'Timeout'}]}]}
     assert not any(key.startswith('documentation/') for key in basis_sources(context,draft().model_dump()))
+
+
+def test_compact_review_ids_preserve_facts_and_resolve_to_canonical_evidence():
+    import json
+    from forge.implementation_review import basis_sources,reference_ids,review_schema,resolved_review,_validate
+    context={'original_request':'Retain notes after reloading','runtime_capabilities':{'storage':'Browser localStorage is supported.'},
+        'runtime_references':{},'verification_capabilities':{}}
+    proposal=draft().model_dump();sources=basis_sources(context,proposal);identifiers=reference_ids(sources)
+    assert set(identifiers.values())==set(sources)
+    key=next(key for key,path in identifiers.items() if path=='request/original_request')
+    schema=review_schema(proposal,identifiers)
+    wire=schema.model_validate({'assessed_files':['app/page.tsx'],'issues':[{'field':'design',
+        'evidence':proposal['design'],'basis_reference':key,'problem':'Reload lifetime is unspecified.',
+        'correction':'Define the requested reload behavior.'}]})
+    decision=resolved_review(wire,identifiers)
+    assert decision.issues[0].basis_reference=='request/original_request'
+    _validate(decision,proposal,context)
+    compact=schema.model_json_schema()
+    assert compact['$defs']['ReviewBasis']['enum']==list(identifiers)
+    assert len(json.dumps(compact))<len(json.dumps(review_schema(proposal,sources).model_json_schema()))
+    with pytest.raises(ValueError,match='outside this evidence'):resolved_review(wire,{})
