@@ -86,7 +86,10 @@ class TaskCoordinator:
         # rather than spending another model call diagnosing an HTTP quota error.
         if current.observations and legacy_resource_failure(current.observations[-1].error):return {'next':'worker'}
         stalled=(current.no_progress>=self.review_after or bool(current.review_error))
-        reviewed=current.reviewed_observations==len(current.observations)
+        # A recovery strategy needs a real trial window. The cumulative stall
+        # counter stays high after review; using it alone reviewed every retry.
+        since_review=len(current.observations)-max(0,current.reviewed_observations)
+        reviewed=current.reviewed_observations>=0 and since_review<self.review_after and not current.review_error
         if stalled and not reviewed and current.observations:
             try:unchanged=current.observations[-1].fingerprint==self.fingerprint()
             except Exception as exc:
@@ -147,6 +150,10 @@ class TaskCoordinator:
             self.ledger.pause(child,str(exc),action_finished=True,kind='provider_resource')
             self.ledger.pause(dispatched,str(exc),action_finished=True,kind='provider_resource')
             return {}
+        except TaskBlockedError as exc:
+            self.ledger.pause(child,str(exc),action_finished=True)
+            self.ledger.pause(dispatched,str(exc),action_finished=True)
+            return {}
         except Exception as exc:error=f'{type(exc).__name__}: {exc}'[:4000]
         directory=self.ledger.store.path.parent/'task-reviews'/self.ledger.job_id
         directory.mkdir(parents=True,exist_ok=True);report=directory/(uuid4().hex+'.json')
@@ -160,6 +167,8 @@ class TaskCoordinator:
                 report=str(report.resolve()),summary=error or 'Proposal shape and role assignment validated; strategy effectiveness remains unproven.')]))
         if error:
             self.ledger.pause(child,'Review proposal was rejected; parent coordinator retains the failure evidence.')
-            self.ledger.review_failed(dispatched,error)
+            failed=self.ledger.review_failed(dispatched,error)
+            if current.review_error==error:
+                self.ledger.pause(failed,'Senior reviewer repeated the same invalid decision. Inspect saved reviewer evidence before resuming: '+error)
         else:self.ledger.recover(dispatched,plan,set(self.workers))
         return {}

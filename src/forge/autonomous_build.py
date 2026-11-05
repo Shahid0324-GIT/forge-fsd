@@ -1,5 +1,6 @@
 """Approved source generation and build verification. No behavior/readiness promotion."""
 from forge.execution_models import execution_model
+from forge.design_interfaces import implementation_order
 from pathlib import Path
 
 from forge import autonomous_planning as planning
@@ -43,6 +44,8 @@ def build_app(job_id,agents,store,*,resume=False,additional_actions=8,workspace_
     boundary=Path(workspace_boundary) if workspace_boundary else PROJECT/'workspace'
     root=safe_path(boundary,job_id)
     draft=planning.AppDraft.model_validate(review['draft']);ledger=TaskLedger(store,job_id)
+    issues=planning.manifest_issues(draft,root,executable=True)
+    if issues:raise ValueError('Approved source manifest cannot execute: '+'; '.join(issues))
     def authorize():
         if approved_review(job_id,store)['fingerprint']!=review['fingerprint']:raise ValueError('Reviewed plan changed during execution')
         if root.exists() and not _runtime_unchanged(root):
@@ -101,11 +104,11 @@ def build_app(job_id,agents,store,*,resume=False,additional_actions=8,workspace_
     existing_check=next((state for state in children() if state.task.inputs.get('stage')=='verify'),None)
     if existing_check is None or any(state.status!='completed' for state in source_tasks):
         previous=None
-        for file in draft.files:
+        for file in implementation_order(draft):
             authorize()
             dependencies=[Dependency(task_id=review['binding']['task_id'],revision=review['binding']['revision'])]
             if previous:dependencies.append(Dependency(task_id=previous.task.id,revision=previous.revision))
-            state=child('generate',file.owner,f'Implement {file.path}: {file.purpose}',{'file':file.path},dependencies,['source_written'])
+            state=child('generate',file.owner,f'Implement {file.path}: {file.purpose}',{'file':file.path},dependencies,['source_written','source_syntax'])
             state=TaskCoordinator(ledger,{file.owner:writer},reviewer_for({file.owner}),
                 lambda path=file.path:file_hash(safe_path(root,path)) or '0'*64).run(state.task.id)
             if state.status!='completed':return pause(state)

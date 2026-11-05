@@ -27,7 +27,7 @@ def test_normalized_source_stays_within_the_writer_budget():
 class Model:
     def __init__(self,content,reason='stop'):self.content=content;self.reason=reason;self.messages=None
     def model_copy(self,*,update):
-        assert update=={'num_predict':3000,'num_ctx':8192};return self
+        assert update=={'num_predict':6000,'num_ctx':32768};return self
     def with_structured_output(self,*_,**__):raise AssertionError('Source must not use JSON-constrained generation')
     def invoke(self,messages):
         self.messages=messages
@@ -46,6 +46,7 @@ def test_raw_source_is_traced_and_keeps_real_call_identity(tmp_path):
     assert worker.generate_source('Implement this file',{'write_target':'app/page.tsx'})=='export const value="quoted";\n'
     trace=json.loads(next(worker.trace_directory.glob('*.json')).read_text())
     assert trace['response_format']=='raw_source' and trace['task_id']=='task' and trace['done_reason']=='stop'
+    assert trace['requested_options']['num_predict']==6000 and trace['requested_options']['num_ctx']==32768
     assert trace['output']==model.content and trace['call_id']==worker.last_call_identity['call_id']
     assert [event for event,_ in events]==['AGENT_CALL_STARTED','AGENT_CALL_COMPLETED']
     assert all('output' not in payload for _,payload in events)

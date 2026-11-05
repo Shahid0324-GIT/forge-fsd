@@ -97,6 +97,53 @@ def test_review_must_assess_real_coverage_and_reference_existing_scenarios(conte
     with pytest.raises(ValueError):review_suite(ledger,state,Invalid(),review,AcceptanceSuite.model_validate(proposal()),lambda:None)
 
 
+def test_reviewer_repairs_its_own_invalid_decision_without_rewriting_qa_suite(context):
+    ledger,state,review,_=context
+    class Correcting(Reviewer):
+        def generate(self,schema,instruction,data,**kwargs):
+            self.calls.append(data)
+            return schema.model_validate({'assessed_criteria':[1] if len(self.calls)==1 else [1,2],'issues':[]})
+    agent=Correcting();suite=AcceptanceSuite.model_validate(proposal());original=suite.model_dump()
+    reference=review_suite(ledger,state,agent,review,suite,lambda:None)
+    assert len(agent.calls)==2
+    assert agent.calls[1]['previous_decision']['assessed_criteria']==[1]
+    assert 'every covered criterion' in agent.calls[1]['review_validation_error']
+    assert agent.calls[1]['proposed_suite']==original==suite.model_dump()
+    assert not load_quality_review(ledger,state,review,original,reference).issues
+
+
+def test_repeated_invalid_review_pauses_qa_instead_of_generating_new_tests(context):
+    from forge.tasks import TaskBlockedError
+    ledger,state,review,qa=context
+    class Invalid(Reviewer):
+        def generate(self,schema,instruction,data,**kwargs):
+            self.calls.append(data)
+            return schema.model_validate({'assessed_criteria':[],'issues':[]})
+    agent=Invalid()
+    with pytest.raises(TaskBlockedError,match='test proposal has not been rejected'):
+        acceptance_worker(ledger,state,qa,review,lambda:None,
+            review_quality=lambda suite:review_suite(ledger,state,agent,review,suite,lambda:None))
+    assert len(agent.calls)==2
+    assert qa.data['previous_proposal'] is None
+    assert all(task.status=='paused' for task in ledger.list() if task.task.owner=='acceptance_reviewer')
+
+
+def test_review_pause_resumes_the_same_test_proposal_without_another_author_call(context):
+    from forge.tasks import TaskBlockedError
+    ledger,state,review,qa=context;calls=[];generate=qa.generate
+    def author(*args,**kwargs):calls.append(1);return generate(*args,**kwargs)
+    qa.generate=author
+    with pytest.raises(TaskBlockedError):
+        acceptance_worker(ledger,state,qa,review,lambda:None,
+            review_quality=lambda _:(_ for _ in ()).throw(TaskBlockedError('Reviewer decision needs inspection')))
+    state=ledger.pause(state,'Reviewer decision needs inspection',action_finished=True)
+    state=ledger.reserve_action(ledger.start(ledger.resume(state)),'qa')
+    reviewer=Reviewer()
+    checks=acceptance_worker(ledger,state,qa,review,lambda:None,
+        review_quality=lambda suite:review_suite(ledger,state,reviewer,review,suite,lambda:None))
+    assert len(calls)==1 and checks[0].exit_code==0
+
+
 def test_optional_coverage_suggestions_do_not_block_required_scope(context):
     ledger,state,review,_=context
     class Suggesting(Reviewer):

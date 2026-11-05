@@ -14,6 +14,9 @@ class FakeModel:
         assert kwargs == {"method": "json_schema", "include_raw": True}
         return self
 
+    def model_copy(self,*,update):
+        return self
+
     def invoke(self, messages):
         return self.response
 
@@ -23,7 +26,8 @@ def test_incomplete_model_response_is_rejected(reason):
     agents = OllamaAgents.__new__(OllamaAgents)
     agents.model = FakeModel({"raw": SimpleNamespace(response_metadata={"done_reason": reason}),
                               "parsed": {}, "parsing_error": None})
-    with pytest.raises(ValueError, match="did not complete normally"):
+    from forge.provider_errors import ProviderResourceError
+    with pytest.raises(ProviderResourceError if reason=='length' else ValueError, match="did not complete normally"):
         agents.generate(RequirementsDocument, "instruction", {})
 
 
@@ -32,6 +36,50 @@ def test_provider_parse_failure_is_rejected():
     agents.model = FakeModel({"parsing_error": "invalid JSON"})
     with pytest.raises(ValueError, match="invalid JSON"):
         agents.generate(RequirementsDocument, "instruction", {})
+
+
+def test_truncated_json_is_a_capacity_pause_before_schema_retry():
+    from forge.schemas import NativeAcceptancePlan
+    from forge.provider_errors import ProviderResourceError
+    events=[]
+    agent=OllamaAgents.__new__(OllamaAgents)
+    agent.model=FakeModel({'raw':SimpleNamespace(content='{"scenarios":[',response_metadata={'done_reason':'length'}),
+        'parsed':None,'parsing_error':ValueError('Unterminated JSON')})
+    agent.activity=lambda status,payload:events.append(status)
+    with pytest.raises(ProviderResourceError,match='completion budget exhausted'):
+        agent.generate(NativeAcceptancePlan,'Generate checks',{})
+    assert events==['AGENT_CALL_STARTED','AGENT_CALL_FAILED']
+
+
+@pytest.mark.parametrize('error',[ConnectionError('Ollama is offline'),TimeoutError('Service timeout')])
+def test_transport_failures_pause_instead_of_entering_app_repair(error):
+    from forge.provider_errors import ProviderResourceError
+    class Offline(FakeModel):
+        def invoke(self,_):raise error
+    agent=OllamaAgents.__new__(OllamaAgents);agent.model=Offline(None)
+    with pytest.raises(ProviderResourceError,match='No app defect inferred'):
+        agent.generate(RequirementsDocument,'Return requirements',{})
+
+
+@pytest.mark.parametrize('model_name',['qwen2.5-coder:7b','groq:openai/gpt-oss-20b'])
+@pytest.mark.parametrize('schema_name',['AcceptanceSuite','AppDraft'])
+def test_plan_and_qa_capacity_is_available_without_claude(tmp_path,model_name,schema_name):
+    import json
+    from pydantic import BaseModel,create_model
+    class Answer(BaseModel):
+        value:int
+    schema=create_model(schema_name,__base__=Answer)
+    updates=[]
+    class Model(FakeModel):
+        def model_copy(self,*,update):updates.append(update);return self
+    agent=OllamaAgents.__new__(OllamaAgents);agent.model_name=model_name;agent.trace_directory=tmp_path
+    agent.model=Model({'raw':SimpleNamespace(content='{"value":3}',response_metadata={'done_reason':'stop'}),
+        'parsed':schema(value=3),'parsing_error':None})
+    assert agent.generate(schema,'Generate QA',{},coding=True).value==3
+    assert updates[-1]['num_predict']==6000 and updates[-1]['num_ctx']==32768
+    trace=json.loads(next(tmp_path.glob('*.json')).read_text())
+    key='max_completion_tokens' if model_name.startswith('groq:') else 'num_predict'
+    assert trace['requested_options'][key]==6000
 
 
 def persistence_proposal():

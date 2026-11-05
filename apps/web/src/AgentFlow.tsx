@@ -10,6 +10,7 @@ Object.assign(roles,{AcceptanceSuite:'Acceptance QA',acceptance_qa:'Acceptance Q
 Object.assign(roles,{AcceptanceCritique:'Test quality review',acceptance_reviewer:'Test quality review'});
 Object.assign(roles,{ClarificationReview:'Requirements review',intake_reviewer:'Requirements review'});
 Object.assign(roles,{ScopeAssessment:'Requirements scope review',requirements_reviewer:'Requirements scope review'});
+Object.assign(roles,{ImplementationReview:'Engineering review',implementation_reviewer:'Engineering review'});
 export function conciseIssue(message:string):string{
   if(message.includes('Failed to parse')){
     const role=message.includes('AcceptancePlan')?'QA':message.includes('AppBrief')?'Requirements':'Planning';
@@ -19,6 +20,9 @@ export function conciseIssue(message:string):string{
 }
 const steps=[['Requirements',['REQUIREMENTS','REQUIREMENTS_READY']],['Architect',['PLANNING']],['Test planning',['TEST_PLANNING']],['Builders',['BUILDING','REPAIRING']],['Verification',['VERIFYING','FUNCTIONALLY_VERIFIED']],['Security',['SECURITY_CHECK','SECURITY_PASSED']],['Release',['CI_PLANNING','DEPLOYMENT_PLANNING']]] as const;
 const summaries:Record<string,[string,string]>={
+  DOCUMENTATION_LOOKUP_STARTED:['Reading documentation','Looking up official technical references before continuing.'],
+  DOCUMENTATION_LOOKUP_COMPLETED:['Documentation lookup recorded','Source URLs and retrieval evidence are saved in Activity.'],
+  IMPLEMENTATION_REVIEWED:['Engineering review','Technical findings are handled by the agents before scope approval.'],
   INFERENCE_CHANGE_APPROVED:['Inference change approved','The remaining work uses the explicitly approved model; prior source and test provenance are retained.'],
   AUTONOMOUS_DRAFT_READY:['Design proposal saved','Review the agent-authored design. No app has been built yet.'],
   AUTONOMOUS_INPUT_NEEDED:['Requirements intake','A blocking business question needs your answer.'],
@@ -58,6 +62,12 @@ const summaries:Record<string,[string,string]>={
 
 function describe(event:WorkflowEvent):[string,string]{
   const p=event.payload;
+  if(event.status==='TASK_OBSERVED'){
+    const observation=p.task_state?.observations?.at(-1);
+    const failures=observation?.checks?.filter((check:any)=>check.exit_code!==0)??[];
+    return [failures.length||observation?.error?'Checks require correction':'Task evidence recorded',
+      conciseIssue(observation?.error||failures.map((check:any)=>check.summary).join(' ')||String(p.summary??'Controller checks were recorded.'))];
+  }
   if(event.status==='MODEL_ROUTED')return [String(p.model).startsWith('groq:')?'Groq assistance selected':'Local 7B selected',String(p.reason)];
   if(event.status==='TOOL_CALL_STARTED'||event.status==='TOOL_CALL_COMPLETED')return [p.tool==='check_build'?'Isolated verification':String(p.tool??'Workspace tool').replaceAll('_',' '),String(p.summary??'A scoped tool call was recorded.')];
   if(event.status==='TASK_ACTION_STARTED')return [name(p.task_state?.inflight_role??p.owner),String(p.summary??'Task dispatched.')];
@@ -65,7 +75,9 @@ function describe(event:WorkflowEvent):[string,string]{
   if(event.status==='AGENT_HANDOFF')return [`${name(p.sender)} → ${name(p.recipient)}`,String(p.summary??'Saved context supplied to the next role.')];
   if(event.status==='AGENT_CALL_STARTED')return [`${name(p.schema)} · model call`, `Generating a structured proposal${p.attempt>1?` · correction attempt ${p.attempt}`:''}.`];
   if(event.status==='AGENT_CALL_FAILED')return [`${name(p.schema)} · call failed`,String(p.summary??'The model call failed. Open its recorded call for details.')];
-  if(event.status==='AGENT_CALL_COMPLETED')return [`${name(p.schema)} · response validated`,'The response passed its schema checks. Application tests have not been implied.'];
+  if(event.status==='AGENT_CALL_COMPLETED')return p.response_kind==='documentation_request'
+    ?[`${name(p.schema)} · requesting documentation`,'The agent is resolving a technical question before returning its answer.']
+    :[`${name(p.schema)} · response validated`,'The response passed its schema checks. Application tests have not been implied.'];
   if(event.status==='AGENT_VALIDATION_FAILED')return [`${name(p.schema)} · ${p.retrying?'correcting proposal':'needs attention'}`,String(p.summary??'Proposal validation failed.')];
   if(event.payload.reason)return ['Step needs attention',conciseIssue(String(event.payload.reason))];
   const fallback=summaries[event.status]??[event.status.toLowerCase().replaceAll('_',' '),'Recorded workflow update.'];
@@ -74,9 +86,9 @@ function describe(event:WorkflowEvent):[string,string]{
 
 export default function AgentFlow({workflow,events,busy,status,onContext}:Props){
   const autonomous=workflow==='autonomous';
-  const routes=autonomous?[['Requirements',['requirements','intake_reviewer']],['Planner',['planner']],['Implementation',['builder','frontend','backend','qa']],['Senior review',['senior_reviewer']],['Acceptance QA',['acceptance_qa']],['Test quality',['acceptance_reviewer','requirements_reviewer']],['Coverage review',['coverage_reviewer']],['Verification',['verification']]] as const:steps;
+  const routes=autonomous?[['Requirements',['requirements','intake_reviewer']],['Planner',['planner']],['Engineering review',['implementation_reviewer']],['Implementation',['builder','frontend','backend','qa']],['Senior review',['senior_reviewer']],['Acceptance QA',['acceptance_qa']],['Test quality',['acceptance_reviewer','requirements_reviewer']],['Coverage review',['coverage_reviewer']],['Verification',['verification']]] as const:steps;
   const routeRole=(event:WorkflowEvent)=>event.status==='TOOL_CALL_STARTED'&&event.payload.tool==='check_build'?'verification':event.status==='TASK_ACTION_STARTED'?(event.payload.task_state?.task?.inputs?.stage==='acceptance_plan'?'acceptance_qa':event.payload.task_state?.inflight_role):event.status==='AGENT_HANDOFF'?event.payload.recipient:'';
-  const visible=events.filter(e=>e.status in summaries||['MODEL_ROUTED','PLANNING_QUALITY_REVIEW','AGENT_HANDOFF','AGENT_CALL_STARTED','AGENT_CALL_COMPLETED','AGENT_CALL_FAILED','AGENT_VALIDATION_FAILED','FAILED','VERIFICATION_FAILED','SECURITY_BLOCKED','INTERRUPTED','CANCELLED'].includes(e.status));
+  const visible=events.filter(e=>e.status in summaries||['TASK_OBSERVED','MODEL_ROUTED','PLANNING_QUALITY_REVIEW','AGENT_HANDOFF','AGENT_CALL_STARTED','AGENT_CALL_COMPLETED','AGENT_CALL_FAILED','AGENT_VALIDATION_FAILED','FAILED','VERIFICATION_FAILED','SECURITY_BLOCKED','INTERRUPTED','CANCELLED'].includes(e.status));
   const recent=visible.slice(-8).reverse();
   const active=autonomous?events.filter(e=>e.status==='TASK_ACTION_STARTED'||e.status==='TOOL_CALL_STARTED'&&e.payload.tool==='check_build').at(-1):events.filter(e=>steps.some(([,statuses])=>(statuses as readonly string[]).includes(e.status))).at(-1);
   const failed=['FAILED','VERIFICATION_FAILED','SECURITY_BLOCKED','INTERRUPTED'].includes(status);

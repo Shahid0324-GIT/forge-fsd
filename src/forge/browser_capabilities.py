@@ -1,11 +1,16 @@
 """Shared facts about the trusted browser runner, not model-granted permissions."""
 
+MAX_SCENARIOS=6
+MAX_SUITE_STEPS=96
+
 
 def browser_capabilities():
     return {
         'actions':['visit/reload within one session','click','fill','select','check',
             'assert_visible','assert_text','assert_value','assert_count','assert_title'],
         'targets':['accessible role and name','label','text','placeholder'],
+        'work_budget':{'max_scenarios':MAX_SCENARIOS,'max_total_steps':MAX_SUITE_STEPS,
+            'scope':'The step budget is shared across the complete suite. Keep a stateful sequence intact; do not remove observations to fit an artificial per-scenario quota.'},
         'assertion_semantics':{
             'assert_text':'Exact complete visible innerText of one semantic target, including descendants; whitespace normalized. '
                 'A container with multiple rows cannot equal just one row. Combine its entire expected text into one assertion or target a smaller element. No substring operator.',

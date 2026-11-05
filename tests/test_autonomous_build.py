@@ -35,7 +35,9 @@ class Builder(Agent):
 def setup(tmp_path):
     proposal=draft();proposal=type(proposal).model_validate({**proposal.model_dump(),'files':[
         {'path':'lib/math.ts','owner':'backend','purpose':'Shared calculation'},
-        {'path':'app/page.tsx','owner':'frontend','purpose':'Show the calculated value'}]})
+        {'path':'app/page.tsx','owner':'frontend','purpose':'Show the calculated value'}],
+        'interfaces':[{'name':'calculation','provider':'lib/math.ts','consumers':['app/page.tsx'],
+            'kind':'module','contract':'export function sum(a:number,b:number):number'}]})
     agent=Builder(proposal);store=JobStore(tmp_path/'artifacts/jobs.sqlite3')
     record=plan_app('Build a page showing the calculated value.',agent,store)
     job=record['job_id'];review=review_snapshot(job,store)
@@ -56,6 +58,29 @@ def runner(passed=True):
 def approve(store,job,review):decide_plan(job,store,review['fingerprint'],approved=True,actor='test_operator')
 
 
+def test_invalid_provider_is_corrected_before_consumer_is_delegated(setup):
+    store,job,agent,boundary,review=setup;approve(store,job,review)
+    original=agent.generate;attempts=[]
+    def generate(schema,instruction,data,**kwargs):
+        if schema.__name__=='SourceEdit' and data['allowed_targets']==['lib/math.ts']:
+            attempts.append(data)
+            if len(attempts)==1:
+                proposal=original(schema,instruction,data,**kwargs)
+                return schema.model_validate({**proposal.root.model_dump(),'content':'export function sum(a: = 1'})
+            assert data['recent_failures'][-1]['checks'][-1]['check']=='source_syntax'
+            assert data['recent_failures'][-1]['checks'][-1]['exit_code']==1
+            assert 'error TS' in data['recent_failures'][-1]['checks'][-1]['summary']
+            assert data['source']['lib/math.ts']['content']=='export function sum(a: = 1'
+            assert not (boundary/job/'app/page.tsx').exists()
+        return original(schema,instruction,data,**kwargs)
+    agent.generate=generate
+    result=build_app(job,agent,store,workspace_boundary=boundary,check_runner=runner())
+    assert result['status']=='AUTONOMOUS_BUILD_CHECKS_PASSED'
+    assert agent.edits==['lib/math.ts','lib/math.ts','app/page.tsx']
+    provider=next(task for task in TaskLedger(store,job).list() if task.task.inputs.get('file')=='lib/math.ts')
+    assert len(provider.observations)==2 and provider.observations[-1].checks[-1].exit_code==0
+
+
 def test_source_generation_requires_approval_before_creating_a_workspace(setup):
     store,job,agent,boundary,_=setup
     with pytest.raises(ValueError,match='requires an approved'):build_app(job,agent,store,workspace_boundary=boundary,check_runner=runner())
@@ -71,6 +96,20 @@ def test_approved_manifest_drives_multi_role_generation_without_readiness_promot
     assert not any(e['status'] in {'FUNCTIONALLY_VERIFIED','READY','PREVIEW_RUNNING'} for e in result['events'])
     assert result['events'][-1]['payload']['source_fingerprint']==source_fingerprint(boundary/job)
     assert all(state.status=='completed' for state in TaskLedger(store,job).list())
+
+
+def test_missing_verification_environment_pauses_before_any_source_repair_or_senior_review(setup):
+    store,job,agent,boundary,review=setup;approve(store,job,review)
+    def missing(root,directory,job):
+        result=runner(False)(root,directory,job)
+        result.update(error='Dependency image unavailable',environment_failure={'stage':'image_inspection'},checks={'results':[]})
+        return result
+    result=build_app(job,agent,store,workspace_boundary=boundary,check_runner=missing)
+    assert result['status']=='AUTONOMOUS_BUILD_PAUSED'
+    assert agent.edits==['lib/math.ts','app/page.tsx'] and not agent.review_contexts
+    state=TaskLedger(store,job).read(result['events'][-1]['payload']['task_id'])
+    assert state.actions_used==1 and not state.observations
+    assert 'restore the execution environment' in state.pause_reason
 
 
 def test_resume_checks_current_source_without_regenerating_completed_files(setup):

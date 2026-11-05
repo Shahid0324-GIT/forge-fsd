@@ -13,8 +13,10 @@ from forge.import_reference import relative_import_reference
 from forge.cycle_context import rejected_state_context,failure_obligations
 from forge.provider_errors import ProviderResourceError
 from forge.source_scope import scope_source,page_module
+from forge.design_interfaces import interfaces_for
+from forge.source_syntax import run_source_syntax,ensure_parser
 from forge.repair_context import compact_repair_context
-from forge.tasks import CheckEvidence,Envelope,Observation,Task
+from forge.tasks import CheckEvidence,Envelope,Observation,Task,TaskBlockedError
 from forge.workspace import source_fingerprint
 from forge.workspace_tools import ReplaceText,WorkspaceTools,WriteFile,file_hash
 
@@ -174,6 +176,7 @@ class SourceAgent:
         owned=[path for path,owner in tools.owners.items() if owner==state.task.owner]
         targets=owned if repairing else [state.task.inputs['file']]
         if not targets or any(path not in owned for path in targets):raise ValueError('Source task has no authorized target files')
+        if not repairing and targets[0].endswith(('.ts','.tsx')):ensure_parser()
         source={};variants=[];before=source_fingerprint(tools.root)
         # Read complete current files and the platform scaffold; never synthesize context.
         for path in dict.fromkeys([*targets,*tools.owners,'app/layout.tsx','app/globals.css','tsconfig.json','next.config.ts']):
@@ -201,13 +204,16 @@ class SourceAgent:
                 # Target selection may still choose any owned file; its complete
                 # body is retrieved from the unchanged snapshot before writing.
                 seeds=[path for path in targets if page_module(path)] or targets
-        scoped,omitted,inventory=scope_source(source,seeds,tools.owners)
+        agreements=[item.model_dump() for item in self.draft.interfaces]
+        scoped,omitted,inventory=scope_source(source,seeds,tools.owners,generating=not repairing,interfaces=agreements)
         data={'task':{'goal':state.task.goal,'owner':state.task.owner,'revision':state.revision},
             'original_request':state.task.inputs.get('original_request',''),
             'human_clarifications':state.task.inputs.get('human_clarifications',[]),
             'human_review_feedback':state.task.inputs.get('human_review_feedback',[]),
             'acceptance_contract':state.task.inputs.get('acceptance_contract'),
             'app_design':self.draft.model_dump(include={'title','design','database','acceptance_criteria'}),'capabilities':capabilities,
+            'source_manifest':[file.model_dump() for file in self.draft.files],
+            'interface_contracts':interfaces_for(self.draft,targets),
             'source':scoped,'source_inventory':inventory,'context_omitted':omitted,
             'workspace_fingerprint':fingerprint,'allowed_targets':targets,
             'recent_failures':[o.model_dump() for o in state.observations if o.revision==state.revision][-2:],
@@ -217,7 +223,7 @@ class SourceAgent:
             'previous_build':state.task.inputs.get('build_failure'),
             'recovery_strategy':state.recovery.model_dump() if state.recovery and state.reviewed_observations==len(state.observations) else None}
         if not repairing and len(json.dumps(data,separators=(',',':')))>22000:
-            raise ValueError('Complete source/interface context exceeds this worker budget; split the task instead of silently dropping contracts')
+            raise ProviderResourceError('Complete source/interface context exceeds this worker budget; split the task instead of silently dropping contracts')
         if getattr(self.agents,'trace_directory',None) is None:
             self.agents.trace_directory=self.ledger.store.path.parent/'model-calls'/self.ledger.job_id
         if repairing:
@@ -302,8 +308,18 @@ class SourceAgent:
             proposal_call_id=getattr(self.agents,'last_call_identity',{}).get('call_id'))
         if not outcome['ok']:raise ValueError(outcome['error'])
         if not repairing:
-            return [CheckEvidence(check='source_written',exit_code=0,fingerprint=outcome['data']['sha256'],
+            syntax=run_source_syntax(tools.root,proposal.path,self.ledger.store.path.parent/'source-syntax'/self.ledger.job_id,self.ledger.job_id)
+            tools.describe()
+            if syntax['source_sha256']!=outcome['data']['sha256']:raise ValueError('Source changed between writing and syntax verification')
+            diagnostics='; '.join(f"{row['file']}({row['line']},{row['column']}): error {row['code']}: {row['message']}" for row in syntax['diagnostics'])
+            checks=[CheckEvidence(check='source_written',exit_code=0,fingerprint=outcome['data']['sha256'],
                 report=outcome['report'],summary='Model-proposed source saved through ownership/hash checks; compilation and behavior are not implied.')]
+            if not syntax['passed'] and 'source_syntax' not in state.task.required_checks:
+                raise ValueError('Generated source has syntax errors; correct your own current file before delegation: '+diagnostics)
+            checks.append(CheckEvidence(check='source_syntax',exit_code=0 if syntax['passed'] else 1,
+                fingerprint=outcome['data']['sha256'],report=syntax['report'],
+                summary=diagnostics or syntax['scope']))
+            return checks
         return build_evidence(tools)
 
     def _raw_proposal(self,state,data,targets,tools,fingerprint,repairing,snapshot):
@@ -321,7 +337,9 @@ class SourceAgent:
             tools.describe()
             if source_fingerprint(tools.root)!=fingerprint:raise ValueError('Workspace context changed during target selection; retrieve fresh source')
             context={**data,'write_target':target,'file':target,'source_transport':'raw_complete_file'}
-            context['source'],context['context_omitted'],context['source_inventory']=scope_source(snapshot,[target],tools.owners)
+            context['source'],context['context_omitted'],context['source_inventory']=scope_source(snapshot,[target],tools.owners,generating=not repairing,
+                interfaces=[item.model_dump() for item in self.draft.interfaces])
+            context['interface_contracts']=interfaces_for(self.draft,[target])
             context.pop('replace_rejected_patch',None);context.pop('edit_guidance',None)
             if repairing and data.get('rejected_state'):
                 obligations=[row for row in data['failure_obligations'] if row['file']==target]
@@ -351,6 +369,9 @@ class SourceAgent:
                         if row['file']!=target or key not in {'line_text','expression_at_column','source_excerpt'}}
                         for row in data['diagnostic_locations']]
                     context['replacement_strategy']='Reimplement the selected file from the requirements and reference interfaces. Its previous body repeatedly failed and is intentionally withheld to avoid copying it. The path and expected hash remain controller-owned. Choose working code and app-owned types; preserve required behavior and actual consumers.'
+            # Target selection can expand the source scope beyond the earlier
+            # diagnosis. Enforce capacity on the actual body-generation request.
+            context=compact_repair_context(context)
             record_handoff(self.ledger.store,self.ledger.job_id,'qa' if repairing else 'coordinator',state.task.owner,
                 'Generate one complete source body for the chosen owned file; path and hashes remain controller-bound.',context,
                 agents=self.agents,task_id=state.task.id,parent_task_id=state.task.parent_id,task_state=state)
@@ -374,7 +395,7 @@ class SourceAgent:
                 agents=self.agents,task_id=child.task.id,parent_task_id=state.task.id,task_state=child)
             self.agents.activity=lambda status,payload:self.ledger.store.event(self.ledger.job_id,status,payload,update_status=False)
             focus=schema.model_validate(self.agents.generate(schema,FOCUS_INSTRUCTION,data,coding=True))
-        except ProviderResourceError as exc:resource_error=exc;error=str(exc)
+        except (ProviderResourceError,TaskBlockedError) as exc:resource_error=exc;error=str(exc)
         except Exception as exc:error=f'{type(exc).__name__}: {exc}'[:2000]
         finally:self.agents.invocation_context=previous_context;self.agents.activity=previous_activity
         directory=self.ledger.store.path.parent/'repair-focus'/self.ledger.job_id;directory.mkdir(parents=True,exist_ok=True)
@@ -395,6 +416,11 @@ def build_evidence(tools):
     outcome=tools.execute({'tool':'check_build'})
     if not outcome['ok']:raise ValueError(outcome['error'])
     data=outcome['data']
+    if (data.get('environment_failure') or data.get('cleanup_errors')
+        or (data.get('error') and not data['checks'])):
+        raise TaskBlockedError('Verification could not produce trustworthy app evidence; restore the execution environment '
+            'before source repair. '+str(data.get('error') or data.get('environment_failure') or data.get('cleanup_errors'))[:1200]
+            +' Report: '+data['report'])
     summary=summarize_checks(data['checks'],data.get('source_diagnostics',[]),data.get('error'))
     return [CheckEvidence(check='isolated_build',exit_code=0 if data['passed'] else 1,
         fingerprint=data['source_fingerprint'],report=data['report'],

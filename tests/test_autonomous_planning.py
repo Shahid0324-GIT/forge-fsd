@@ -20,6 +20,8 @@ class Agent:
     def generate(self,schema,instruction,data,**_):
         self.calls.append((schema,data))
         if schema is AppDraft:return self.proposal
+        if schema.__name__=='ImplementationReview':return schema.model_validate({
+            'assessed_files':[file['path'] for file in data['proposal']['files']],'issues':[]})
         if schema.__name__=='ClarificationReview':return schema.model_validate({'disposition':'ask_user',
             'requirement_quote':data['application_request'],'reason':'An unresolved business or capability choice remains'})
         assert schema is IntakeDecision
@@ -56,6 +58,15 @@ def test_duplicate_ownership_and_builder_owned_tests_are_rejected(tmp_path):
     assert any('belong to QA' in error for error in issues)
 
 
+@pytest.mark.parametrize('path',['tests/behavior.test.ts','app/page.tsx'])
+def test_executable_manifest_cannot_assign_unrunnable_test_files_or_app_code_to_qa(tmp_path,path):
+    proposal=draft()
+    if path=='app/page.tsx':proposal.files[0].owner='qa'
+    else:proposal.files.append(proposal.files[0].model_copy(update={'path':path,'owner':'qa'}))
+    issues=manifest_issues(proposal,tmp_path/'unexecuted',executable=True)
+    assert any('independent browser contract' in issue and 'no test-file runner' in issue for issue in issues)
+
+
 def test_agent_can_define_product_types_without_reserved_platform_type_conflicts(tmp_path):
     proposal=draft();proposal.database='sqlite'
     proposal.design='Define an app-owned Product type, a stock movement type and shared API interfaces. Choose suitable fields and relationships.'
@@ -72,9 +83,10 @@ def test_paused_draft_resumes_with_actual_failure_context_and_new_strategy(tmp_p
     agent.proposal=draft()
     result=continue_draft(ledger,task.task.id,agent)
     assert result['status']=='AUTONOMOUS_DRAFT_READY'
-    assert len(agent.calls)==3
-    assert agent.calls[-1][1]['latest_proposal']['files'][0]['path']=='package.json'
-    assert agent.calls[-1][1]['recent_failures'][-1]['checks'][1]['exit_code']==1
+    assert len(agent.calls)==4
+    context=[data for schema,data in agent.calls if schema is AppDraft][-1]
+    assert context['latest_proposal']['files'][0]['path']=='package.json'
+    assert context['recent_failures'][-1]['checks'][1]['exit_code']==1
     assert ledger.read(task.task.id).actions_used==2
 
 
@@ -87,8 +99,9 @@ def test_candidate_changed_outside_ledger_is_not_forwarded_on_resume(tmp_path):
     candidate.write_text(draft().model_copy(update={'design':'An unrelated externally replaced proposal'}).model_dump_json())
     ledger.resume(task,additional_actions=1);agent.proposal=draft()
     assert continue_draft(ledger,task.task.id,agent)['status']=='AUTONOMOUS_DRAFT_READY'
-    assert agent.calls[-1][1]['latest_proposal'] is None
-    assert agent.calls[-1][1]['recent_failures']==[]
+    context=[data for schema,data in agent.calls if schema is AppDraft][-1]
+    assert context['latest_proposal'] is None
+    assert context['recent_failures']==[]
 
 
 def test_answered_question_cannot_be_repeated_and_correction_receives_actual_answer(tmp_path):
@@ -155,7 +168,7 @@ def test_genuine_questions_do_not_enable_app_generation(tmp_path):
 def test_requirements_delegate_understood_goal_to_a_planner_with_exact_context(tmp_path):
     agent=Agent(draft())
     store=JobStore(tmp_path/'jobs.sqlite3');result=plan_app('Build a small calculator with no stored data.',agent,store)
-    assert result['status']=='AUTONOMOUS_DRAFT_READY' and len(agent.calls)==2
+    assert result['status']=='AUTONOMOUS_DRAFT_READY' and len(agent.calls)==3
     states=TaskLedger(store,result['job_id']).list()
     intake=next(t for t in states if t.task.owner=='requirements');child=next(t for t in states if t.task.owner=='planner')
     assert child.status=='completed' and child.task.parent_id==intake.task.id

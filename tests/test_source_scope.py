@@ -47,3 +47,25 @@ def test_relative_alias_index_and_incorrect_relative_candidates_are_snapshot_onl
     assert resolve_import('app/page.tsx','../api/items/route',paths)=={'app/api/items/route.ts'}
     assert resolve_import('app/page.tsx','node:fs',paths)==set()
     assert resolve_import('app/page.tsx','../../outside',paths)==set()
+
+
+def test_new_module_sees_existing_manifest_implementations_before_it_has_imports():
+    source={'lib/math.ts':packet('export function calculate(a:number,b:number){return a+b}'),
+        'components/Result.tsx':packet('export function Result({value}:{value:number}){return <p>{value}</p>}'),
+        'tsconfig.json':packet('{}')}
+    scoped,omitted,_=scope_source(source,['app/page.tsx'],
+        ['app/page.tsx','lib/math.ts','components/Result.tsx'],generating=True)
+    assert set(scoped)=={'lib/math.ts','components/Result.tsx'}
+    assert [item['file'] for item in omitted]==['tsconfig.json']
+
+
+def test_agent_agreements_supply_new_module_dependencies_without_unrelated_bodies():
+    source={'custom/service.ts':packet('export async function read(){return 1}'),
+        'custom/unrelated.ts':packet('export function unrelated(){return 2}'),
+        'app/layout.tsx':packet('layout')}
+    agreement={'provider':'custom/service.ts','consumers':['app/page.tsx']}
+    scoped,omitted,inventory=scope_source(source,['app/page.tsx'],[*source,'app/page.tsx'],
+        generating=True,interfaces=[agreement])
+    assert set(scoped)=={'custom/service.ts','app/layout.tsx'}
+    assert [item['file'] for item in omitted]==['custom/unrelated.ts']
+    assert next(row for row in inventory if row['file']=='custom/unrelated.ts')['exists']

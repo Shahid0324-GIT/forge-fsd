@@ -82,6 +82,18 @@ def test_frozen_requirements_checks_feed_actual_failures_to_source_repair(ready)
     assert not any(e['status'] in {'READY','SECURITY_PASSED','PREVIEW_RUNNING'} for e in result['events'])
 
 
+def test_browser_infrastructure_failure_cannot_trigger_application_source_repair(ready):
+    store,job,agent,boundary,_=ready
+    def unavailable(*args):
+        result=browsers([False])(*args)
+        result.update(error='Browser dependency image unavailable',browser={'results':[]})
+        Path(result['report']).write_text(json.dumps(result),encoding='utf-8')
+        return result
+    result=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,browser_runner=unavailable)
+    assert result['status']=='AUTONOMOUS_TEST_PAUSED' and not agent.repair_contracts
+    assert 'restore the execution environment' in result['events'][-1]['payload']['reason']
+
+
 @pytest.mark.parametrize('change',['source','contract','combined_report','browser_report','verify_revision','quality_review','quality_task'])
 def test_pass_is_invalidated_when_any_final_evidence_changes(ready,change):
     store,job,agent,boundary,_=ready

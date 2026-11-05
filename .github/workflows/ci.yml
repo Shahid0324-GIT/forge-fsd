@@ -37,12 +37,12 @@ jobs:
         run: python -m pip install -r requirements.lock.txt
       - name: Install project without resolving dependencies again
         run: python -m pip install --no-deps -e .
+      - name: Install locked dashboard dependencies (including trusted source parser)
+        run: npm --prefix apps/web ci --ignore-scripts --no-audit --no-fund
       - name: Run controller regression tests (no Ollama calls)
         run: |
           python -c "from pathlib import Path; Path('artifacts').mkdir(exist_ok=True)"
           python -m pytest -q --basetemp artifacts/ci-pytest --junitxml artifacts/ci-pytest.xml
-      - name: Install locked dashboard dependencies
-        run: npm --prefix apps/web ci --ignore-scripts --no-audit --no-fund
       - name: Typecheck and build dashboard
         run: npm --prefix apps/web run build
       - name: Save controller test results

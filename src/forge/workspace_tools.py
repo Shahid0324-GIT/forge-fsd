@@ -140,6 +140,8 @@ class WorkspaceTools:
                     'source_diagnostics':report.get('checks',{}).get('source_diagnostics',[]),
                     'source_fingerprint':report['source_fingerprint'],
                     'error':report.get('error',report.get('checks',{}).get('error')),
+                    'environment_failure':report.get('environment_failure'),
+                    'cleanup_errors':report.get('cleanup_errors',[]),
                     'checks':[{**{key:row.get(key) for key in ['name','exit_code','stopped']},
                         'output':row.get('output','')[:4000],'output_truncated':len(row.get('output',''))>4000}
                         for row in report.get('checks',{}).get('results',[])]}

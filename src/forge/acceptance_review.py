@@ -10,7 +10,8 @@ from pydantic import Field
 from forge.handoffs import record_handoff
 from forge.browser_capabilities import browser_capabilities
 from forge.scenario_quality import exact_observation_conflicts
-from forge.tasks import CheckEvidence,Envelope,Observation,Task
+from forge.tasks import CheckEvidence,Envelope,Observation,Task,TaskBlockedError,TaskConflict
+from forge.provider_errors import ProviderResourceError
 
 
 class TestIssue(Envelope):
@@ -113,6 +114,27 @@ def _validate(decision,suite):
         raise ValueError('Quality findings must reference a scenario covering that criterion')
 
 
+def _review_decision(agents,schema,instruction,context,validate,authorize):
+    """Reviewer protocol defects belong to the reviewer, not the QA author."""
+    request=dict(context)
+    for attempt in range(2):
+        authorize();decision=None
+        try:
+            decision=schema.model_validate(agents.generate(schema,instruction,request,coding=True))
+            validate(decision)
+            return decision
+        except (TaskConflict,TaskBlockedError):raise
+        except ValueError as exc:
+            if attempt:
+                raise TaskBlockedError('Independent reviewer returned an invalid decision after one correction; '
+                    'the test proposal has not been rejected. Inspect reviewer evidence. '+str(exc)) from exc
+            request={**context,'previous_decision':decision.model_dump() if decision is not None else None,
+                'review_validation_error':str(exc),
+                'correction_instruction':'Correct your own review decision against the original proposed suite and requirements. '
+                    'Assess every covered criterion exactly once and use only existing criterion/scenario references. '
+                    'Do not rewrite the test proposal or invent a test defect to excuse an invalid review.'}
+
+
 def _protocol_hash():
     return hashlib.sha256(b''.join(Path(__file__).with_name(name).read_bytes() for name in
         ['acceptance_review.py','browser_capabilities.py','scenario_quality.py'])).hexdigest()
@@ -201,14 +223,17 @@ def review_suite(ledger,state,agents,review,suite,authorize):
             'proposed_suite':data,'review_fingerprint':review['fingerprint'],'proposal_fingerprint':digest}
         if len(json.dumps(context,separators=(',',':')))>22000:
             ledger.pause(child,'Scenario review exceeds context budget',action_finished=True)
-            raise ValueError('Scenario review exceeds context budget; split scope without dropping requirements')
+            raise ProviderResourceError('Scenario review exceeds context budget; split scope without dropping requirements')
         previous=getattr(agents,'invocation_context',{});activity=getattr(agents,'activity',None);scope_child=None;scope=None
         try:
             record_handoff(ledger.store,ledger.job_id,'acceptance_qa','acceptance_reviewer',
                 'Review scenario effectiveness against requirements before freezing; no implementation supplied.',context,
                 agents=agents,task_id=child.task.id,parent_task_id=state.task.id,task_state=child)
             agents.activity=lambda status,payload:ledger.store.event(ledger.job_id,status,payload,update_status=False)
-            decision=AcceptanceCritique.model_validate(agents.generate(AcceptanceCritique,INSTRUCTION,context,coding=True))
+            def current_review():
+                authorize();ledger.assert_active(state);ledger.assert_active(child)
+            decision=_review_decision(agents,AcceptanceCritique,INSTRUCTION,context,
+                lambda value:_validate(value,data),current_review)
             authorize();ledger.assert_active(state);_validate(decision,data)
             original=decision
             if original.issues:
@@ -222,7 +247,10 @@ def review_suite(ledger,state,agents,review,suite,authorize):
                 record_handoff(ledger.store,ledger.job_id,'acceptance_reviewer','requirements_reviewer',
                     'Ground proposed blockers in agreed requirements; optional coverage cannot expand app scope.',scope_context,
                     agents=agents,task_id=scope_child.task.id,parent_task_id=child.task.id,task_state=scope_child)
-                assessment=ScopeAssessment.model_validate(agents.generate(ScopeAssessment,SCOPE_INSTRUCTION,scope_context,coding=True))
+                def current_scope():
+                    current_review();ledger.assert_active(scope_child)
+                assessment=_review_decision(agents,ScopeAssessment,SCOPE_INSTRUCTION,scope_context,
+                    lambda value:_scoped_decision(original,value,review),current_scope)
                 authorize();ledger.assert_active(state);decision=_scoped_decision(original,assessment,review)
                 scope={'task_id':scope_child.task.id,'decision':assessment.model_dump()}
             packet={'version':3,'review_protocol_sha256':_protocol_hash(),'job_id':ledger.job_id,'parent_task_id':state.task.id,'parent_revision':state.revision,

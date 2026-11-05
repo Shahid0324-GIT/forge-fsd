@@ -7,6 +7,7 @@ from forge.tasks import CheckEvidence,Observation,TaskConflict,RecoveryPlan
 from forge.workspace import source_fingerprint
 from forge.workspace_tools import file_hash
 from forge.provider_errors import ProviderResourceError
+from forge.tasks import TaskBlockedError
 from test_workspace_tools import tools
 
 
@@ -29,6 +30,13 @@ class Agent:
         return schema.model_validate({'tool':'write_file','path':path,'content':self.content,
             'expected_sha256':old['sha256'] if old else None,'expected_workspace_fingerprint':data['workspace_fingerprint'],
             'require_change':data['repair_mode']})
+
+
+def failed_compiler_check(root,*_,report='fixture-build.json'):
+    return {'passed':False,'report':report,'source_fingerprint':source_fingerprint(root),
+        'coverage':{'application_behavior':'NOT_TESTED'},'checks':{'results':[
+            {'name':'typecheck','exit_code':2,'stopped':None,
+             'output':'app/page.tsx(1,1): error TS1234: Controlled compiler failure'}]}}
 
 
 def configured(tools,mode=None):
@@ -91,11 +99,12 @@ def test_missing_original_context_prevents_ungrounded_generation(tools):
     assert agent.data is None
 
 
-def test_diagnosis_provider_limit_keeps_its_resource_type_and_cannot_write(tools):
+@pytest.mark.parametrize('pause_type',[ProviderResourceError,TaskBlockedError])
+def test_diagnosis_pause_keeps_its_type_and_cannot_write(tools,pause_type):
     state=configured(tools,'repair_build')
     class Limited(Agent):
-        def generate(self,*args,**kwargs):raise ProviderResourceError('Provider token limit')
-    with pytest.raises(ProviderResourceError):
+        def generate(self,*args,**kwargs):raise pause_type('Reference or provider budget reached')
+    with pytest.raises(pause_type):
         SourceAgent(tools.ledger,Limited('unused'),tools.root,tools.draft,workspace_boundary=tools.root.parent)(state)
     assert not (tools.root/'app/page.tsx').exists()
     assert all(child.status=='paused' for child in tools.ledger.list() if child.task.parent_id==state.task.id)
@@ -110,7 +119,8 @@ def test_repair_handoff_includes_snapshot_import_facts_for_missing_module(tools)
         checks=[CheckEvidence(check='isolated_build',exit_code=1,fingerprint=fp,report='missing.json',
             summary="app/page.tsx(1,19): error TS2307: Cannot find module '../components/card' or its corresponding type declarations.")]))
     agent=Agent('export default function Page(){return <main>Result</main>}')
-    SourceAgent(tools.ledger,agent,tools.root,tools.draft,workspace_boundary=tools.root.parent)(state)
+    SourceAgent(tools.ledger,agent,tools.root,tools.draft,workspace_boundary=tools.root.parent,
+        check_runner=failed_compiler_check)(state)
     reference=agent.data['diagnostic_locations'][0]['module_reference']
     assert reference['resolved_base']=='components/card'
     assert reference['existing_suffix_candidates']==[]
@@ -134,9 +144,8 @@ def test_cleanup_or_environment_failure_cannot_be_accepted_as_successful_build(t
         'source_fingerprint':source_fingerprint(root),'coverage':{'application_behavior':'NOT_TESTED'},
         'checks':{'results':[{'name':'typecheck','exit_code':0,'stopped':None,'output':''},
                              {'name':'production_build','exit_code':0,'stopped':None,'output':''}]},
-        'error':'cleanup failed'}
-    checks=build_evidence(tools)
-    assert checks[0].check=='isolated_build' and checks[0].exit_code==1
+        'error':'cleanup failed','cleanup_errors':['cleanup failed']}
+    with pytest.raises(TaskBlockedError,match='restore the execution environment'):build_evidence(tools)
 
 
 @pytest.mark.parametrize('build_failed',[False,True])
@@ -176,8 +185,7 @@ def test_latest_build_failure_survives_unproductive_intermediate_attempts(tools)
         state=tools.ledger.observe(state,Observation(revision=state.revision,fingerprint=source_fingerprint(tools.root),error=message))
     state=tools.ledger.reserve_action(state,'frontend')
     agent=Agent('export default function Page(){return <main>Fixed</main>}')
-    def check(root,*_):return {'passed':False,'report':'build.json','source_fingerprint':source_fingerprint(root),
-        'coverage':{'application_behavior':'NOT_TESTED'},'checks':{'results':[]},'error':'still failing'}
+    def check(root,*_):return failed_compiler_check(root,report='build.json')
     SourceAgent(tools.ledger,agent,tools.root,tools.draft,workspace_boundary=tools.root.parent,check_runner=check)(state)
     assert agent.data['latest_build_failure']['checks'][0]['report']=='failed-build.json'
     assert agent.data['last_tool_error']=='Unchanged edit'
@@ -274,8 +282,7 @@ def test_repair_can_replace_a_complete_file_without_bypassing_change_guards(tool
             return schema.model_validate({'tool':'write_file','path':target,'content':self.content,
                 'expected_sha256':data['source'][target]['sha256'],
                 'expected_workspace_fingerprint':data['workspace_fingerprint'],'require_change':True})
-    def check(root,*_):return {'passed':False,'report':'check.json','source_fingerprint':source_fingerprint(root),
-        'coverage':{'application_behavior':'NOT_TESTED'},'checks':{'results':[]},'error':'fixture check'}
+    def check(root,*_):return failed_compiler_check(root,report='check.json')
     content='export default function Page(){return <main>Corrected</main>}'
     worker=SourceAgent(tools.ledger,RewriteAgent(content),tools.root,tools.draft,
         workspace_boundary=tools.root.parent,check_runner=check)
@@ -294,8 +301,7 @@ def test_fresh_build_evidence_clears_older_tool_rejection(tools):
     state=tools.ledger.observe(state,state.observations[0])
     state=tools.ledger.reserve_action(state,'frontend')
     agent=Agent('export default function Page(){return <main>Fixed</main>}')
-    def check(root,*_):return {'passed':False,'report':'check.json','source_fingerprint':source_fingerprint(root),
-        'coverage':{'application_behavior':'NOT_TESTED'},'checks':{'results':[]},'error':'fixture check'}
+    def check(root,*_):return failed_compiler_check(root,report='check.json')
     SourceAgent(tools.ledger,agent,tools.root,tools.draft,workspace_boundary=tools.root.parent,check_runner=check)(state)
     assert agent.data['last_tool_error']=='' and not agent.data['replace_rejected_patch']
 

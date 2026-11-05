@@ -9,6 +9,7 @@ from forge.handoffs import record_handoff
 from forge.check_context import observed_context
 from forge.cycle_context import rejected_state_context
 from forge.tasks import RecoveryPlan
+from forge.provider_errors import ProviderResourceError
 from forge.source_scope import scope_source,page_module
 
 
@@ -110,7 +111,7 @@ class SeniorReviewer:
             'context_limits':{'check_summaries_bounded':True,'full_evidence_in_referenced_reports':True}}
         data['app_context']=scoped_review_context(data['app_context'],failed,data['current_evidence'])
         if len(json.dumps(data,separators=(',',':')))>20000:
-            raise ValueError('Senior-review context exceeds budget; supply the relevant artifacts instead of silently dropping requirements')
+            raise ProviderResourceError('Senior-review context exceeds budget; supply the relevant artifacts instead of silently dropping requirements')
         previous_context=getattr(self.agents,'invocation_context',{})
         previous_activity=getattr(self.agents,'activity',None)
         if getattr(self.agents,'trace_directory',None) is None:

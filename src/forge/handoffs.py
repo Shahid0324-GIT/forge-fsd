@@ -38,6 +38,7 @@ def record_handoff(store, job_id, sender, recipient, summary, context, *, agents
                'report': str(path.resolve())}
     store.event(job_id, 'AGENT_HANDOFF', payload, update_status=False)
     if agents is not None:
+        agents.reference_store=store
         agents.invocation_context={**previous,'job_id':job_id,'handoff_id':handoff_id,
             'task_id':task_id,'parent_task_id':parent,'actor':recipient,'file':scope,'context_sha256':identity['context_sha256']}
         for key in ('task_revision','task_version'):

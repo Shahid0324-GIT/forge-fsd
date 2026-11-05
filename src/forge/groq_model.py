@@ -128,7 +128,7 @@ class GroqChat(BaseChatModel):
             except (ValueError,TypeError):pass
             return response.status,response.getheader('Retry-After'),raw
         except (OSError,http.client.HTTPException):
-            raise RuntimeError('Groq HTTPS request failed; check connectivity and resume the saved operation') from None
+            raise ProviderResourceError('Groq HTTPS request failed; check connectivity and resume the saved operation. No app defect inferred.') from None
         finally:connection.close()
 
     def _generate(self,messages,stop=None,run_manager=None,**kwargs):

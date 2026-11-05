@@ -16,6 +16,8 @@ from forge.planning import INTAKE_INSTRUCTION,HELP_RESPONSES
 from forge.tasks import CheckEvidence,Dependency,Envelope,Task,TaskLedger
 from forge.workspace import safe_path,is_test_source,source_fingerprint
 from forge.browser_capabilities import browser_capabilities
+from forge.design_interfaces import SharedInterface,interface_issues
+from forge.implementation_review import review_design,prior_review
 
 
 TEMPLATE=Path(__file__).resolve().parents[2]/'templates/task-app'
@@ -30,8 +32,9 @@ class DraftFile(Envelope):
 class AppDraft(Envelope):
     title: str = Field(min_length=1,max_length=160)
     design: str = Field(min_length=1,max_length=12000,description='Your app architecture, behavior, state ownership and shared interfaces; choose app-specific types and structure freely.')
-    database: Literal['none','sqlite']
+    database: Literal['none','sqlite'] = Field(description='Server database choice only. none permits browser storage when requested; it does not mean state must disappear on reload. Choose the storage lifecycle from the actual user request.')
     files: list[DraftFile] = Field(max_length=20)
+    interfaces: list[SharedInterface] = Field(default_factory=list,max_length=20)
     acceptance_criteria: list[str] = Field(min_length=1,max_length=20)
     test_strategy: str = Field(min_length=1,max_length=3000)
     assumptions: list[str] = Field(default_factory=list,max_length=8)
@@ -41,6 +44,12 @@ INSTRUCTION='''You are ForgeFSD's planner subagent. Independently design the app
 by the user. Choose suitable business types, data model, routes if needed, project
 structure, UI behavior and state ownership. Explain interfaces shared between tasks.
 The design is an app-owned agreement that can be revised with affected agents.
+Declare interfaces for shared modules/components and browser/server calls using
+your chosen provider and consumer files. Agree on exact exports/props/types or
+HTTP/action request-response signatures before delegating implementation. These
+are agent decisions; never ask the user to supply them. Multiple owners require
+an explicit shared-interface agreement. Providers will be implemented before
+their consumers. Avoid dependency cycles by choosing suitable shared modules.
 Do not fit requests into a task-manager template or invent unnecessary architecture.
 Acceptance criteria describe the requested app's observable behavior. Keep fixed
 platform/tool constraints (installed packages, workspace isolation, SQLITE_PATH and
@@ -50,20 +59,27 @@ persistence requirements, including validation and reload behavior.
 Use the supplied Next.js App Router/TypeScript, React and Node 24 base with plain CSS
 or inline styles. Existing dependencies are fixed for this POC; no Tailwind, extra
 packages, authentication, payments or external services. Local SQLite is available
-when persistence is needed; database=none is valid. A landing page or client-side
+when server-side persistence is needed; browser storage can satisfy appropriate
+browser-only persistence. database=none means no server database, not no saved data.
+A landing page or client-side
 tool does not need an API, backend task or database merely to satisfy a template.
 Use app/page.tsx as the home entry; app/layout.tsx and app/globals.css are already
 seeded and may be changed if useful. Other app/components/lib/public/styles/tests
 files can be chosen within the supplied manifest rules. Package/configuration files
-remain controller-owned. Assign files to builder, frontend, backend or qa as useful;
+remain controller-owned. Assign application files to builder, frontend or backend;
+QA owns the controller's independent browser contract outside the workspace, not
+application source. Do not add test files to this manifest: no unit-test framework
+or arbitrary test-file runner is installed. Describe behavior checks in test_strategy;
+the controller compiles and runs the independently frozen browser scenarios.
 one builder is enough for a small app. Define expected behavior and applicable tests
 from the request, not invented implementation results. Assumptions cannot waive
 requirements. Acceptance criteria express requested functionality and explicit constraints;
 do not promote your optional styling/placement choices into new acceptance requirements.
 Requirements intake has already established the supported scope. Respect
-negative constraints: 'no saved data' excludes browser localStorage/sessionStorage,
-cookies and databases, not merely a server database. Use transient state for that scope.
-the supplied clarification answers and choose sensible defaults for remaining design
+the actual requested state lifetime: reload persistence, session lifetime and no
+persistence are different requirements. Do not copy a hypothetical example or a
+platform constraint into product behavior. Follow the supplied clarification
+answers and choose sensible defaults for remaining design
 choices. Do not reopen optional scope questions or ask the user to design the internals.
 Apply human_review_feedback as requirements updates without relaxing platform policy.
 Use runtime_capabilities as the actual platform facts. Do not assume test frameworks
@@ -73,6 +89,11 @@ Prefer the simplest design that satisfies the request; a backend is optional.
 This is a proposal for human review; never claim that an app was built or tests passed.
 Return the complete design, not only a correction. If previous evidence or senior
 review is supplied, use it to change the unsuccessful approach.
+implementation_findings are an internal engineering review: resolve them yourself
+against the original request and its supplied reference evidence. Do not adopt an
+unsupported critique as a new user requirement. Preserve business scope.
+invalid_proposal is your latest rejected response;
+correct its reported schema errors instead of starting over or asking the user.
 verification_capabilities describes the checks actually available, not the desired
 feature set. Keep criteria atomic and separate automated checks from disclosed manual
 checks. Preserve unsupported requested behavior rather than silently removing it;
@@ -88,7 +109,7 @@ def planning_capabilities():
         'template_package_sha256':hashlib.sha256(raw).hexdigest(),
         'framework_entrypoints':{'home':'app/page.tsx','root_layout':'app/layout.tsx',
             'optional_http_handler':'app/api/<path-segments>/route.ts'},
-        'storage':'No database is valid. node:sqlite is available only on the server; no remote database adapter is implemented.',
+        'storage':'Supported options: browser localStorage/sessionStorage for client-side storage, or server-only node:sqlite for SQLite. A server database is optional. No remote database adapter is installed.',
         'execution_checks':['typecheck','production_build'],
         'browser_coverage':'Independent requirements-derived semantic browser assertions run after source build. Supports accessible controls, visible text, values, counts and titles. Database restart, security and deployment are not browser coverage.',
         'test_frameworks_available':sorted(packages & {'jest','vitest','@testing-library/react'}),
@@ -99,7 +120,7 @@ def capability_fingerprint():
     return hashlib.sha256(json.dumps(planning_capabilities(),sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
 
-def manifest_issues(draft,root):
+def manifest_issues(draft,root,*,executable=False):
     issues=[];seen=set()
     for file in draft.files:
         try:safe_path(root,file.path)
@@ -112,6 +133,9 @@ def manifest_issues(draft,root):
         if file.path.casefold() in seen:issues.append(f'{file.path}: duplicate file or conflicting ownership')
         seen.add(file.path.casefold())
         if is_test_source(file.path) and file.owner!='qa':issues.append(f'{file.path}: independent test files belong to QA')
+        if executable and (is_test_source(file.path) or file.owner=='qa'):
+            issues.append(f'{file.path}: QA produces an independent browser contract outside the source workspace; '
+                'this execution pipeline has no test-file runner. Assign app source to a builder and describe checks in test_strategy.')
     if 'app/page.tsx' not in {f.path for f in draft.files}:
         issues.append('The Next.js runtime needs the home entry app/page.tsx; no business layout or API is prescribed.')
     return issues
@@ -122,7 +146,7 @@ def draft_task(store,job_id,description,*,action_limit=8,parent=None,inputs=None
     state=ledger.create(Task(owner='planner',goal='Propose a reviewable app design from the original request and clarification answers.',
         parent_id=parent.task.id if parent else None,
         dependencies=[Dependency(task_id=parent.task.id,revision=parent.revision)] if parent else [],
-        inputs=inputs or {'original_request':description},required_checks=['draft_schema','workspace_manifest']),action_limit=action_limit)
+        inputs=inputs or {'original_request':description},required_checks=['draft_schema','workspace_manifest','implementation_review']),action_limit=action_limit)
     return ledger,state
 
 
@@ -132,13 +156,31 @@ def continue_draft(ledger,task_id,agents):
     def fingerprint():return hashlib.sha256(candidate.read_bytes() if candidate.exists() else b'').hexdigest()
     def context(state):
         current=fingerprint()
+        events=ledger.store.read(ledger.job_id)['events']
         observations=[o for o in state.observations if o.revision==state.revision and o.fingerprint==current]
         # candidate.json is shared by successive design revisions. Only a proposal
         # observed for this task revision may be reused as current planning context.
-        bound=any(any(c.check=='draft_schema' for c in o.checks) for o in observations)
+        saved=next((e for e in reversed(events) if e['status']=='DESIGN_PROPOSED'
+            and e['payload'].get('task_id')==state.task.id and e['payload'].get('revision')==state.revision
+            and e['payload'].get('proposal_sha256')==current),None)
+        bound=bool(saved) or any(any(c.check=='draft_schema' for c in o.checks) for o in observations)
+        latest=json.loads(candidate.read_text(encoding='utf-8')) if bound and candidate.exists() else None
+        invalid=None
+        failed=next((e for e in reversed(events) if e['status']=='AGENT_VALIDATION_FAILED'
+            and e['payload'].get('task_id')==state.task.id and e['payload'].get('task_revision')==state.revision
+            and e['payload'].get('schema')=='AppDraft' and e['payload'].get('report')),None)
+        if failed and (not saved or failed['sequence']>saved['sequence']):
+            path=Path(failed['payload']['report']).resolve()
+            if path.is_relative_to(ledger.store.path.parent.resolve()) and path.is_file() and path.stat().st_size<=160000:
+                trace=json.loads(path.read_text(encoding='utf-8'))
+                if (trace.get('job_id')==ledger.job_id and trace.get('task_id')==state.task.id
+                    and trace.get('task_revision')==state.revision and not trace.get('output_truncated')):
+                    try:invalid={'proposal':json.loads(trace['output']),'error':failed['payload']['summary']}
+                    except (ValueError,KeyError):pass
         return {**state.task.inputs,'runtime_capabilities':planning_capabilities(),
             'verification_capabilities':browser_capabilities(),
-            'latest_proposal':json.loads(candidate.read_text(encoding='utf-8')) if bound and candidate.exists() else None,
+            'latest_proposal':latest,'invalid_proposal':invalid,
+            'implementation_findings':prior_review(ledger,state,AppDraft.model_validate(latest)) if latest else None,
             'recent_failures':[o.model_dump() for o in observations][-2:],
             'recovery_strategy':state.recovery.model_dump() if state.recovery else None}
     if getattr(agents,'trace_directory',None) is None:
@@ -153,20 +195,30 @@ def continue_draft(ledger,task_id,agents):
         previous_activity=getattr(agents,'activity',None)
         try:
             agents.activity=lambda status,payload:ledger.store.event(ledger.job_id,status,payload,update_status=False)
-            proposed=AppDraft.model_validate(agents.generate(AppDraft,INSTRUCTION,data,coding=True))
+            # Reviewer/service failure did not reject the planner's work. Resume
+            # that candidate's technical checks instead of paying to rewrite it.
+            rejected=any(o.fingerprint==fingerprint() for o in state.observations if o.revision==state.revision)
+            proposed=AppDraft.model_validate(data['latest_proposal']) if data['latest_proposal'] and not rejected and not data['invalid_proposal'] else AppDraft.model_validate(agents.generate(AppDraft,INSTRUCTION,data,coding=True))
             candidate.write_text(proposed.model_dump_json(indent=2),encoding='utf-8',newline='\n')
             snapshot=directory/f'draft-{state.task.id}-r{state.revision}-a{state.actions_used}.json';snapshot.write_bytes(candidate.read_bytes())
+            ledger.store.event(ledger.job_id,'DESIGN_PROPOSED',{'task_id':state.task.id,'revision':state.revision,
+                'proposal_sha256':fingerprint(),'report':str(snapshot.resolve()),'scope':'Agent-authored candidate; internal review and execution have not passed.'},update_status=False)
         finally:agents.activity=previous_activity
-        issues=manifest_issues(proposed,directory/'unexecuted-workspace')
+        issues=manifest_issues(proposed,directory/'unexecuted-workspace',executable=True)+interface_issues(proposed)
         if source_fingerprint(TEMPLATE)!=template_before or capability_fingerprint()!=capabilities_before:
             issues.append('Runtime capabilities or scaffold changed during planning; inspect the current base and propose again.')
+        technical=review_design(ledger,state,agents,proposed,data) if not issues else None
+        findings=technical['decision']['issues'] if technical else []
         report=directory/f'check-{state.task.id}-r{state.revision}-a{state.actions_used}.json'
         report.write_text(json.dumps({'draft_sha256':fingerprint(),'draft_snapshot':str(snapshot.resolve()),'issues':issues,
+            'implementation_review':technical,
             'template_fingerprint':template_before,'runtime_capabilities_sha256':capabilities_before,
             'scope':'Proposal structure and workspace manifest only; business completeness and execution remain unverified.'},indent=2),encoding='utf-8')
-        return [CheckEvidence(check=name,exit_code=int(bool(issues)) if name=='workspace_manifest' else 0,
-            fingerprint=fingerprint(),report=str(report.resolve()),summary='; '.join(issues) if issues else 'Draft protocol validated; app execution not performed.')
-            for name in ['draft_schema','workspace_manifest']]
+        return [CheckEvidence(check=name,exit_code=int(bool(issues)) if name=='workspace_manifest' else int(bool(issues) or bool(findings)) if name=='implementation_review' else 0,
+            fingerprint=fingerprint(),report=str(report.resolve()),summary='; '.join(issues) if issues else
+                '; '.join(issue['problem'] for issue in findings) if name=='implementation_review' and findings else
+                'Draft protocol validated; app execution not performed.')
+            for name in ['draft_schema','workspace_manifest','implementation_review']]
     reviewer=SeniorReviewer(agents,ledger,{'planner'},context_loader=context,
         capabilities={'planner':'Owns and can revise the complete app design, source manifest and shared interfaces while preserving the user goal.'})
     state=TaskCoordinator(ledger,{'planner':planner},reviewer,fingerprint).run(task_id)

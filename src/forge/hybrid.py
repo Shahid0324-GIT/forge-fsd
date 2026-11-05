@@ -42,6 +42,7 @@ class HybridRouter:
         child.trace_directory=getattr(facade,'trace_directory',None)
         child.invocation_context={**context,'inference_policy':HYBRID_MODEL,'routing_reason':reason}
         child.activity=getattr(facade,'activity',None)
+        child.reference_store=store
         # One dispatch only. Failed local output must be observed by the coordinator
         # and receive fresh context before escalation. Provider limits never cause
         # a silent downgrade or a second request with potentially stale input.

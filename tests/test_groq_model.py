@@ -91,10 +91,10 @@ def test_source_adapter_preserves_provider_identity_and_truncation_gate(tmp_path
     monkeypatch.setattr(provider.GroqChat,'_post',post)
     agent=OllamaAgents.__new__(OllamaAgents);agent.model=provider.GroqChat();agent.model_name=provider.GROQ_MODEL;agent.trace_directory=tmp_path
     assert agent.generate_source('Return source',{})=='export const value=3;\n'
-    assert payloads[0]['max_completion_tokens']==3000 and 'response_format' not in payloads[0]
+    assert payloads[0]['max_completion_tokens']==6000 and 'response_format' not in payloads[0]
     assert payloads[0]['reasoning_effort']=='low'
     trace=json.loads(next(tmp_path.glob('*.json')).read_text());assert trace['model']==provider.GROQ_MODEL and trace['provider_metadata']['provider']=='groq'
-    assert trace['requested_options']['max_completion_tokens']==3000 and 'num_ctx' not in trace['requested_options']
+    assert trace['requested_options']['max_completion_tokens']==6000 and 'num_ctx' not in trace['requested_options']
     monkeypatch.setattr(provider.GroqChat,'_post',lambda *_:(200,None,response('partial','length')))
     from forge.provider_errors import ProviderResourceError
     with pytest.raises(ProviderResourceError,match='did not complete normally'):agent.generate_source('Return source',{})

@@ -24,13 +24,21 @@ def resolve_import(importer,module,paths):
     return {path for path in paths if any(path==suffix+ext or path.endswith('/'+suffix+ext) for ext in EXTENSIONS)}
 
 
-def scope_source(snapshot,targets,manifest_paths):
+def scope_source(snapshot,targets,manifest_paths,*,generating=False,interfaces=()):
     paths=set(snapshot)|set(manifest_paths)|set(targets);edges={}
     for path,packet in snapshot.items():
         content=packet.get('content') or ''
         imports=re.findall(r'''(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|\bimport\s*)['"]([^'"]+)['"]''',content)
         edges[path]=set().union(*(resolve_import(path,module,paths) for module in imports)) if imports else set()
     selected=set(targets)
+    if generating:
+        # A new module has no import graph yet. Its imports/props must be chosen
+        # from existing implementations, rather than invented from filenames.
+        if interfaces:
+            for interface in interfaces:
+                endpoints={interface['provider'],*interface['consumers']}
+                if endpoints.intersection(targets):selected.update(endpoints)
+        else:selected.update(path for path in manifest_paths if path in snapshot)
     for target in targets:
         selected.update(edges.get(target,set()))
         selected.update(path for path,imports in edges.items() if target in imports)

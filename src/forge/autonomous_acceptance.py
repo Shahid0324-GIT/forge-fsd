@@ -10,7 +10,7 @@ from pydantic import Field,model_validator,create_model
 from forge.handoffs import record_handoff
 from forge.scenario_quality import validate_quality
 from forge.acceptance_review import load_quality_review
-from forge.browser_capabilities import browser_capabilities
+from forge.browser_capabilities import browser_capabilities,MAX_SCENARIOS,MAX_SUITE_STEPS
 from forge.tasks import CheckEvidence,Envelope,TaskBlockedError
 
 
@@ -96,7 +96,7 @@ Step=Annotated[Visit | Click | Fill | Toggle | Visible | Text | Value | Count | 
 class Scenario(Envelope):
     id: str = Field(pattern=r'^[a-z][a-z0-9_]{0,47}$')
     criteria: list[int] = Field(min_length=1,max_length=20,description='One-based indices from the supplied approved acceptance criteria.')
-    steps: list[Step] = Field(min_length=2,max_length=16)
+    steps: list[Step] = Field(min_length=2,max_length=MAX_SUITE_STEPS)
 
     @model_validator(mode='after')
     def executable(self):
@@ -118,9 +118,16 @@ class PartialCoverage(Uncovered):
 
 
 class AcceptanceSuite(Envelope):
-    scenarios: list[Scenario] = Field(max_length=6)
+    scenarios: list[Scenario] = Field(max_length=MAX_SCENARIOS,
+        description='At most 96 steps across the entire suite. Keep complete stateful scenarios intact.')
     uncovered: list[PartialCoverage | Uncovered] = Field(default_factory=list,max_length=20,
         description='Unverified criteria or remaining parts. Partial entries also need real scenarios and never count as complete coverage.')
+
+    @model_validator(mode='after')
+    def work_budget(self):
+        if sum(len(case.steps) for case in self.scenarios)>MAX_SUITE_STEPS:
+            raise ValueError(f'Acceptance suite exceeds its shared {MAX_SUITE_STEPS}-step budget; preserve meaningful assertions and split the verification scope')
+        return self
 
 
 def acceptance_schema(criterion_count):
@@ -133,7 +140,8 @@ def acceptance_schema(criterion_count):
     uncovered=create_model('ApprovedUncovered',__base__=Uncovered,criterion=(index,...))
     partial=create_model('ApprovedPartialCoverage',__base__=PartialCoverage,criterion=(index,...))
     return create_model('AcceptanceSuite',__base__=AcceptanceSuite,
-        scenarios=(list[scenario],Field(max_length=6)),
+        scenarios=(list[scenario],Field(max_length=MAX_SCENARIOS,
+            description='At most 96 steps across the entire suite. Keep complete stateful scenarios intact.')),
         uncovered=(list[partial|uncovered],Field(default_factory=list,max_length=criterion_count)))
 
 
@@ -206,28 +214,62 @@ def suite_fingerprint(ledger,state):
     return hashlib.sha256(path.read_bytes() if path.is_file() else b'').hexdigest()
 
 
+def _proposal_digest(proposal):
+    return hashlib.sha256(json.dumps(proposal,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+
+
+def _feedback_path(ledger,state,attempt):
+    return suite_path(ledger,state).parent/f'feedback-{state.task.id}-r{state.revision}-a{attempt}.json'
+
+
 def proposal_context(ledger,state,review):
     directory=suite_path(ledger,state).parent
     proposals=list(directory.glob(f'proposal-{state.task.id}-r{state.revision}-a*.json'))
-    previous=None
+    previous=None;feedback=None;saved_attempt=-1;trace_selected=False
     if proposals:
         path=max(proposals,key=lambda item:int(item.stem.rsplit('-a',1)[1]))
         if path.stat().st_size>100000:raise ValueError('QA proposal exceeds context budget')
         previous=json.loads(path.read_text(encoding='utf-8'))
-    else:
-        # Recover a pre-proposal-persistence trial using its controller invocation trace.
-        call=next((e['payload'] for e in reversed(ledger.store.read(ledger.job_id)['events'])
-            if e['status']=='AGENT_CALL_COMPLETED' and e['payload'].get('schema')=='AcceptanceSuite'
-            and e['payload'].get('task_id')==state.task.id and e['payload'].get('task_revision')==state.revision
-            and e['payload'].get('report')),None)
-        if call:
+        saved_attempt=int(path.stem.rsplit('-a',1)[1])
+        feedback_path=_feedback_path(ledger,state,saved_attempt)
+        if feedback_path.is_file():
+            if feedback_path.stat().st_size>100000:raise TaskBlockedError('Saved QA feedback exceeds the artifact budget')
+            packet=json.loads(feedback_path.read_text(encoding='utf-8'))
+            if (packet.get('job_id')!=ledger.job_id or packet.get('task_id')!=state.task.id
+                or packet.get('revision')!=state.revision or packet.get('review_fingerprint')!=review['fingerprint']
+                or packet.get('proposal_sha256')!=_proposal_digest(previous)):
+                raise TaskBlockedError('Saved QA feedback does not match this proposal/revision')
+            feedback=packet['failure']
+    # A newer schema-invalid response is still the latest candidate. An older
+    # saved (schema-valid, semantically rejected) file must not hide that work.
+    events=ledger.store.read(ledger.job_id)['events']
+    call=next((e['payload'] for e in reversed(events)
+        if e['status'] in {'AGENT_CALL_COMPLETED','AGENT_VALIDATION_FAILED'} and e['payload'].get('schema')=='AcceptanceSuite'
+        and e['payload'].get('task_id')==state.task.id and e['payload'].get('task_revision')==state.revision
+        and e['payload'].get('report')),None)
+    if call:
+        dispatched=next((e['payload']['task_state'] for e in reversed(events)
+            if e['status']=='TASK_ACTION_STARTED' and e['payload'].get('task_id')==state.task.id
+            and e['payload'].get('revision')==state.revision
+            and e['payload'].get('task_state',{}).get('version')==call.get('task_version')),None)
+        if saved_attempt<0 or (dispatched and dispatched['actions_used']>saved_attempt):
             path=Path(call['report']).resolve()
-            if path.is_relative_to(ledger.store.path.parent.resolve()) and path.stat().st_size<=160000:
+            if path.is_relative_to(ledger.store.path.parent.resolve()) and path.is_file() and path.stat().st_size<=160000:
                 trace=json.loads(path.read_text(encoding='utf-8'))
-                if (trace.get('job_id')==ledger.job_id and trace.get('task_revision')==state.revision
+                if (trace.get('job_id')==ledger.job_id and trace.get('task_id')==state.task.id and trace.get('task_revision')==state.revision
                     and not trace.get('output_truncated')):
-                    try:previous=AcceptanceSuite.model_validate_json(trace['output']).model_dump()
-                    except (ValueError,KeyError):pass
+                    try:rejected=json.loads(trace['output'])
+                    except (ValueError,KeyError):rejected=None
+                    if isinstance(rejected,dict) and isinstance(rejected.get('scenarios'),list):
+                        previous=rejected;feedback=None;trace_selected=True
+                        # Reconcile against the CURRENT protocol, not a stale
+                        # limit/error saved before a controller upgrade.
+                        try:
+                            current=acceptance_schema(len(review['draft']['acceptance_criteria'])).model_validate(rejected)
+                            previous=current.model_dump()
+                            validate_coverage(current,len(review['draft']['acceptance_criteria']))
+                            validate_quality(previous)
+                        except ValueError as exc:feedback={'type':type(exc).__name__,'message':str(exc)}
     # Independent behavior QA needs the agreed design/criteria, not source-file
     # assignments or an earlier model's proposed test implementation. Preserve
     # their hashes and the complete approved snapshot outside this prompt.
@@ -236,11 +278,16 @@ def proposal_context(ledger,state,review):
         for key in ('files','test_strategy') if key in review['draft']}
     data={**review['binding']['inputs'],'approved_design':design,'approved_design_omitted':omitted,'review_fingerprint':review['fingerprint'],
         'approved_criterion_ids':list(range(1,len(review['draft']['acceptance_criteria'])+1)),
-        'previous_proposal':previous,'protocol_errors':[o.error for o in state.observations if o.revision==state.revision and o.error][-2:],
+        'previous_proposal':previous,'protocol_errors':[] if trace_selected else [o.error for o in state.observations if o.revision==state.revision and o.error][-2:],
+        'proposal_feedback':feedback,
         'browser_protocol_constraints':browser_capabilities(),
-        'correction_instruction':'Correct the precise protocol errors in the previous proposal. Return the complete contract without dropping valid assertions.'}
+        'correction_instruction':'Correct the precise protocol errors in the previous proposal. proposal_feedback contains the complete current rejection; '
+            'protocol_errors are short summaries. Return the complete contract without dropping valid assertions.'}
     if state.recovery and state.reviewed_observations==len(state.observations):data['fresh_review']=state.recovery.model_dump()
-    if len(json.dumps(data,separators=(',',':')))>22000:raise ValueError('QA context exceeds budget; split the verification scope rather than dropping requirements')
+    # The bounded ledger error is a display summary, not the correction contract.
+    # Keep a short compatible summary, without repeating long historical errors.
+    if feedback:data['protocol_errors']=[feedback['type']+': '+feedback['message'][:800]]
+    if len(json.dumps(data,separators=(',',':')))>22000:raise TaskBlockedError('QA context exceeds budget; split the verification scope rather than dropping requirements')
     return data
 
 
@@ -258,23 +305,41 @@ def acceptance_worker(ledger,state,agents,review,authorize,review_coverage=None,
             agents=agents,task_id=state.task.id,parent_task_id=state.task.parent_id,task_state=state)
         agents.activity=lambda status,payload:ledger.store.event(ledger.job_id,status,payload,update_status=False)
         schema=acceptance_schema(len(review['draft']['acceptance_criteria']))
-        suite=AcceptanceSuite.model_validate(agents.generate(schema,INSTRUCTION,data,coding=True))
+        suite=None
+        if data['previous_proposal'] is not None and not data['protocol_errors'] and not data['proposal_feedback']:
+            # A reviewer/service pause did not reject the author's tests. Resume
+            # validation of that exact proposal instead of regenerating the suite.
+            try:suite=AcceptanceSuite.model_validate(schema.model_validate(data['previous_proposal']).model_dump())
+            except ValueError:pass
+        if suite is None:suite=AcceptanceSuite.model_validate(agents.generate(schema,INSTRUCTION,data,coding=True))
         authorize();ledger.assert_active(state)
         proposal=suite_path(ledger,state).parent/f'proposal-{state.task.id}-r{state.revision}-a{state.actions_used}.json'
         proposal.parent.mkdir(parents=True,exist_ok=True)
         with proposal.open('x',encoding='utf-8',newline='\n') as output:output.write(suite.model_dump_json(indent=2))
-        if (data.get('fresh_review') and data['protocol_errors'] and data['previous_proposal']==suite.model_dump()):
+        errors=[data['proposal_feedback']['message']] if data.get('proposal_feedback') else data['protocol_errors']
+        if (data.get('fresh_review') and errors and data['previous_proposal']==suite.model_dump()):
             raise TaskBlockedError('QA returned the identical rejected proposal after senior review. '
                 'Inspect the saved requirement/protocol conflict instead of spending more calls on the same contract. '
-                f'Proposal: {proposal.resolve()}. Last failure: {data["protocol_errors"][-1][:1800]}')
-        validate_coverage(suite,len(review['draft']['acceptance_criteria']))
-        validate_quality(suite.model_dump())
-        if suite.uncovered and review_coverage:review_coverage(suite)
-        quality=review_quality(suite) if review_quality else None
-        if review_quality:
-            if not quality:raise ValueError('Scenario reviewer must return bound review evidence')
-            if load_quality_review(ledger,state,review,suite.model_dump(),quality).issues:
-                raise ValueError('Scenario review still has unresolved findings')
+                f'Proposal: {proposal.resolve()}. Last failure: {errors[-1][:1800]}')
+        try:
+            validate_coverage(suite,len(review['draft']['acceptance_criteria']))
+            validate_quality(suite.model_dump())
+            if suite.uncovered and review_coverage:review_coverage(suite)
+            quality=review_quality(suite) if review_quality else None
+            if review_quality:
+                if not quality:raise ValueError('Scenario reviewer must return bound review evidence')
+                if load_quality_review(ledger,state,review,suite.model_dump(),quality).issues:
+                    raise ValueError('Scenario review still has unresolved findings')
+        except TaskBlockedError:raise
+        except ValueError as exc:
+            # Persist the COMPLETE rejection before the coordinator shortens it
+            # for the ledger. Later retries must see every required correction.
+            packet={'job_id':ledger.job_id,'task_id':state.task.id,'revision':state.revision,
+                'review_fingerprint':review['fingerprint'],'proposal_sha256':_proposal_digest(suite.model_dump()),
+                'failure':{'type':type(exc).__name__,'message':str(exc)}}
+            with _feedback_path(ledger,state,state.actions_used).open('x',encoding='utf-8',newline='\n') as output:
+                json.dump(packet,output,indent=2)
+            raise
         authorize();ledger.assert_active(state)
         packet={'version':1,'job_id':ledger.job_id,'task_id':state.task.id,'revision':state.revision,
             'scenario_quality_version':1,

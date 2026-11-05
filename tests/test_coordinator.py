@@ -55,7 +55,8 @@ def test_recovery_continues_beyond_old_two_attempt_cap_and_reviews_stalls(ledger
     task=create(ledger)
     result=TaskCoordinator(ledger,{'builder':worker},reviewer,lambda:FP).run(task.task.id)
     assert result.status=='completed' and len(attempts)==5
-    assert len(reviews)==3 and result.actions_used==8
+    assert len(reviews)==2 and result.actions_used==7
+    assert [len(failed.observations) for failed,_ in reviews]==[2,4]
     assert all(child.task.parent_id==task.task.id for _,child in reviews)
     assert all(child.task.owner=='senior_reviewer' for _,child in reviews)
     assert all(t.status=='completed' for t in ledger.list())
@@ -186,9 +187,9 @@ def test_invalid_reviewer_output_retries_then_pauses_without_weakening_checks(le
     def invalid(*_):return {'passed':True,'required_checks':[]}
     task=create(ledger,limit=5)
     result=TaskCoordinator(ledger,{'builder':lambda _:evidence(False)},invalid,lambda:FP).run(task.task.id)
-    assert result.status=='paused' and result.actions_used==5
+    assert result.status=='paused' and result.actions_used==4
     assert result.task.required_checks==['functional'] and result.review_error
-    assert len(ledger.list())==4  # parent plus three actual review tasks
+    assert len(ledger.list())==3  # parent plus two bounded review trials
     assert all(t.status=='paused' for t in ledger.list())
 
 

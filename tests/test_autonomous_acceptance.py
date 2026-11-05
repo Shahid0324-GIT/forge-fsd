@@ -75,6 +75,63 @@ def test_contract_is_requirements_derived_frozen_and_outside_source_workspace(co
     assert agent.invocation_context==previous and agent.activity is None
 
 
+def test_complete_stateful_case_can_exceed_sixteen_steps_within_original_total_budget():
+    data=proposal();case=data['scenarios'][0]
+    case['steps'].extend([case['steps'][-1]]*13)
+    suite=AcceptanceSuite.model_validate(data)
+    assert len(suite.scenarios[0].steps)==17
+    from forge.scenario_quality import validate_quality
+    validate_quality(suite.model_dump())
+
+
+def test_step_budget_is_shared_and_cannot_expand_across_scenarios():
+    from copy import deepcopy
+    data=proposal();case=data['scenarios'][0]
+    case['steps'].extend([case['steps'][-1]]*44)
+    second=deepcopy(case);second['id']='second'
+    data['scenarios'].append(second)
+    assert sum(len(case.steps) for case in AcceptanceSuite.model_validate(data).scenarios)==96
+    data['scenarios'][1]['steps'].append(second['steps'][-1])
+    with pytest.raises(ValueError,match='shared 96-step budget'):AcceptanceSuite.model_validate(data)
+
+
+@pytest.mark.parametrize('valid_under_current_protocol',[False,True])
+def test_newer_invocation_candidate_supersedes_older_saved_rejected_proposal(context,valid_under_current_protocol):
+    from types import SimpleNamespace
+    from forge.agents import OllamaAgents
+    from forge.handoffs import record_handoff
+    from forge.autonomous_acceptance import proposal_context,suite_fingerprint,acceptance_schema
+    from test_agents import FakeModel
+    ledger,state,review,qa=context
+    with pytest.raises(ValueError,match='Older rejected proposal'):
+        acceptance_worker(ledger,state,qa,review,lambda:None,
+            review_quality=lambda _:(_ for _ in ()).throw(ValueError('Older rejected proposal')))
+    state=ledger.observe(state,Observation(revision=state.revision,fingerprint=suite_fingerprint(ledger,state),error='Older rejected proposal'))
+    state=ledger.reserve_action(state,'qa')
+    newer=proposal()
+    if valid_under_current_protocol:
+        newer['scenarios'][0]['steps'].extend([newer['scenarios'][0]['steps'][-1]]*13)
+        failure=ValueError('Previous controller rejected more than sixteen steps')
+    else:
+        newer['scenarios'][0]['criteria']=[99]
+        failure=ValueError('Unknown criterion 99')
+    agent=OllamaAgents.__new__(OllamaAgents);agent.model_name='fake'
+    agent.model=FakeModel({'raw':SimpleNamespace(content=json.dumps(newer),response_metadata={'done_reason':'stop'}),
+        'parsed':None,'parsing_error':failure})
+    agent.trace_directory=ledger.store.path.parent/'model-calls'
+    agent.activity=lambda status,payload:ledger.store.event(ledger.job_id,status,payload,update_status=False)
+    record_handoff(ledger.store,ledger.job_id,'coordinator','qa','New attempt',{},agents=agent,task_id=state.task.id,task_state=state)
+    with pytest.raises(ValueError):agent.generate(acceptance_schema(3),'Define checks',{})
+    data=proposal_context(ledger,state,review)
+    if valid_under_current_protocol:
+        assert len(data['previous_proposal']['scenarios'][0]['steps'])==17
+        assert data['proposal_feedback'] is None and not data['protocol_errors']
+    else:
+        assert data['previous_proposal']==newer
+        assert '99' in data['proposal_feedback']['message']
+        assert 'Older rejected proposal' not in data['proposal_feedback']['message']
+
+
 def test_duplicate_dispatch_cannot_replace_a_frozen_contract(context):
     ledger,state,review,agent=context
     acceptance_worker(ledger,state,agent,review,lambda:None)
@@ -97,9 +154,31 @@ def test_retry_receives_the_rejected_proposal_and_exact_conflicting_criterion(co
     state=ledger.reserve_action(state,'qa');agent.generate=normal_generate
     checks=acceptance_worker(ledger,state,agent,review,lambda:None)
     assert agent.data['previous_proposal']['uncovered'][0]['criterion']==2
-    assert '[2]' in agent.data['protocol_errors'][0]
+    assert '[2]' in agent.data['proposal_feedback']['message']
     assert len(list(suite_path(ledger,state).parent.glob('proposal-*.json')))==2
     assert checks[0].exit_code==0
+
+
+def test_full_qa_rejection_survives_ledger_truncation_and_remains_proposal_bound(context):
+    from forge.autonomous_acceptance import proposal_context,suite_fingerprint
+    ledger,state,review,agent=context
+    message='First required correction. '*180+'FINAL REQUIRED CORRECTION: assert the changed result.'
+    with pytest.raises(ValueError,match='FINAL REQUIRED'):
+        acceptance_worker(ledger,state,agent,review,lambda:None,
+            review_quality=lambda _:(_ for _ in ()).throw(ValueError(message)))
+    # Reproduce the real coordinator's bounded observation summary.
+    state=ledger.observe(state,Observation(revision=state.revision,
+        fingerprint=suite_fingerprint(ledger,state),error=('ValueError: '+message)[:4000]))
+    state=ledger.reserve_action(state,'qa')
+    data=proposal_context(ledger,state,review)
+    assert data['proposal_feedback']['message']==message
+    assert 'FINAL REQUIRED' not in state.observations[-1].error
+    assert data['previous_proposal']==AcceptanceSuite.model_validate(proposal()).model_dump()
+    path=next(suite_path(ledger,state).parent.glob('feedback-*.json'))
+    packet=json.loads(path.read_text());packet['proposal_sha256']='b'*64
+    path.write_text(json.dumps(packet),encoding='utf-8')
+    from forge.tasks import TaskBlockedError
+    with pytest.raises(TaskBlockedError,match='does not match'):proposal_context(ledger,state,review)
 
 
 @pytest.mark.parametrize('change',['bytes','review','unfinished','revision'])
@@ -214,7 +293,7 @@ def test_revised_qa_excludes_old_errors_and_trace_fallback(context):
     ledger,state,review,_=context
     trace=ledger.store.path.parent/'old-call.json'
     def record(revision):
-        trace.write_text(json.dumps({'job_id':ledger.job_id,'task_revision':revision,
+        trace.write_text(json.dumps({'job_id':ledger.job_id,'task_id':state.task.id,'task_revision':revision,
             'output':json.dumps(proposal()),'output_truncated':False}),encoding='utf-8')
         ledger.store.event(ledger.job_id,'AGENT_CALL_COMPLETED',{'schema':'AcceptanceSuite',
             'task_id':state.task.id,'task_revision':revision,'report':str(trace.resolve())},update_status=False)
@@ -258,6 +337,29 @@ def test_real_completion_event_can_recover_current_revision_proposal(context):
     assert event['payload']['task_revision']==state.revision
     assert event['payload']['task_version']==state.version
     assert proposal_context(ledger,state,review)['previous_proposal']==expected.model_dump()
+
+
+def test_schema_invalid_qa_proposal_is_recovered_for_correction_without_becoming_evidence(context):
+    from forge.agents import OllamaAgents
+    from forge.handoffs import record_handoff
+    from forge.autonomous_acceptance import proposal_context,acceptance_schema
+    from test_agents import FakeModel
+    from types import SimpleNamespace
+    ledger,state,review,_=context
+    invalid=proposal();invalid['scenarios'][0]['criteria']=[99]
+    # Match the live Groq failure: valid JSON with non-object browser steps.
+    invalid['scenarios'][0]['steps'].extend(['assert_text',':'])
+    schema=acceptance_schema(3)
+    with pytest.raises(ValueError) as failed:schema.model_validate(invalid)
+    agent=OllamaAgents.__new__(OllamaAgents);agent.model_name='fake'
+    agent.model=FakeModel({'raw':SimpleNamespace(content=json.dumps(invalid),response_metadata={'done_reason':'stop'}),
+        'parsed':None,'parsing_error':failed.value})
+    agent.trace_directory=ledger.store.path.parent/'model-calls'
+    agent.activity=lambda status,data:ledger.store.event(ledger.job_id,status,data,update_status=False)
+    record_handoff(ledger.store,ledger.job_id,'coordinator','qa','Current inputs',{},agents=agent,task_id=state.task.id,task_state=state)
+    with pytest.raises(ValueError):agent.generate(schema,'Define checks',{})
+    assert proposal_context(ledger,state,review)['previous_proposal']==invalid
+    assert not suite_path(ledger,state).exists()
 
 
 @pytest.mark.parametrize('criterion_count',[1,4,8,20])

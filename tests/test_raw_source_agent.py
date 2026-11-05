@@ -29,6 +29,17 @@ def good_check(root,*_):
         'coverage':{'application_behavior':'NOT_TESTED'},'checks':{'results':[]}}
 
 
+def test_generation_preserves_other_implementations_through_final_raw_handoff(tools):
+    state=configured(tools)
+    helper=tools.root/'lib/types.ts';helper.parent.mkdir(parents=True,exist_ok=True)
+    helper.write_text('export function result(){return 42}',encoding='utf-8')
+    agent=RawAgent("import {result} from '@/lib/types'; export default function Page(){return <main>{result()}</main>}")
+    SourceAgent(tools.ledger,agent,tools.root,tools.draft,workspace_boundary=tools.root.parent)(state)
+    data=agent.raw_calls[0]
+    assert data['source']['lib/types.ts']['content']=='export function result(){return 42}'
+    assert {file['path'] for file in data['source_manifest']}=={file.path for file in tools.draft.files}
+
+
 def cycle_state(tools):
     (tools.root/'app/page.tsx').write_text("import {useState} from 'react';\nexport default function Page(){return null}\n")
     state=configured(tools,'repair_build');current=source_fingerprint(tools.root);old='a'*64

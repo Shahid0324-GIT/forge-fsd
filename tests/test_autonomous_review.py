@@ -23,7 +23,9 @@ def test_approval_binds_reviewed_source_manifest_inputs_and_runtime_without_buil
     assert result['status']=='AUTONOMOUS_APPROVED'
     assert approved_review(job,store)==review and snapshot.read_bytes()==before
     assert result['events'][-1]['payload']['app_execution']=='NOT_RUN'
-    assert len(agent.calls)==2 and len(TaskLedger(store,job).list())==2
+    assert len(agent.calls)==3 and len(TaskLedger(store,job).list())==3
+    assert any(task.task.owner=='implementation_reviewer' and task.status=='completed'
+        for task in TaskLedger(store,job).list())
     with pytest.raises(ValueError,match='Only the current proposal'):
         decide_plan(job,store,review['fingerprint'],approved=True,actor='test_operator')
 
@@ -78,7 +80,8 @@ def test_requested_changes_recheck_scope_preserve_history_and_require_new_approv
     assert result['job_id']==job and result['status']=='AUTONOMOUS_DRAFT_READY'
     assert new['fingerprint']!=old['fingerprint'] and new['binding']['inputs']['original_request']==old['binding']['inputs']['original_request']
     assert agent.calls[-1][1]['human_review_feedback']==['Add a Reset button.']
-    assert agent.calls[-1][1]['latest_proposal'] is None
+    context=[data for schema,data in agent.calls if schema is planning.AppDraft][-1]
+    assert context['latest_proposal'] is None
     assert Path(old['report']).read_bytes()==saved and Path(old_checks).read_bytes()==checks_before
     with pytest.raises(ValueError):decide_plan(job,store,old['fingerprint'],approved=True,actor='test_operator')
     assert not any(e['status']=='AUTONOMOUS_APPROVED' for e in result['events'])

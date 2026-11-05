@@ -138,6 +138,9 @@ def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,run_selecte
         browser=browser_runner(current_root,directory/uuid4().hex,job_id,contract,report['image'])
         authorize();load_acceptance(ledger,ledger.read(qa.task.id),review)
         failures=[row for row in browser.get('browser',{}).get('results',[]) if row.get('passed') is not True]
+        if browser.get('error') or browser.get('cleanup_errors'):
+            report['environment_failure']={'stage':'browser_verification','report':browser['report'],
+                'error':browser.get('error'),'cleanup_errors':browser.get('cleanup_errors',[])}
         report['checks']['results'].append({'name':'browser_acceptance','exit_code':0 if browser['passed'] else 1,'stopped':None,
             'output':json.dumps({'failures':failures,'error':browser.get('error'),'cleanup_errors':browser['cleanup_errors']},separators=(',',':'))})
         report.update(build_report=build_path,acceptance_report=browser['report'],contract_fingerprint=contract['fingerprint'],

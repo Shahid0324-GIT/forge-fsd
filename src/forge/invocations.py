@@ -8,7 +8,7 @@ from uuid import uuid4
 
 def begin_call(agent, schema, messages, attempt, coding):
     context=dict(getattr(agent,'invocation_context',{}))
-    options={'num_ctx':8192 if coding else 4096,'num_predict':3000 if coding else 1600,'temperature':0}
+    options={'num_ctx':32768 if coding else 16384,'num_predict':3000 if coding else 1600,'temperature':0}
     if getattr(agent,'model_name','') in {'groq:openai/gpt-oss-120b','groq:openai/gpt-oss-20b'}:
         options={'max_completion_tokens':3000 if coding else 1600,'temperature':0,
             'reasoning_effort':'medium','include_reasoning':False,'context_window':'provider-managed'}
