@@ -57,6 +57,33 @@ def test_independent_qa_keeps_requirements_and_previous_assertions_without_repea
     assert len(json.dumps(data))<len(json.dumps(original))
 
 
+def test_correction_keeps_complete_requirements_suite_feedback_and_hashes_builder_narrative(context):
+    import hashlib
+    from forge.autonomous_acceptance import proposal_context
+    ledger,state,review,agent=context
+    review['draft'].update(design='Builder implementation decisions. '*150,
+        assumptions=['Single user','Compute immediately on input changes'])
+    original=json.loads(json.dumps(review['draft']))
+    initial=proposal_context(ledger,state,review)
+    assert initial['approved_design']['design']==original['design'] and initial['qa_phase']=='initial'
+    failure='All necessary corrections. '*120
+    def reject(_):raise ValueError(failure)
+    with pytest.raises(ValueError,match='All necessary corrections'):
+        acceptance_worker(ledger,state,agent,review,lambda:None,review_quality=reject)
+    correction=proposal_context(ledger,state,review)
+    assert correction['qa_phase']=='correction'
+    assert 'design' not in correction['approved_design']
+    assert correction['approved_design_omitted']['design']==hashlib.sha256(json.dumps(original['design'],sort_keys=True).encode()).hexdigest()
+    assert correction['approved_design']['acceptance_criteria']==original['acceptance_criteria']
+    assert correction['approved_design']['assumptions']==original['assumptions']
+    assert correction['original_request']==review['binding']['inputs']['original_request']
+    assert correction['human_clarifications']==review['binding']['inputs']['human_clarifications']
+    assert correction['human_review_feedback']==review['binding']['inputs']['human_review_feedback']
+    assert correction['previous_proposal']==AcceptanceSuite.model_validate(proposal()).model_dump()
+    assert correction['proposal_feedback']['message']==failure
+    assert review['draft']==original
+
+
 def freeze(context):
     ledger,state,review,agent=context
     checks=acceptance_worker(ledger,state,agent,review,lambda:None)
@@ -73,6 +100,9 @@ def test_contract_is_requirements_derived_frozen_and_outside_source_workspace(co
     assert contract['suite']['uncovered'][0]['criterion']==3
     assert suite_path(ledger,state).is_relative_to(ledger.store.path.parent/'acceptance-plans')
     assert agent.invocation_context==previous and agent.activity is None
+    assert 'review_fingerprint' not in agent.data and 'approved_design_omitted' not in agent.data
+    assert 'protocol_sha256' not in agent.data['browser_protocol_constraints']
+    assert contract['review_fingerprint']==review['fingerprint']
 
 
 def test_complete_stateful_case_can_exceed_sixteen_steps_within_original_total_budget():

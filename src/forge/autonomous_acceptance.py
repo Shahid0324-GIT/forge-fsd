@@ -161,54 +161,41 @@ def validate_coverage(suite,criterion_count):
 
 
 INSTRUCTION='''You are the independent acceptance QA agent. Derive executable browser
-checks from the original request, human answers/feedback and APPROVED design. You
-receive no generated implementation or builder diagnosis. Never weaken requirements
-to accommodate an implementation. Choose accessible semantic targets and concrete
-assertions. Original requirements and explicit exclusions outrank contradictory design
-assumptions: mark a conflicting criterion uncovered with its conflict, never test it as
-the desired behavior. 'No saved data' means no persistence across reloads, including
-browser storage as well as a database. Choose concrete
-inputs/expected results, not CSS selectors or JavaScript. The builder will receive
-this frozen contract so it can provide appropriate accessible controls.
-assert_text compares the complete visible text of its target, including descendants,
-with normalized whitespace. It is not a substring assertion. For a results region,
-assert its full text in one expectation or use smaller semantic targets; do not ask
-the same unchanged region to equal several different row values.
-Use a few concise scenarios with actual assertions. Include one small, complete
-scenario for the principal user action and its visible result when the app has an
-interactive workflow. Put it before other interaction scenarios. The runner executes that whole scenario first as a workflow
-smoke check. Keep detailed validation, editing, deletion and persistence checks in
-the remaining scenarios as needed; never drop criteria to make the smoke check small.
-Verify all requested data involved in an operation, not just one convenient field.
-Each scenario starts at visit /
-or another approved app route in a fresh session. Use role/button/name for controls,
-label for labelled inputs, text for visible content, and assert_value for input values.
-Missing markup/style details are not unsupported capabilities: choose suitable semantic
-targets from the approved behavior. Builders can align accessible controls during repair.
-One assertion may cover multiple criteria; a visible value assertion can also prove a
-display requirement. Mark uncovered only for genuinely unavailable checks or conflicts,
-not because the design leaves routine UI implementation choices to the builder.
-Each NEW SCENARIO gets a fresh app process, temporary database and browser session.
-Scenarios cannot rely on data created by another scenario. A second visit / within one
-scenario reloads while preserving that session's storage; use it for reload and
-no-saved-state checks. Do not mark reload behavior unsupported.
-Observe the changed state BEFORE a reload and the required result immediately AFTER
-it. Never clear/reset to the initial state first: that cannot distinguish persistence
-from reset. Assertions before an interaction do not verify the interaction's result.
-State exact expected numbers/text from the requirements. Exercise repeated actions,
-invalid input and state transitions when applicable. Reference all approved criteria
-using one-based indices. If a criterion cannot be demonstrated with these browser
-actions, mark it uncovered with a factual reason; do not substitute a superficial
-check or claim that a database restart, security or deployment was verified.
-Tests execute only after source generation/build. Return a test contract, not code,
-private reasoning or claims of execution. Correct reported protocol errors without
-dropping assertions or requested functionality.
-For a criterion combining supported and unsupported checks, keep its executable part
-in scenarios and add an uncovered entry with coverage="partial", checked_behavior
-describing exactly what those scenarios check, and reason describing the unverified
-remainder. Do not drop valid checks or pretend the whole criterion is verified.
-Entirely unsupported criteria use ordinary uncovered entries without coverage or
-checked_behavior. Neither kind of uncovered entry permits a complete-success claim.'''
+checks from the original request, human answers/feedback, approved criteria and
+assumptions. No generated source or builder diagnosis is supplied. Never weaken
+requirements to accommodate an implementation. The original request and explicit
+exclusions outrank conflicting assumptions: disclose conflicts as uncovered.
+'No saved data' includes browser storage and database persistence across reloads.
+
+browser_protocol_constraints and the response schema define the actual runner.
+Use only those actions and accessible semantic targets, with concrete input and
+expected values. Follow their exact assertion, navigation and session semantics.
+The builder receives the frozen contract and can align accessible controls.
+Missing markup or style choices are not unsupported capabilities; choose sensible
+semantic targets without inventing requirements. Tests are proposals, not execution.
+
+Use a few concise scenarios. Put a small COMPLETE principal interaction and its
+visible result before other interaction cases, for workflow smoke. Keep every
+approved criterion; one assertion can cover several criteria. Verify all requested
+data, invalid input and relevant repeated actions/state transitions, not just a
+convenient field. Scenarios cannot depend on data from another scenario.
+For reload checks, observe a changed state BEFORE a repeated visit, and the required
+result immediately AFTER. Never reset to initial state before reload. Assertions
+before an interaction cannot verify that interaction's result.
+
+Reference the supplied one-based criterion IDs. Unsupported methods suggested by a
+reviewer do not extend the runner. For a genuinely unsupported criterion or conflict,
+use uncovered with a factual reason instead of a superficial assertion. For mixed
+criteria keep executable checks, plus an uncovered entry with coverage="partial",
+checked_behavior and the unverified remainder in reason. Entirely uncovered criteria
+use ordinary entries without coverage or checked_behavior. Neither permits a full pass.
+Never claim server-restart persistence, security, deployment or screen-reader execution.
+
+When correcting, preserve valid assertions in previous_proposal and address the
+COMPLETE proposal_feedback. The full request, criteria and assumptions remain
+supplied; unchanged builder narrative is retained by hash in the recorded handoff
+after the initial proposal, rather than repeated in correction prompts.
+Return the complete contract, not code, private reasoning or claims of execution.'''
 
 
 def suite_path(ledger,state):
@@ -280,10 +267,12 @@ def proposal_context(ledger,state,review):
     # assignments or an earlier model's proposed test implementation. Preserve
     # their hashes and the complete approved snapshot outside this prompt.
     technical={'files','test_strategy','interfaces'}
+    correcting=previous is not None and feedback is not None
+    if correcting:technical.add('design')
     design={key:value for key,value in review['draft'].items() if key not in technical}
     omitted={key:hashlib.sha256(json.dumps(review['draft'][key],sort_keys=True).encode()).hexdigest()
         for key in sorted(technical) if key in review['draft']}
-    data={**review['binding']['inputs'],'approved_design':design,'approved_design_omitted':omitted,'review_fingerprint':review['fingerprint'],
+    data={**review['binding']['inputs'],'qa_phase':'correction' if correcting else 'initial','approved_design':design,'approved_design_omitted':omitted,'review_fingerprint':review['fingerprint'],
         'approved_criterion_ids':list(range(1,len(review['draft']['acceptance_criteria'])+1)),
         'previous_proposal':previous,'protocol_errors':[] if trace_selected or feedback else [o.error for o in state.observations if o.revision==state.revision and o.error][-2:],
         'proposal_feedback':feedback,
@@ -318,7 +307,12 @@ def acceptance_worker(ledger,state,agents,review,authorize,review_coverage=None,
             # validation of that exact proposal instead of regenerating the suite.
             try:suite=AcceptanceSuite.model_validate(schema.model_validate(data['previous_proposal']).model_dump())
             except ValueError:pass
-        if suite is None:suite=AcceptanceSuite.model_validate(agents.generate(schema,INSTRUCTION,data,coding=True))
+        if suite is None:
+            # QA does not return or validate provenance hashes. Keep those in the
+            # immutable handoff and review binding, outside its token budget.
+            model_data={key:value for key,value in data.items() if key not in {'review_fingerprint','approved_design_omitted'}}
+            model_data['browser_protocol_constraints']={key:value for key,value in data['browser_protocol_constraints'].items() if key!='protocol_sha256'}
+            suite=AcceptanceSuite.model_validate(agents.generate(schema,INSTRUCTION,model_data,coding=True))
         authorize();ledger.assert_active(state)
         proposal=suite_path(ledger,state).parent/f'proposal-{state.task.id}-r{state.revision}-a{state.actions_used}.json'
         proposal.parent.mkdir(parents=True,exist_ok=True)

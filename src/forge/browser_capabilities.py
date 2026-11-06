@@ -22,6 +22,7 @@ def browser_capabilities():
                 'server_restart':False},
             'reload_action':'There is no separate reload verb. Use visit with the same path for a full document reload.'},
         'scenario_session':{'isolation':'Fresh browser context per scenario.',
+            'application_state':'Fresh app process and temporary database per scenario; reloads within a scenario retain that scenario\'s data.',
             'credentials':'The runner supplies no login credentials, preloaded cookies or storage state.',
             'service_workers':'blocked',
             'guest_access':'Visiting and using the app in this fresh context can check that the exercised workflow does not require login; this does not prove all security properties.'},
@@ -29,6 +30,7 @@ def browser_capabilities():
         'work_budget':{'max_scenarios':MAX_SCENARIOS,'max_total_steps':MAX_SUITE_STEPS,
             'scope':'The step budget is shared across the complete suite. Keep a stateful sequence intact; do not remove observations to fit an artificial per-scenario quota.'},
         'assertion_semantics':{
+            'fill':'Uses Playwright locator.fill, not physical keyboard typing. A nonnumeric fill into a native input[type=number] raises a tool error; it does not simulate ignored letter keystrokes followed by an empty value. Numeric inputs have the implicit spinbutton role, not textbox. The protocol has no expected-fill-error assertion.',
             'assert_text':'Exact complete visible innerText of one semantic target, including descendants; whitespace normalized. '
                 'A container with multiple rows cannot equal just one row. Combine its entire expected text into one assertion or target a smaller element. No substring operator.',
             'assert_value':'Exact input value, not visible text or an accessible name.',
