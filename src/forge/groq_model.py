@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Literal
 import time
 from threading import Lock
+from contextvars import ContextVar
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
@@ -22,6 +23,8 @@ GROQ_MODELS={GROQ_MODEL,'groq:openai/gpt-oss-20b'}
 KEY_FILE=Path(__file__).resolve().parents[2]/'.env.local'
 _TOKEN_BUDGETS={}
 _REQUEST_LOCK=Lock()
+_ACCOUNT_COOLDOWNS={}
+_ACCOUNT_ROUTE=ContextVar('forge_groq_account_route',default=None)
 
 
 class GeneratedJSONError(ValueError):
@@ -81,7 +84,7 @@ def _local_provider_config():
         if KEY_FILE.stat().st_size>16384:raise ValueError('Local provider configuration exceeds its size limit')
         for line in KEY_FILE.read_text(encoding='utf-8-sig').splitlines():
             name,separator,value=line.strip().partition('=')
-            if separator and (name=='FORGE_GROQ_KEY_NAME' or re.fullmatch(r'GROQ_API_KEY(?:_[1-9][0-9]{0,2})?',name)):
+            if separator and (name in {'FORGE_GROQ_KEY_NAME','FORGE_GROQ_FALLBACK_KEY_NAME'} or re.fullmatch(r'GROQ_API_KEY(?:_[1-9][0-9]{0,2})?',name)):
                 config[name]=value.strip().strip('\"\'')
     return config
 
@@ -102,13 +105,49 @@ def groq_key():
     return key
 
 
+def groq_accounts():
+    """Only explicitly configured slots; never discover or cycle through keys."""
+    config=_local_provider_config();primary=groq_key_name(config);accounts=[(primary,groq_key())]
+    fallback=os.environ.get('FORGE_GROQ_FALLBACK_KEY_NAME',config.get('FORGE_GROQ_FALLBACK_KEY_NAME','')).strip()
+    if fallback:
+        if not re.fullmatch(r'GROQ_API_KEY(?:_[1-9][0-9]{0,2})?',fallback) or fallback==primary:
+            raise ValueError('FORGE_GROQ_FALLBACK_KEY_NAME must select a different Groq credential slot')
+        key=os.environ.get(fallback,config.get(fallback,'')).strip()
+        if not key or key=='your_key_here' or any(char.isspace() for char in key):
+            raise ValueError(f'Configure the selected fallback {fallback} before enabling Groq account fallback')
+        if key==accounts[0][1]:raise ValueError('Groq account fallback requires two distinct credentials')
+        accounts.append((fallback,key))
+    return accounts
+
+
+def _rate_facts(raw):
+    """Only quota dimensions and numbers may survive a provider error body."""
+    facts=[];dimension=re.search(rb'\b(tokens|requests) per (minute|day)\b',raw,re.I)
+    if dimension:facts.append(dimension.group(0).decode('ascii').lower())
+    for label in ('Limit','Used','Requested'):
+        value=re.search(label.encode()+rb'\s+(\d+(?:\.\d+)?)',raw,re.I)
+        if value:facts.append(label.lower()+' '+value.group(1).decode('ascii'))
+    return ', '.join(facts)
+
+
+def _account_metadata():
+    route=_ACCOUNT_ROUTE.get()
+    return {'groq_accounts':json.loads(json.dumps(route))} if route else {}
+
+
+def _account_summary():
+    route=_ACCOUNT_ROUTE.get()
+    if not route or not route['fallback_enabled']:return ''
+    return ' Accounts: '+', '.join(row['key_slot']+'='+str(row.get('http_status',row['outcome'])) for row in route['attempts'])+'.'
+
+
 def _capacity_scope(model,key):
     # Never put credentials in LangChain model state, traces or public metadata.
     return model,hashlib.sha256(key.encode()).digest()
 
 
 def groq_configured():
-    try:groq_key();return True
+    try:groq_accounts();return True
     except (ValueError,OSError):return False
 
 
@@ -129,10 +168,38 @@ class GroqChat(BaseChatModel):
         # Copies with different completion budgets share the model's last capacity
         # receipt. The dashboard has one active worker; a restarted worker can still
         # encounter 429 and retains the existing bounded provider retry below.
-        with _REQUEST_LOCK:return self._budgeted_post(payload)
+        with _REQUEST_LOCK:
+            try:accounts=groq_accounts()
+            except (ValueError,OSError):
+                raise ProviderResourceError('Groq account configuration is invalid or unavailable; check the explicitly configured credential slots before resuming.') from None
+            enabled=len(accounts)>1
+            route={'fallback_enabled':enabled,'attempts':[]};_ACCOUNT_ROUTE.set(route)
+            last=None
+            for slot,key in accounts:
+                scope=_capacity_scope(self.model_name,key)
+                cooldown=_ACCOUNT_COOLDOWNS.get(scope) if enabled else None
+                if cooldown and cooldown[0]>time.monotonic():
+                    route['attempts'].append({'key_slot':slot,'http_status':429,'outcome':'cooldown'})
+                    last=(429,str(cooldown[0]-time.monotonic()),cooldown[1]);continue
+                try:status,retry,raw=self._budgeted_post(payload,key=key)
+                except ProviderResourceError as exc:
+                    route['attempts'].append({'key_slot':slot,'outcome':'resource_pause'})
+                    raise ProviderResourceError(str(exc)+_account_summary()) from None
+                route['key_slot']=slot
+                route['attempts'].append({'key_slot':slot,'http_status':status,'outcome':'rate_limited' if status==429 else 'returned'})
+                last=(status,retry,raw)
+                if status!=429:return last
+                if enabled:
+                    try:delay=float(retry)
+                    except (TypeError,ValueError):delay=60
+                    # A missing reset time is a short reprobe cooldown, not a
+                    # claim that the daily quota will reset in sixty seconds.
+                    if not 0<delay<=86400:delay=60
+                    _ACCOUNT_COOLDOWNS[scope]=(time.monotonic()+delay,_rate_facts(raw).encode('ascii'))
+            return last
 
-    def _budgeted_post(self,payload):
-        key=groq_key();scope=_capacity_scope(self.model_name,key)
+    def _budgeted_post(self,payload,*,key=None):
+        key=groq_key() if key is None else key;scope=_capacity_scope(self.model_name,key)
         body=json.dumps(payload).encode();budget=_TOKEN_BUDGETS.get(scope)
         if budget:
             remaining,limit,deadline=budget
@@ -162,6 +229,7 @@ class GroqChat(BaseChatModel):
         finally:connection.close()
 
     def _generate(self,messages,stop=None,run_manager=None,**kwargs):
+        _ACCOUNT_ROUTE.set(None)
         roles={'human':'user','ai':'assistant','system':'system'}
         wire=[]
         for message in messages:
@@ -197,7 +265,7 @@ class GroqChat(BaseChatModel):
                     payload={**payload,'max_completion_tokens':fitted}
                     status,retry,raw=self._post(payload)
         # One bounded provider wait, not a coding retry or a silent provider fallback.
-        if status==429 and not re.search(rb'\b(?:tokens|requests) per day\b',raw,re.I):
+        if status==429 and not (_ACCOUNT_ROUTE.get() or {}).get('fallback_enabled') and not re.search(rb'\b(?:tokens|requests) per day\b',raw,re.I):
             try:delay=float(retry)
             except (ValueError,TypeError):delay=0
             if 0<delay<=60:
@@ -215,6 +283,7 @@ class GroqChat(BaseChatModel):
                         or not candidate.lstrip().startswith('{') or re.search(r'gsk_[A-Za-z0-9_-]{20,}',candidate)):
                         candidate=''
                     raise GeneratedJSONError(candidate,{'model':self.model_name,'provider':'groq',
+                        **_account_metadata(),
                         'done_reason':'provider_json_rejected','http_status':400,'json_output_rejected':True,
                         'max_completion_tokens':payload['max_completion_tokens'],
                         'completion_budget_adjusted':payload['max_completion_tokens']!=self.num_predict})
@@ -228,15 +297,10 @@ class GroqChat(BaseChatModel):
                 if status==429:
                     # Persist actionable capacity facts, never arbitrary provider
                     # prose (which can contain organization IDs or echoed input).
-                    facts=[]
-                    dimension=re.search(rb'\b(tokens|requests) per (minute|day)\b',raw,re.I)
-                    if dimension:facts.append(dimension.group(0).decode('ascii').lower())
-                    for label in ('Limit','Used','Requested'):
-                        value=re.search(label.encode()+rb'\s+(\d+(?:\.\d+)?)',raw,re.I)
-                        if value:facts.append(label.lower()+' '+value.group(1).decode('ascii'))
-                    if facts:detail=' ('+', '.join(facts)+')'
+                    facts=_rate_facts(raw)
+                    if facts:detail=' ('+facts+')'
                 reason={401:'credential rejected',403:'model access denied',413:'request too large',429:'rate limit reached'}[status]
-                raise ProviderResourceError(f'Groq HTTP {status}: {reason}{detail}. Provider resource pause; no app defect inferred.')
+                raise ProviderResourceError(f'Groq HTTP {status}: {reason}{detail}. Provider resource pause; no app defect inferred.'+_account_summary())
             # Provider failures must not consume app-repair/senior-review loops.
             # Retain allowlisted categories, never echoed prompts or credentials.
             detail=''
@@ -255,11 +319,12 @@ class GroqChat(BaseChatModel):
                     if facts:detail=' ('+', '.join(facts)+')'
             except (ValueError,TypeError,AttributeError):pass
             raise ProviderResourceError(f'Groq HTTP {status}: provider request rejected{detail}. '
-                'Saved work retained; no app defect inferred.')
+                'Saved work retained; no app defect inferred.'+_account_summary())
         try:
             result=json.loads(raw);choice=result['choices'][0];content=choice['message']['content'];usage=result.get('usage',{})
             if not isinstance(content,str):raise ValueError('Missing text completion')
             message=AIMessage(content=content,response_metadata={'model':self.model_name,'provider':'groq',
+                **_account_metadata(),
                 'done_reason':choice['finish_reason'],'request_id':result.get('id'),
                 'max_completion_tokens':payload['max_completion_tokens'],'reasoning_effort':self.reasoning_effort,
                 'completion_budget_adjusted':payload['max_completion_tokens']!=self.num_predict,
@@ -268,7 +333,7 @@ class GroqChat(BaseChatModel):
                     'json_schema_strict' if payload['response_format']['json_schema']['strict'] else 'json_schema_best_effort') if 'response_format' in payload else 'text'},
                 usage_metadata={'input_tokens':usage.get('prompt_tokens',0),'output_tokens':usage.get('completion_tokens',0),
                     'total_tokens':usage.get('total_tokens',0)})
-        except (ValueError,KeyError,IndexError,TypeError):raise ProviderResourceError('Groq returned an invalid chat envelope; provider response unavailable, no app defect inferred.') from None
+        except (ValueError,KeyError,IndexError,TypeError):raise ProviderResourceError('Groq returned an invalid chat envelope; provider response unavailable, no app defect inferred.'+_account_summary()) from None
         return ChatResult(generations=[ChatGeneration(message=message)])
 
     def with_structured_output(self,schema,*,method='json_schema',include_raw=False,**kwargs):

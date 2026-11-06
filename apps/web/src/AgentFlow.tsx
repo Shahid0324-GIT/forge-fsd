@@ -20,6 +20,7 @@ export function conciseIssue(message:string):string{
 }
 const steps=[['Requirements',['REQUIREMENTS','REQUIREMENTS_READY']],['Architect',['PLANNING']],['Test planning',['TEST_PLANNING']],['Builders',['BUILDING','REPAIRING']],['Verification',['VERIFYING','FUNCTIONALLY_VERIFIED']],['Security',['SECURITY_CHECK','SECURITY_PASSED']],['Release',['CI_PLANNING','DEPLOYMENT_PLANNING']]] as const;
 const summaries:Record<string,[string,string]>={
+  PROVIDER_ACCOUNT_ROUTED:['Groq account','Account routing was recorded without credential values.'],
   DOCUMENTATION_LOOKUP_STARTED:['Reading documentation','Looking up official technical references before continuing.'],
   DOCUMENTATION_LOOKUP_COMPLETED:['Documentation lookup recorded','Source URLs and retrieval evidence are saved in Activity.'],
   IMPLEMENTATION_REVIEWED:['Engineering review','Technical findings are handled by the agents before scope approval.'],
@@ -65,6 +66,8 @@ const summaries:Record<string,[string,string]>={
 
 function describe(event:WorkflowEvent):[string,string]{
   const p=event.payload;
+  if(event.status==='PROVIDER_ACCOUNT_ROUTED')return ['Groq account',
+    `Response via ${p.key_slot??'configured account'}.${p.attempts?.some((row:any)=>row.http_status===429)?' Another configured account reached its rate limit; the saved request and model were retained.':''}`];
   if(event.status==='TASK_OBSERVED'){
     const observation=p.task_state?.observations?.at(-1);
     const failures=observation?.checks?.filter((check:any)=>check.exit_code!==0)??[];

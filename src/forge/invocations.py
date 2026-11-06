@@ -40,4 +40,9 @@ def finish_call(agent, packet, result=None, error=None):
         path=directory/(packet['call_id']+'.json')
         packet['report']=str(path.resolve())
         path.write_text(json.dumps(packet,indent=2,default=str),encoding='utf-8')
+    route=metadata.get('groq_accounts')
+    activity=getattr(agent,'activity',None)
+    if activity and metadata.get('provider')=='groq' and isinstance(route,dict):
+        activity('PROVIDER_ACCOUNT_ROUTED',{'call_id':packet['call_id'],'provider':'groq',**route,
+            **({'report':packet['report']} if 'report' in packet else {})})
     return packet

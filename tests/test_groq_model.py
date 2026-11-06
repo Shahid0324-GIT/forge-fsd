@@ -19,6 +19,9 @@ class Answer(BaseModel):value:int
 @pytest.fixture(autouse=True)
 def isolated_provider_capacity(monkeypatch):
     monkeypatch.setattr(provider,'_TOKEN_BUDGETS',{})
+    monkeypatch.setattr(provider,'_ACCOUNT_COOLDOWNS',{})
+    monkeypatch.setenv('FORGE_GROQ_FALLBACK_KEY_NAME','')
+    provider._ACCOUNT_ROUTE.set(None)
     monkeypatch.setenv('FORGE_GROQ_KEY_NAME','GROQ_API_KEY')
     monkeypatch.setenv('GROQ_API_KEY','unit-test-placeholder')
 

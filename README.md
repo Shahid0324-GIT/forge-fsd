@@ -121,9 +121,22 @@ ollama pull qwen2.5-coder:7b
 To select a second local credential, set `FORGE_GROQ_KEY_NAME=GROQ_API_KEY_1`
 in the environment or ignored `.env.local`, alongside that credential. The default
 slot is `GROQ_API_KEY`. Selection is explicit: a missing selected key fails before
-inference, and quotas never trigger automatic key rotation. Environment values
+inference. Environment values
 override the file for the same slot. Rate-limit receipts are isolated by model
 and credential; separate keys may still share Groq account quotas.
+
+For two accounts in distinct Groq organizations, explicitly set
+`FORGE_GROQ_FALLBACK_KEY_NAME` to the other credential slot. For example, with
+primary `GROQ_API_KEY_1`, use `FORGE_GROQ_FALLBACK_KEY_NAME=GROQ_API_KEY`.
+Only an HTTP 429 selects the other account, using the identical model and request.
+Each account is tried once per request, rate-limited accounts receive cooldowns,
+and both exhausted accounts cause a saved resource pause. An unknown reset time
+uses a 60-second reprobe cooldown; it does not claim a daily quota has reset.
+Authentication, connectivity, malformed output and application defects never
+trigger account switching. Leave the fallback setting empty for single-key mode.
+Activity and model-call traces record slot names and outcomes, never key values.
+Groq applies limits at the [organization level](https://console.groq.com/docs/rate-limits);
+configure only accounts authorized for this workload and respect their limits.
 
 Create an API key in [Groq Console](https://console.groq.com/keys), copy
 [.env.example](.env.example) to `.env.local` and replace the placeholder locally.
