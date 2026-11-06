@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
-from forge.acceptance_browser import harness_fingerprint,passed_report,run_acceptance_browser
+from forge.acceptance_browser import harness_fingerprint,passed_report,run_acceptance_browser,run_browser_smoke
 from forge.acceptance_coverage import review_coverage
 from forge.acceptance_review import review_suite
 from forge.autonomous_acceptance import acceptance_worker,load_acceptance,suite_fingerprint,proposal_context
@@ -21,6 +21,7 @@ from forge.source_checks import run_source_checks,harness_fingerprint as build_h
 from forge.tasks import Dependency,Observation,Task,TaskLedger
 from forge.workspace import safe_path,source_fingerprint
 from forge.workspace_tools import WorkspaceTools
+from forge.verification_stages import check_startup,startup_evidence_current
 
 
 def tests_resumable(record,store,*,workspace_boundary=None):
@@ -50,6 +51,7 @@ def current_failure_for_repair(state,root,contract):
         built=json.loads(build.read_text(encoding='utf-8'));seen=json.loads(browser.read_text(encoding='utf-8'))
         return bool(result['passed'] is False and built['passed'] is True and seen['passed'] is False and not result['cleanup_errors']
             and result['source_fingerprint']==observation.fingerprint==built['source_fingerprint']==seen['source_fingerprint']
+            and startup_evidence_current(result,root,contract['job_id'])
             and result['contract_fingerprint']==contract['fingerprint']==seen['contract_fingerprint']
             and hashlib.sha256(build.read_bytes()).hexdigest()==result['build_report_sha256']
             and hashlib.sha256(browser.read_bytes()).hexdigest()==result['acceptance_report_sha256']
@@ -60,7 +62,8 @@ def current_failure_for_repair(state,root,contract):
 
 
 def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,run_selected=False,recheck=False,additional_actions=8,workspace_boundary=None,
-             check_runner=run_source_checks,browser_runner=run_acceptance_browser):
+             check_runner=run_source_checks,browser_runner=run_acceptance_browser,smoke_runner=None):
+    if smoke_runner is None:smoke_runner=run_browser_smoke
     record=store.read(job_id)
     if sum(map(bool,[resume,retry_coverage,run_selected,recheck]))>1:raise ValueError('Choose one saved verification action')
     expected='AUTONOMOUS_CHECKS_BLOCKED' if retry_coverage or run_selected else 'AUTONOMOUS_TEST_PAUSED' if resume else 'AUTONOMOUS_BUILD_CHECKS_PASSED'
@@ -107,8 +110,44 @@ def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,run_selecte
             dependencies=dependencies,required_checks=checks),action_limit=8)
     def pause(state):
         authorize();store.event(job_id,'AUTONOMOUS_TEST_PAUSED',{'task_id':state.task.id,'reason':state.pause_reason or state.status,
-            'source_fingerprint':source_fingerprint(root),'scope':'Saved app-check work; no readiness or release claim.'})
+            'source_fingerprint':source_fingerprint(root),'verification_stage':state.task.inputs.get('stage'),
+            'application_behavior':'UNVERIFIED','scope':'Saved app-check work; behavior unverified. No readiness or release claim.'})
         return store.read(job_id)
+    owners={file.owner for file in draft.files if file.owner!='qa'}
+    if not owners:raise ValueError('Behavior repair requires a source owner')
+    directory=store.path.parent/'app-checks'/job_id
+    startup=child('document_smoke',sorted(owners)[0],
+        'Check document startup before behavior QA. Repair actual build/runtime failures without inventing acceptance behavior.',
+        {'mode':'repair_build'},parent.task.dependencies,['isolated_build'])
+    if recheck and startup.status=='completed':startup=ledger.revise(startup,startup.task)
+    def startup_checks(current_root,check_directory,current_job):
+        authorize()
+        store.event(job_id,'AUTONOMOUS_SMOKE_STARTED',{'scope':'Check build, document response, visible content and runtime errors. Behavior remains unverified.'},update_status=False)
+        result=check_startup(current_root,check_directory,current_job,check_runner,smoke_runner)
+        authorize()
+        return result
+    startup_worker=SourceAgent(ledger,agents,root,draft,workspace_boundary=boundary,check_runner=startup_checks,authorization=authorize)
+    fresh_startup=resume or recheck
+    def check_or_repair_startup(current):
+        nonlocal fresh_startup
+        if (fresh_startup or not current.observations or current.observations[-1].revision!=current.revision
+            or current.observations[-1].fingerprint!=source_fingerprint(root)):
+            fresh_startup=False
+            return build_evidence(WorkspaceTools(ledger,current,root,draft,workspace_boundary=boundary,
+                check_runner=startup_checks,authorization=authorize))
+        return startup_worker(current)
+    startup=TaskCoordinator(ledger,{role:check_or_repair_startup for role in owners},
+        SeniorReviewer(agents,ledger,owners,context_loader=lambda _: {**context,'verification_scope':'Document startup only; application behavior unverified.',
+            'runtime_references':runtime_references(draft.database)}),lambda:source_fingerprint(root),
+        owner_router=lambda current:compiler_repair_owner(current,root,{file.path:file.owner for file in draft.files if file.owner in owners},store.path.parent)).run(startup.task.id)
+    if startup.status!='completed':return pause(startup)
+    startup_report=json.loads(Path(startup.observations[-1].checks[0].report).read_text(encoding='utf-8'))
+    if not startup_evidence_current(startup_report,root,job_id):
+        startup=ledger.revise(startup,startup.task)
+        return pause(ledger.pause(startup,'Document startup evidence changed; recheck before behavior QA.'))
+    store.event(job_id,'AUTONOMOUS_SMOKE_PASSED',{'task_id':startup.task.id,'report':startup_report['smoke_report'],
+        'source_fingerprint':source_fingerprint(root),'application_behavior':'UNVERIFIED',
+        'scope':'Build and document startup passed. Requirements-based behavior remains unverified.'},update_status=False)
     qa=child('acceptance_plan','qa','Define independent executable assertions from the approved request.',{},
         [Dependency(task_id=review['binding']['task_id'],revision=review['binding']['revision'])],['acceptance_contract'])
     if retry_coverage:
@@ -129,12 +168,15 @@ def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,run_selecte
         store.event(job_id,'AUTONOMOUS_CHECKS_BLOCKED',{'report':contract['report'],'uncovered':contract['suite']['uncovered'],
             'reason':'Some approved criteria need checks outside the current browser protocol. No complete app-check pass is claimed.'})
         return store.read(job_id)
-    directory=store.path.parent/'app-checks'/job_id
     def verify(current_root,check_directory,current_job):
         authorize();load_acceptance(ledger,ledger.read(qa.task.id),review)
-        report=check_runner(current_root,check_directory,current_job)
+        # Reuse intact startup evidence only for the exact source. Every repair
+        # receives a fresh build/startup check before browser acceptance.
+        report=json.loads(json.dumps(startup_report)) if startup_evidence_current(startup_report,current_root,current_job) else startup_checks(current_root,check_directory,current_job)
         if not report['passed']:return report
-        build_path=report['report']
+        build_path=report['build_report']
+        store.event(job_id,'AUTONOMOUS_ACCEPTANCE_EXECUTING',{'contract_fingerprint':contract['fingerprint'],
+            'scope':'Execute a complete interaction scenario first, then the remaining frozen requirements checks.'},update_status=False)
         browser=browser_runner(current_root,directory/uuid4().hex,job_id,contract,report['image'])
         authorize();load_acceptance(ledger,ledger.read(qa.task.id),review)
         failures=[row for row in browser.get('browser',{}).get('results',[]) if row.get('passed') is not True]
@@ -157,8 +199,6 @@ def test_app(job_id,agents,store,*,resume=False,retry_coverage=False,run_selecte
         report['checks']['passed']=report['passed']
         directory.mkdir(parents=True,exist_ok=True);path=directory/(uuid4().hex+'.json');report['report']=str(path.resolve())
         path.write_text(json.dumps(report,indent=2),encoding='utf-8');return report
-    owners={file.owner for file in draft.files if file.owner!='qa'}
-    if not owners:raise ValueError('Behavior repair requires a source owner')
     worker=SourceAgent(ledger,agents,root,draft,workspace_boundary=boundary,check_runner=verify,authorization=authorize)
     state=child('acceptance_verify',sorted(owners)[0],'Make the approved app pass frozen independent assertions without editing those assertions.',
         {'mode':'repair_build','acceptance_contract':contract['suite']},[Dependency(task_id=qa.task.id,revision=qa.revision)],['isolated_build'])
@@ -215,6 +255,7 @@ def evidence_current(record,store,*,workspace_boundary=None,selected_only=False)
             and hashlib.sha256(report.read_bytes()).hexdigest()==event['report_sha256'] and result['passed']
             and hashlib.sha256(browser_path.read_bytes()).hexdigest()==result['acceptance_report_sha256'] and passed_report(browser,contract)
             and hashlib.sha256(build_path.read_bytes()).hexdigest()==result['build_report_sha256'] and build['passed']
+            and startup_evidence_current(result,root,record['job_id'])
             and build['source_fingerprint']==result['source_fingerprint'] and build['harness_fingerprint']==build_harness_fingerprint()
             and result['image']==browser['app_image']==build['image']
             and result['contract_fingerprint']==contract['fingerprint']==event['contract_fingerprint']

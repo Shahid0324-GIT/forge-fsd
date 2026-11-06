@@ -15,7 +15,7 @@ from forge.workspace import safe_path,source_fingerprint
 
 def harness_fingerprint():
     names=['src/forge/acceptance_browser.py','tests/acceptance/browser.mjs','tests/acceptance/browser-protocol.mjs',
-        'tests/acceptance/browser-diagnostics.mjs',
+        'tests/acceptance/browser-diagnostics.mjs','tests/acceptance/document-smoke.mjs',
         'tests/browser/app-server.mjs','tests/browser/package-lock.json','tests/browser/Dockerfile']
     return hashlib.sha256(b''.join(name.encode()+b'\0'+(PROJECT/name).read_bytes() for name in names)).hexdigest()
 
@@ -67,9 +67,29 @@ def passed_report(report,contract):
     return True
 
 
+def passed_smoke_report(report):
+    """A startup observation is never requirements-coverage evidence."""
+    rows=report.get('browser',{}).get('results',[])
+    return bool(report.get('mode')=='document_smoke' and not report.get('error')
+        and re.fullmatch(r'sha256:[a-f0-9]{64}',report.get('app_image',''))
+        and re.fullmatch(r'sha256:[a-f0-9]{64}',report.get('browser_image',''))
+        and report.get('source_unchanged') is True and report.get('harness_unchanged') is True
+        and report.get('harness_fingerprint')==harness_fingerprint()
+        and report.get('execution',{}).get('exit_code')==0 and not report['execution'].get('stopped')
+        and report.get('browser',{}).get('passed') is True and len(rows)==1
+        and rows[0].get('id')=='document_smoke' and rows[0].get('passed') is True
+        and rows[0].get('checks')=={'document_response':True,'visible_content':True,'runtime_errors':True}
+        and not report.get('cleanup_errors'))
+
+
+def run_browser_smoke(root,directory,job_id,app_image):
+    return _run_acceptance_browser(root,directory,job_id,None,app_image)
+
+
 def _run_acceptance_browser(root,directory,job_id,contract,app_image,scenario_id=None):
-    suite=read_contract(contract)
-    if not re.fullmatch(r'[a-f0-9]{32}',job_id) or contract['job_id']!=job_id:raise ValueError('Invalid acceptance job identity')
+    smoke=contract is None
+    suite=None if smoke else read_contract(contract)
+    if not re.fullmatch(r'[a-f0-9]{32}',job_id) or not smoke and contract['job_id']!=job_id:raise ValueError('Invalid acceptance job identity')
     if not re.fullmatch(r'sha256:[a-f0-9]{64}',app_image):raise ValueError('Expected immutable verified app image')
     root=Path(root).absolute();safe_path(root,'package.json')
     directory=Path(directory).resolve()
@@ -78,10 +98,12 @@ def _run_acceptance_browser(root,directory,job_id,contract,app_image,scenario_id
     suffix=uuid4().hex[:12]
     resources={'app':'forge-browser-app-'+suffix,'browser':'forge-browser-check-'+suffix,'network':'forge-browser-net-'+suffix}
     report={'version':1,'job_id':job_id,'phase':'started','resources':resources,'source_fingerprint':source_fingerprint(root),
-        'contract_fingerprint':contract['fingerprint'],'review_fingerprint':contract['review_fingerprint'],
+        **({} if smoke else {'contract_fingerprint':contract['fingerprint'],'review_fingerprint':contract['review_fingerprint']}),
+        'mode':'document_smoke' if smoke else 'acceptance',
         'harness_fingerprint':harness_fingerprint(),'app_image':app_image,'passed':False,'cleanup_errors':[],
-        'uncovered':suite.model_dump()['uncovered'],
-        'scope':'Selected requirements-derived browser assertions only; database restart, security and deployment NOT_TESTED.'}
+        'uncovered':[] if smoke else suite.model_dump()['uncovered'],
+        'scope':'Document startup only; application behavior UNVERIFIED.' if smoke else
+            'Selected requirements-derived browser assertions only; database restart, security and deployment NOT_TESTED.'}
     path=directory/'report.json';report['report']=str(path);path.write_text(json.dumps(report,indent=2),encoding='utf-8')
     labels=['--label',f'forge.job={job_id}','--label','forge.role=browser_verification']
     isolation=['--pull=never',*labels,'--network',resources['network'],'--read-only','--cap-drop=ALL','--security-opt=no-new-privileges']
@@ -103,10 +125,12 @@ def _run_acceptance_browser(root,directory,job_id,contract,app_image,scenario_id
         command=['docker','run','--rm','--name',resources['browser'],*isolation,'--user='+user,
             '--memory=2g','--cpus=2','--pids-limit=256','--tmpfs','/tmp:rw,nosuid,size=512m,uid=1000,gid=1000',
             '--env',f'FORGE_BROWSER_BASE=http://{resources["app"]}:3000',
+            '--env',f'FORGE_BROWSER_MODE={"document_smoke" if smoke else "acceptance"}',
             '--mount',f'type=bind,source={PROJECT/"tests/acceptance/browser.mjs"},target=/trusted/browser.mjs,readonly',
             '--mount',f'type=bind,source={PROJECT/"tests/acceptance/browser-protocol.mjs"},target=/trusted/browser-protocol.mjs,readonly',
             '--mount',f'type=bind,source={PROJECT/"tests/acceptance/browser-diagnostics.mjs"},target=/trusted/browser-diagnostics.mjs,readonly',
-            '--mount',f'type=bind,source={Path(contract["report"]).resolve()},target=/trusted/contract.json,readonly',
+            '--mount',f'type=bind,source={PROJECT/"tests/acceptance/document-smoke.mjs"},target=/trusted/document-smoke.mjs,readonly',
+            *([] if smoke else ['--mount',f'type=bind,source={Path(contract["report"]).resolve()},target=/trusted/contract.json,readonly']),
             '--mount',f'type=bind,source={output},target=/results',report['browser_image'],'node','/trusted/browser.mjs']
         if scenario_id is not None:
             command[2:2]=['--env',f'FORGE_SCENARIO_ID={scenario_id}']
@@ -120,9 +144,10 @@ def _run_acceptance_browser(root,directory,job_id,contract,app_image,scenario_id
         except Exception as exc:report['cleanup_errors'].append(str(exc)[-1000:])
     report['source_unchanged']=source_fingerprint(root)==report['source_fingerprint']
     report['harness_unchanged']=harness_fingerprint()==report['harness_fingerprint']
-    try:read_contract(contract);report['contract_unchanged']=True
+    try:
+        if not smoke:read_contract(contract);report['contract_unchanged']=True
     except (ValueError,OSError,KeyError):report['contract_unchanged']=False
-    try:report['passed']=_passed_report(report,contract,scenario_id)
+    try:report['passed']=passed_smoke_report(report) if smoke else _passed_report(report,contract,scenario_id)
     except (ValueError,OSError,KeyError):report['passed']=False
     report['phase']='completed';path.write_text(json.dumps(report,indent=2),encoding='utf-8')
     return report
@@ -140,13 +165,22 @@ def run_acceptance_browser(root,directory,job_id,contract,app_image):
         'harness_fingerprint':harness_fingerprint(),'app_image':app_image,'passed':False,
         'cleanup_errors':[],'scenario_reports':[],'uncovered':suite.model_dump()['uncovered'],
         'scope':'Fresh app process and temporary database per scenario; reload persistence within each scenario. Database restart, security and deployment NOT_TESTED.'}
+    # Exercise one complete interaction before the remaining requirements. Never
+    # truncate a stateful case or count an unexecuted case as passing.
+    interactive=[case for case in suite.scenarios if any(step.action in {'click','fill','select','check'} for step in case.steps)]
+    smoke=interactive[0] if interactive else None
+    ordered=([smoke] if smoke else [])+[case for case in suite.scenarios if case is not smoke]
+    report['workflow_smoke_scenario_id']=smoke.id if smoke else None
     cases=[]
     try:
-        for index,scenario in enumerate(suite.scenarios):
+        for index,scenario in enumerate(ordered):
             case=_run_acceptance_browser(root,directory/f'scenario-{index}',job_id,contract,app_image,scenario.id)
             cases.append(case)
             report['scenario_reports'].append({'id':scenario.id,'report':case['report'],
                 'sha256':hashlib.sha256(Path(case['report']).read_bytes()).hexdigest()})
+            if smoke is not None and index==0 and not case['passed']:
+                report['not_run_scenario_ids']=[item.id for item in ordered[1:]]
+                break
         images={case.get('browser_image') for case in cases}
         if len(images)!=1 or None in images:raise ValueError('Scenario browser images do not match')
         report['browser_image']=next(iter(images))

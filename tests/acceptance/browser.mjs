@@ -3,15 +3,17 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {chromium} from '/opt/forge-browser/node_modules/playwright/index.mjs';
 import {executeStep,resolveTarget} from './browser-protocol.mjs';
 import {inspectFailure} from './browser-diagnostics.mjs';
+import {checkDocument} from './document-smoke.mjs';
 
 const base=process.env.FORGE_BROWSER_BASE;
 assert.match(base,/^http:\/\/forge-browser-app-[a-f0-9]{12}:3000$/);
-const contract=JSON.parse(readFileSync('/trusted/contract.json','utf8'));
-assert.equal(contract.version,1);
+const smoke=process.env.FORGE_BROWSER_MODE==='document_smoke';
+const contract=smoke?null:JSON.parse(readFileSync('/trusted/contract.json','utf8'));
+if(!smoke)assert.equal(contract.version,1);
 // The controller gives every scenario a fresh app process and temporary data.
 // Reloads within a scenario retain that scenario's database and browser storage.
 const scenarioId=process.env.FORGE_SCENARIO_ID;
-const scenarios=scenarioId?contract.suite.scenarios.filter(row=>row.id===scenarioId):contract.suite.scenarios;
+const scenarios=smoke?[{id:'document_smoke',steps:[]}]:scenarioId?contract.suite.scenarios.filter(row=>row.id===scenarioId):contract.suite.scenarios;
 assert.ok(!scenarioId||scenarios.length===1,'Unknown isolated scenario');
 const results=[];
 let browser;
@@ -30,12 +32,16 @@ try{
     const errors=[];page.on('pageerror',error=>errors.push(String(error)));
     let index=0,timer;
     try{
+      let smokeChecks;
       await Promise.race([
-        (async()=>{for(;index<scenario.steps.length;index++)await executeStep(page,scenario.steps[index],base);})(),
+        (async()=>{
+          if(smoke)smokeChecks=await checkDocument(page,base);
+          else for(;index<scenario.steps.length;index++)await executeStep(page,scenario.steps[index],base);
+        })(),
         new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Scenario exceeded 25 seconds')),25000);}),
       ]);
       assert.deepEqual(errors,[],'Browser runtime errors');
-      results.push({id:scenario.id,passed:true,criteria:scenario.criteria});
+      results.push({id:scenario.id,passed:true,...(smoke?{checks:{...smokeChecks,runtime_errors:true}}:{criteria:scenario.criteria})});
     }catch(error){
       await page.screenshot({path:`/results/${scenario.id}.png`,fullPage:true}).catch(()=>{});
       results.push({id:scenario.id,passed:false,criteria:scenario.criteria,step:index+1,

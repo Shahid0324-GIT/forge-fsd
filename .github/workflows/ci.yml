@@ -43,6 +43,8 @@ jobs:
         run: |
           python -c "from pathlib import Path; Path('artifacts').mkdir(exist_ok=True)"
           python -m pytest -q --basetemp artifacts/ci-pytest --junitxml artifacts/ci-pytest.xml
+      - name: Verify trusted browser protocol and startup checks
+        run: node --test tests/browser-protocol.test.mjs tests/document-smoke.test.mjs
       - name: Typecheck and build dashboard
         run: npm --prefix apps/web run build
       - name: Save controller test results

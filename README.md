@@ -50,7 +50,7 @@ This diagram describes the target integration; the two paths above describe what
 
 ## Verified checkpoints
 
-Latest complete controller checkpoint: **725 Python tests passed** (13 upstream deprecation warnings). See [the Groq key 1 verification report](docs/groq-key1-verification-2026-11-05.md) for the completed fixes and the separate live notes run, whose build passed while browser QA remains paused at the provider quota. These use fake agents, temporary databases and mocked external services; they do not establish model accuracy. A separate live hybrid counter completed intake, planning, approved generation, build, independent QA and repair: all five criteria passed a ten-step frozen browser scenario, and the final evidence matched current source. That run used five local calls, six Groq calls and eleven saved handoffs, with no manual app-source corrections. The SQLite notes app now passes its build and both frozen browser scenarios (add/list/delete, invalid title and reload persistence). One approved SQLite-file-location criterion remains explicitly uncovered, so its dashboard status is partial coverage rather than a complete pass. The counter additionally passed local preview interaction checks and generated-app hosted build/homepage-smoke CI. Eleven Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
+Latest complete controller checkpoint: **736 Python tests passed** (13 upstream deprecation warnings). See [the Groq key 1 verification report](docs/groq-key1-verification-2026-11-05.md) for the completed fixes and the separate live notes run, whose build passed while browser QA remains paused at the provider quota. These use fake agents, temporary databases and mocked external services; they do not establish model accuracy. A separate live hybrid counter completed intake, planning, approved generation, build, independent QA and repair: all five criteria passed a ten-step frozen browser scenario, and the final evidence matched current source. That run used five local calls, six Groq calls and eleven saved handoffs, with no manual app-source corrections. The SQLite notes app now passes its build and both frozen browser scenarios (add/list/delete, invalid title and reload persistence). One approved SQLite-file-location criterion remains explicitly uncovered, so its dashboard status is partial coverage rather than a complete pass. The counter additionally passed local preview interaction checks and generated-app hosted build/homepage-smoke CI. Eleven Node tests cover framework diagnostics, the browser protocol and failure evidence. Dashboard TypeScript and production build also pass.
 
 Separate live evaluations used the installed **qwen2.5-coder:7b**, real Docker builds and Chromium:
 
@@ -161,6 +161,13 @@ Failed runs preserve their workspace under `workspace/.flow-evaluations`.
 A pass requires current build/browser evidence and complete frozen coverage, not
 just a success status. This is an internal test actor, not human approval,
 preview, publication or a claim of general model accuracy.
+
+Verification now runs build checks, a fixed browser startup check, independent
+QA, then a complete interaction scenario before the remaining frozen scenarios.
+Startup failures reach source repair before QA consumes model calls. A startup
+pass does not establish application behavior; unfinished QA remains explicitly
+unverified. See [staged browser verification](docs/staged-browser-verification.md)
+for evidence, recovery and recheck behavior.
 
 ## Run the dashboard
 
@@ -282,7 +289,7 @@ Claude is an opt-in recovery provider, not part of the automatic hybrid fallback
 
 The operator can propose and explicitly approve an inference change only at a saved idle build/QA pause using `forge.execution_models`. Approval binds the current plan, source fingerprint, task revision and version. The original approved plan and frozen test contract keep their recorded model identity. This advanced recovery control is not yet a dashboard model-switch button. Normal dashboard creation defaults and the local-first hybrid policy remain unchanged.
 
-Browser scenarios now run in separate app containers with fresh temporary databases. Reloads within a scenario retain that scenario's data. This prevents fixtures from one case contaminating another. Reports aggregate every frozen case and verify each child report's hash, source, harness and images. The current full Python checkpoint passed 725 tests. The earlier isolation/recheck selection passed 17 checks and both associated live app verifications passed their supported assertions.
+Browser scenarios now run in separate app containers with fresh temporary databases. Reloads within a scenario retain that scenario's data. This prevents fixtures from one case contaminating another. Reports aggregate every frozen case and verify each child report's hash, source, harness and images. The current full Python checkpoint passed 736 tests. The earlier isolation/recheck selection passed 17 checks and both associated live app verifications passed their supported assertions.
 
 
 ### Fresh Claude-only demo with a run allowance

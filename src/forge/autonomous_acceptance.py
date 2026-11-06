@@ -174,7 +174,13 @@ assert_text compares the complete visible text of its target, including descenda
 with normalized whitespace. It is not a substring assertion. For a results region,
 assert its full text in one expectation or use smaller semantic targets; do not ask
 the same unchanged region to equal several different row values.
-Use a few concise scenarios with actual assertions. Each scenario starts at visit /
+Use a few concise scenarios with actual assertions. Include one small, complete
+scenario for the principal user action and its visible result when the app has an
+interactive workflow. Put it before other interaction scenarios. The runner executes that whole scenario first as a workflow
+smoke check. Keep detailed validation, editing, deletion and persistence checks in
+the remaining scenarios as needed; never drop criteria to make the smoke check small.
+Verify all requested data involved in an operation, not just one convenient field.
+Each scenario starts at visit /
 or another approved app route in a fresh session. Use role/button/name for controls,
 label for labelled inputs, text for visible content, and assert_value for input values.
 Missing markup/style details are not unsupported capabilities: choose suitable semantic

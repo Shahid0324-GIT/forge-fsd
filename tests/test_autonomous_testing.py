@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from forge.acceptance_browser import harness_fingerprint
+import forge.autonomous_testing as testing_module
 from forge.autonomous_build import build_app
 from forge.autonomous_testing import evidence_current,test_app as run_app_tests,tests_resumable as resumable_checks
 from forge.source_checks import harness_fingerprint as build_harness
@@ -44,7 +45,7 @@ class QAAgent(Builder):
 
 def build_checks(root,directory,job):
     result=runner()(root,directory,job)
-    result.update(image='sha256:'+'a'*64,cleanup_errors=[],harness_fingerprint=build_harness())
+    result.update(job_id=job,image='sha256:'+'a'*64,cleanup_errors=[],harness_fingerprint=build_harness())
     Path(result['report']).write_text(json.dumps(result),encoding='utf-8')
     return result
 
@@ -65,8 +66,24 @@ def browsers(outcomes,seen=None):
     return execute
 
 
+def smoke_checks(root,directory,job,image):
+    directory.mkdir(parents=True);path=directory/'report.json'
+    result={'mode':'document_smoke','passed':True,'job_id':job,'report':str(path),'cleanup_errors':[],
+        'source_fingerprint':source_fingerprint(root),'app_image':image,'browser_image':'sha256:'+'b'*64,
+        'source_unchanged':True,'harness_unchanged':True,'harness_fingerprint':harness_fingerprint(),
+        'execution':{'exit_code':0,'stopped':None},'browser':{'passed':True,'results':[
+            {'id':'document_smoke','passed':True,'checks':{'document_response':True,'visible_content':True,'runtime_errors':True}}]}}
+    path.write_text(json.dumps(result),encoding='utf-8');return result
+
+
+@pytest.fixture(autouse=True)
+def isolated_smoke(monkeypatch):
+    monkeypatch.setattr(testing_module,'run_browser_smoke',smoke_checks)
+
+
 @pytest.fixture
-def ready(setup):
+def ready(setup,monkeypatch):
+    monkeypatch.setattr(testing_module,'run_browser_smoke',smoke_checks)
     store,job,builder,boundary,review=setup;approve(store,job,review)
     build_app(job,builder,store,workspace_boundary=boundary,check_runner=runner())
     return store,job,QAAgent(builder.proposal),boundary,review
@@ -223,7 +240,7 @@ def test_resource_resume_repairs_current_failure_before_retesting_instead_of_rep
     assert evidence_current(result,store,workspace_boundary=boundary)
 
 
-@pytest.mark.parametrize('change',[None,'source','browser','build','contract'])
+@pytest.mark.parametrize('change',[None,'source','browser','build','contract','smoke'])
 def test_failed_evidence_reuse_requires_current_source_contract_and_intact_reports(ready,change):
     from forge.provider_errors import ProviderResourceError
     from forge.autonomous_testing import current_failure_for_repair
@@ -240,6 +257,7 @@ def test_failed_evidence_reuse_requires_current_source_contract_and_intact_repor
     if change=='source':(boundary/job/'app/page.tsx').write_text('changed',encoding='utf-8')
     if change=='browser':Path(report['acceptance_report']).write_text('{}',encoding='utf-8')
     if change=='build':Path(report['build_report']).write_text('{}',encoding='utf-8')
+    if change=='smoke':Path(report['smoke_report']).write_text('{}',encoding='utf-8')
     if change=='contract':contract={**contract,'fingerprint':'stale'}
     assert current_failure_for_repair(state,boundary/job,contract)==(change is None)
 
@@ -255,3 +273,65 @@ def test_recheck_keeps_frozen_contract_and_replaces_evidence_for_same_source(rea
     assert before['contract_fingerprint']==after['contract_fingerprint']
     assert after['verification_revision']>before['verification_revision'] and len(agent.qa_contexts)==1
     assert not agent.repair_contracts
+
+
+def test_qa_quota_pause_retains_startup_pass_without_claiming_behavior(ready):
+    from forge.provider_errors import ProviderResourceError
+    store,job,agent,boundary,_=ready;generate=agent.generate
+    def quota(schema,*args,**kwargs):
+        if schema.__name__=='AcceptanceSuite':
+            assert any(e['status']=='AUTONOMOUS_SMOKE_PASSED' for e in store.read(job)['events'])
+            raise ProviderResourceError('Daily provider limit')
+        return generate(schema,*args,**kwargs)
+    agent.generate=quota
+    result=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,
+        browser_runner=lambda *_:pytest.fail('Behavior execution requires frozen QA'))
+    assert result['status']=='AUTONOMOUS_TEST_PAUSED'
+    assert result['events'][-1]['payload']['application_behavior']=='UNVERIFIED'
+    assert result['events'][-1]['payload']['verification_stage']=='acceptance_plan'
+    assert not evidence_current(result,store,workspace_boundary=boundary)
+
+
+def test_startup_failure_is_repaired_before_qa_without_an_acceptance_contract(ready):
+    store,job,agent,boundary,_=ready;calls=[]
+    def smoke(*args):
+        calls.append(source_fingerprint(args[0]))
+        result=smoke_checks(*args)
+        if len(calls)==1:
+            result.update(passed=False)
+            result['browser']={'passed':False,'results':[{'id':'document_smoke','passed':False,'error':'Uncaught browser runtime error'}]}
+            result['execution']['exit_code']=1
+            Path(result['report']).write_text(json.dumps(result),encoding='utf-8')
+        return result
+    result=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,
+        browser_runner=browsers([True]),smoke_runner=smoke)
+    assert result['status']=='AUTONOMOUS_APP_CHECKS_PASSED'
+    assert len(calls)==2 and calls[0]!=calls[1]
+    assert agent.repair_contracts==[None] and len(agent.qa_contexts)==1
+    assert evidence_current(result,store,workspace_boundary=boundary)
+
+
+def test_wrong_startup_identity_pauses_without_application_edits_or_qa(ready):
+    store,job,agent,boundary,_=ready
+    def wrong_job(*args):
+        result=smoke_checks(*args);result['job_id']='f'*32
+        Path(result['report']).write_text(json.dumps(result));return result
+    result=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,
+        browser_runner=lambda *_:pytest.fail('Invalid startup evidence must stop verification'),smoke_runner=wrong_job)
+    assert result['status']=='AUTONOMOUS_TEST_PAUSED'
+    assert not agent.qa_contexts and not agent.repair_contracts
+    assert 'restore the execution environment' in result['events'][-1]['payload']['reason']
+
+
+@pytest.mark.parametrize('change',['smoke_report','smoke_source','smoke_image','build_report'])
+def test_startup_evidence_is_required_for_current_app_pass(ready,change):
+    store,job,agent,boundary,_=ready
+    result=run_app_tests(job,agent,store,workspace_boundary=boundary,check_runner=build_checks,browser_runner=browsers([True]))
+    assert evidence_current(result,store,workspace_boundary=boundary)
+    combined=json.loads(Path(result['events'][-1]['payload']['report']).read_text())
+    path=Path(combined['build_report'] if change=='build_report' else combined['smoke_report'])
+    if change in {'smoke_report','build_report'}:path.write_text('{}')
+    else:
+        report=json.loads(path.read_text());report['source_fingerprint' if change=='smoke_source' else 'app_image']='stale'
+        path.write_text(json.dumps(report))
+    assert not evidence_current(result,store,workspace_boundary=boundary)

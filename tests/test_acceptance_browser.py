@@ -84,6 +84,50 @@ def test_setup_failure_records_owned_resources_and_cleans_them(setup,monkeypatch
     assert not report['passed'] and 'Docker unavailable' in report['error'] and cleanup
 
 
+def test_document_smoke_needs_no_qa_contract_and_cannot_count_as_acceptance(setup):
+    root,directory,contract,browser,commands,cleanup=setup
+    browser.update(results=[{'id':'document_smoke','passed':True,
+        'checks':{'document_response':True,'visible_content':True,'runtime_errors':True}}])
+    report=module.run_browser_smoke(root,directory,'c'*32,'sha256:'+'d'*64)
+    assert report['passed'] and module.passed_smoke_report(report) and cleanup
+    assert not module.passed_report(report,contract)
+    assert not any('contract.json' in part for command in commands for part in command)
+    assert 'FORGE_BROWSER_MODE=document_smoke' in commands[1]
+
+
+@pytest.mark.parametrize('passed',[True,False])
+def test_interactive_smoke_runs_first_and_failure_does_not_execute_other_cases(setup,monkeypatch,passed):
+    from pathlib import Path
+    root,directory,contract,_,commands,cleanup=setup
+    packet=json.loads(Path(contract['report']).read_text())
+    interaction={'id':'main_action','criteria':[1],'steps':[{'action':'visit','path':'/'},
+        {'action':'click','target':{'by':'role','value':'button','name':'Calculate'}},
+        {'action':'assert_visible','target':{'by':'text','value':'3'}}]}
+    # A read-only case precedes the interaction in the frozen suite. The runner
+    # must promote the first interaction, preserving that complete case.
+    packet['suite']['scenarios'][0]['steps']=[{'action':'visit','path':'/'},
+        {'action':'assert_visible','target':{'by':'text','value':'3'}}]
+    packet['suite']['scenarios'].append(interaction)
+    Path(contract['report']).write_text(json.dumps(packet))
+    contract.update(suite=packet['suite'],fingerprint=hashlib.sha256(Path(contract['report']).read_bytes()).hexdigest())
+    seen=[]
+    def execute(args,**_):
+        commands.append(args)
+        if '--detach' not in args:
+            case=next(v.split('=',1)[1] for v in args if v.startswith('FORGE_SCENARIO_ID='));seen.append(case)
+            mount=next(v for v in args if v.startswith('type=bind,source=') and v.endswith('target=/results'))
+            output=Path(mount.split('source=',1)[1].rsplit(',target=',1)[0])
+            (output/'browser.json').write_text(json.dumps({'passed':passed,'results':[
+                {'id':case,'criteria':[1] if case=='main_action' else [1,2],'passed':passed}]}))
+        return {'command':args,'exit_code':0 if '--detach' in args or passed else 1,'stopped':None,'output':''}
+    monkeypatch.setattr(module,'bounded_command',execute)
+    report=module.run_acceptance_browser(root,directory,'c'*32,contract,'sha256:'+'d'*64)
+    assert seen==(['main_action','counter_actions'] if passed else ['main_action'])
+    assert report['workflow_smoke_scenario_id']=='main_action'
+    assert report['passed']==passed
+    if not passed:assert report['not_run_scenario_ids']==['counter_actions']
+
+
 @pytest.mark.parametrize('failed_case',[None,'other_case'])
 def test_each_frozen_scenario_gets_distinct_application_and_data_with_full_aggregate_evidence(setup,monkeypatch,failed_case):
     from pathlib import Path

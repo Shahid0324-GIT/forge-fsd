@@ -14,7 +14,7 @@ PROJECT=Path(__file__).resolve().parents[1]
 def main():
     name='forge-navigation-calibration-'+uuid4().hex[:12]
     directory=PROJECT/'artifacts/navigation-calibration'/uuid4().hex;directory.mkdir(parents=True)
-    files=['navigation-calibration.mjs','browser-protocol.mjs']
+    files=['navigation-calibration.mjs','browser-protocol.mjs','document-smoke.mjs']
     command=['docker','run','--rm','--name',name,'--network','none','--read-only',
         '--tmpfs','/tmp:rw,nosuid,size=256m','--shm-size=256m','--cap-drop','ALL',
         '--security-opt','no-new-privileges','--pids-limit','256','--memory','1g','--cpus','2']
